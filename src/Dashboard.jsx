@@ -84,16 +84,48 @@ const SELLERS = {
 
 /* Map peptide IDs → product key in PRICES. Adjust if you reorder different sizes. */
 const PRODUCT_FOR_PEPTIDE = {
-  reta:   "reta30",        // 30mg vial = 12 doses at 2.5mg, best value
-  klow:   "klow",          // PeptiCore exclusive blend
+  reta:   "reta30",        // 30mg vial = best $/mg
+  klow:   "klow",
   nad:    "nad500",
   ta1:    "ta1_10mg",
-  amino:  "amino_1mq",
-  snap8:  "snap8",
-  cjcipa: "cjcipa",
+  amino:  "amino_1mq_10",  // 10mg vial; switch to "amino_1mq_5" if you reorder smaller
+  snap8:  "snap8_10mg",
+  cjcipa: "cjcipa",        // no community price data yet — browse stores directly
   semax:  "semax_selank",
   motsc:  "motsc10",
   glow:   "glow",
+};
+
+/* PHP per vial/unit. Sourced from your May 2026 peptide reseller comparison dashboard.
+   Verify before paying — community prices shift weekly. */
+const PRICES = {
+  // ─── Kim's active stack ───
+  reta30:        {label:"Retatrutide 30mg",         avo:4500, pepticore:3000, synthe:6499,                  peptora:5899},
+  reta15:        {label:"Retatrutide 15mg",                   pepticore:2000, synthe:4199,                  peptora:4899},
+  reta10:        {label:"Retatrutide 10mg",         avo:2500,                 synthe:3499},
+  klow:          {label:"KLOW Blend",                         pepticore:2500, synthe:4000,                  peptora:4599},
+  glow:          {label:"GLOW Blend",                avo:2600, pepticore:1800,                              peptora:4299},
+  nad500:        {label:"NAD+ 500mg",                avo:2000, pepticore:2000, synthe:2499,   pepmuse:1500, peptora:3899, purepept:1700},
+  motsc10:       {label:"MOTS-c 10mg",                         pepticore:1500, synthe:1500,   pepmuse:1300},
+  ta1_10mg:      {label:"Thymosin Alpha-1 10mg",     avo:2400,                 synthe:2100},
+  amino_1mq_10:  {label:"5-Amino-1MQ 10mg",          avo:1400},
+  amino_1mq_5:   {label:"5-Amino-1MQ 5mg",                                                                                purepept:1500},
+  snap8_10mg:    {label:"Snap-8 10mg (topical base)", avo:1100,                synthe:1700},
+  cjcipa:        {label:"CJC-1295 + Ipamorelin Blend", notes:"No community price data captured yet — browse stores directly. Common pricing: ₱2,000–₱3,500 per 10mg blend (5mg each component)."},
+  semax_selank:  {label:"Semax 10mg (Selank 10mg sold separately)", avo:1400,  synthe:3000,                                            notes:"Selank 10mg: AVO ₱1,200 · Synthe ₱3,000. Buy together when reordering."},
+  // ─── Reference products (not in Kim's active stack but available) ───
+  tirz15:        {label:"Tirzepatide 15mg",          avo:1800, pepticore:2000, synthe:2499,   pepmuse:1800, peptora:3999},
+  tirz20:        {label:"Tirzepatide 20mg",                                    synthe:2999,                  peptora:4899},
+  tirz30:        {label:"Tirzepatide 30mg",          avo:2800, pepticore:3000, synthe:3999,   pepmuse:2700, peptora:5899},
+  cagri10:       {label:"Cagrilintide 10mg",         avo:2800,                 synthe:2500},
+  tesa10:        {label:"Tesamorelin 10mg",          avo:2600, pepticore:3500,                              peptora:3599},
+  ghkcu50:       {label:"GHK-Cu 50mg",               avo:1000,                 synthe:1500,   pepmuse:900},
+  ghkcu100:      {label:"GHK-Cu 100mg",              avo:1600, pepticore:1200, synthe:2000,   pepmuse:1500, peptora:3799, purepept:1500},
+  glut1500:      {label:"Glutathione 1500mg",        avo:1650,                 synthe:2499,   pepmuse:1700,               purepept:1500},
+  bpc10:         {label:"BPC-157 10mg",              avo:2000, pepticore:2000, synthe:1899},
+  kpv10:         {label:"KPV 10mg",                  avo:1800, pepticore:1800, synthe:2000,                               purepept:1500},
+  fatblaster10:  {label:"Fat Blaster 10mL",          avo:1700,                 synthe:3000},
+  lemon10:       {label:"Lemon Bottle 10mL",                                   synthe:1500,                                purepept:1500},
 };
 
 /* Map peptide IDs → PeptideGuidesPH educational page slug.
@@ -115,21 +147,6 @@ const PG_DIRECTORY = "https://yellow-fire-83c6.peptideguidesph.workers.dev/";
 const pgUrlFor = pepId => {
   const slug = PG_SLUG_FOR_PEPTIDE[pepId];
   return slug ? `${PG_BASE}/peptides/${slug}/` : `${PG_BASE}/peptides/`;
-};
-
-/* PHP per vial/unit. Add a key for each seller that stocks the product. */
-const PRICES = {
-  reta30:        {label:"Retatrutide 30mg",      avo:4500, pepticore:3000, synthe:6499, peptora:5899},
-  reta15:        {label:"Retatrutide 15mg",                pepticore:2000, synthe:4199, peptora:4899},
-  klow:          {label:"KLOW Blend",                      pepticore:null, notes:"PeptiCore exclusive — confirm current pricing"},
-  nad500:        {label:"NAD+ 500mg",            avo:2000, pepticore:2000, synthe:2499, pepmuse:1500, peptora:3899},
-  ta1_10mg:      {label:"Thymosin Alpha-1 10mg"},
-  amino_1mq:     {label:"5-Amino-1MQ"},
-  snap8:         {label:"Snap-8 (topical)"},
-  cjcipa:        {label:"CJC+Ipamorelin Blend"},
-  semax_selank:  {label:"Semax + Selank Sprays"},
-  motsc10:       {label:"MOTS-c 10mg",                                                  pepmuse:null,   notes:"Pepmuse historically cheapest"},
-  glow:          {label:"GLOW Blend"},
 };
 
 /* Returns ordered reorder options for a given peptide id.

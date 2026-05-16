@@ -246,7 +246,7 @@ function Onboarding({db,onComplete}){
       </div>
       <div style={{color:"var(--t-3)",fontSize:11,letterSpacing:".18em",textTransform:"uppercase",marginBottom:14}}>Welcome to</div>
       <h1 className="serif" style={{fontSize:54,color:"var(--t-1)",margin:"0 0 18px",fontStyle:"italic",letterSpacing:"-0.025em",lineHeight:1.02}}>Body Comp HQ</h1>
-      <p style={{fontSize:15,color:"var(--t-2)",margin:"0 0 46px",lineHeight:1.55,maxWidth:340}}>Body composition. Nutrition. Peptides. Recovery. All in one place.</p>
+      <p style={{fontSize:15,color:"var(--t-2)",margin:"0 auto 46px",lineHeight:1.55,maxWidth:340}}>Body composition. Nutrition. Peptides. Recovery. All in one place.</p>
       <button onClick={()=>setStep(1)} style={btn(true)}>Begin Setup</button>
     </div>,
     <div key={1} className="sheet">

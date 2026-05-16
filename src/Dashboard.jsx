@@ -84,6 +84,42 @@ const compressImage = (file, maxWidth = 1080, quality = 0.78) => new Promise((re
   reader.readAsDataURL(file);
 });
 
+/* Parse a peptide time string ("AM"/"PM"/"8:00am"/"9pm") into {h, m} or null.
+   AM defaults to 8:00, PM defaults to 20:00. */
+const parseTimeStr = s => {
+  if (!s) return null;
+  const t = String(s).trim().toLowerCase();
+  if (t === "am") return {h: 8, m: 0};
+  if (t === "pm") return {h: 20, m: 0};
+  const m = t.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+  if (!m) return null;
+  let h = +m[1];
+  const min = +(m[2] || 0);
+  const ampm = m[3];
+  if (ampm === "pm" && h < 12) h += 12;
+  if (ampm === "am" && h === 12) h = 0;
+  if (h > 23 || min > 59) return null;
+  return {h, m: min};
+};
+
+/* Compute the "due state" of a peptide for the current time.
+   Returns null if no time info or already checked. Otherwise:
+   {label, color, overdue:bool, urgent:bool, minutes:n} */
+const dueState = (p, checked) => {
+  if (checked) return null;
+  const t = parseTimeStr(p?.time);
+  if (!t) return null;
+  const now = new Date();
+  const sched = new Date();
+  sched.setHours(t.h, t.m, 0, 0);
+  const diff = (now - sched) / 60000;
+  const fmt = d => { const h = d.getHours(); const m = d.getMinutes(); const ap = h >= 12 ? "pm" : "am"; const h12 = ((h + 11) % 12) + 1; return m === 0 ? `${h12}${ap}` : `${h12}:${String(m).padStart(2,"0")}${ap}`; };
+  if (diff < -60) return {label: `due ${fmt(sched)}`, color: "var(--t-3)", overdue: false, minutes: -diff};
+  if (diff < 15) return {label: "due now", color: "var(--accent)", urgent: true, overdue: false, minutes: 0};
+  if (diff < 120) return {label: `${Math.round(diff)}min overdue`, color: "var(--c-warn)", overdue: true, minutes: diff};
+  return {label: `${Math.round(diff/60)}h overdue`, color: "var(--c-danger)", overdue: true, minutes: diff};
+};
+
 /* Pure insights generator. Takes all the data streams + targets,
    returns ranked array of {id, icon, title, body, color, severity}.
    Each insight has its own guard clause — degrades gracefully on sparse data. */
@@ -304,7 +340,48 @@ const computeInsights = ({pepHist, macroHist, whoopHist, measurements, scans, us
     }
   }
 
-  /* 9. Side effect pattern */
+  /* 9. Plateau detection — weight unchanged despite an active deficit */
+  if (scans && scans.length >= 2 && macroHist && macroHist.length >= 7 && userConfig?.weight && userConfig?.height && userConfig?.age) {
+    const last = scans[scans.length - 1];
+    let baseline = null;
+    for (let i = scans.length - 2; i >= 0; i--) {
+      const d = daysAgo(scans[i].date);
+      if (d >= 14 && d <= 42) { baseline = scans[i]; break; }
+    }
+    if (baseline) {
+      const wDelta = +(last.weight - baseline.weight).toFixed(1);
+      const days = Math.round(daysAgo(baseline.date) - daysAgo(last.date));
+      const w = userConfig.weight, h = userConfig.height, a = userConfig.age;
+      const bmr = userConfig.gender === "male" ? 10*w + 6.25*h - 5*a + 5 : 10*w + 6.25*h - 5*a - 161;
+      const mult = ({sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725})[userConfig.activity] || 1.375;
+      const tdee = Math.round(bmr * mult);
+      const last14 = macroHist.filter(d => inLast(d.date, 14));
+      if (last14.length >= 5 && tdee > 0) {
+        const cals = last14.map(d => {
+          let c = 0;
+          (d.meals || []).forEach(m => c += ((+m.protein || 0) * 4 + (+m.carbs || 0) * 4 + (+m.fat || 0) * 9));
+          if (d.whey !== false && whey?.enabled) c += (whey.protein * 4 + whey.carbs * 4 + whey.fat * 9);
+          return c;
+        });
+        const avgCal = Math.round(cals.reduce((a,b) => a+b, 0) / cals.length);
+        const deficit = tdee - avgCal;
+        const deficitPct = Math.round(deficit / tdee * 100);
+        if (Math.abs(wDelta) <= 0.4 && deficit > 0 && deficitPct >= 10) {
+          const drop = Math.round(150 / 4);
+          out.push({
+            id: "plateau",
+            icon: "warn",
+            title: "Plateau detected",
+            body: `Weight unchanged (±${Math.abs(wDelta)}kg over ${days} days) despite ~${deficit} kcal/day deficit. Body's adapting — drop carbs by ~${drop}g/day, or add a single refeed day this week to break it.`,
+            color: "var(--c-warn)",
+            severity: 1,
+          });
+        }
+      }
+    }
+  }
+
+  /* 10. Side effect pattern */
   if (pepHist && pepHist.length >= 5) {
     const fxCount = {};
     pepHist.filter(d => inLast(d.date, 14)).forEach(d => {
@@ -413,11 +490,45 @@ const STYLE=`@import url('${FONT_URL}');
   --c-danger: oklch(0.68 0.20 25);
   --c-success: oklch(0.76 0.18 158);
   --c-streak: oklch(0.78 0.18 55);
+  --nav-bg: oklch(0.16 0.014 285 / 0.78);
+  --tip-bg: oklch(0.18 0.018 285 / 0.96);
   --r-xs: 8px; --r-sm: 12px; --r-md: 16px; --r-lg: 20px; --r-xl: 28px;
   --shadow-1: 0 1px 0 oklch(1 0 0 / 0.04) inset, 0 8px 24px oklch(0.05 0.01 285 / 0.40);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+}
+:root[data-theme="light"]{
+  --bg: oklch(0.97 0.004 285);
+  --bg-rad-1: oklch(0.95 0.03 295);
+  --bg-rad-2: oklch(0.96 0.025 30);
+  --elev-1: oklch(0.995 0.002 285);
+  --elev-2: oklch(0.94 0.006 285);
+  --elev-3: oklch(0.90 0.008 285);
+  --line: oklch(0.55 0.012 285 / 0.22);
+  --line-soft: oklch(0.55 0.012 285 / 0.10);
+  --t-1: oklch(0.18 0.014 285);
+  --t-2: oklch(0.34 0.016 285);
+  --t-3: oklch(0.48 0.018 285);
+  --t-4: oklch(0.62 0.016 285);
+  --t-5: oklch(0.75 0.012 285);
+  --accent: oklch(0.52 0.16 158);
+  --accent-soft: oklch(0.52 0.16 158 / 0.10);
+  --accent-line: oklch(0.52 0.16 158 / 0.32);
+  --c-protein: oklch(0.55 0.20 25);
+  --c-fat: oklch(0.62 0.16 80);
+  --c-carbs: oklch(0.52 0.16 215);
+  --c-cal: oklch(0.52 0.19 295);
+  --c-muscle: oklch(0.52 0.18 150);
+  --c-bodyfat: oklch(0.54 0.20 10);
+  --c-weight: oklch(0.52 0.18 295);
+  --c-warn: oklch(0.55 0.16 65);
+  --c-danger: oklch(0.55 0.22 25);
+  --c-success: oklch(0.52 0.18 158);
+  --c-streak: oklch(0.58 0.19 55);
+  --nav-bg: oklch(0.995 0.002 285 / 0.82);
+  --tip-bg: oklch(0.995 0.002 285 / 0.96);
+  --shadow-1: 0 1px 2px oklch(0.20 0 0 / 0.06), 0 8px 24px oklch(0.20 0 0 / 0.08);
 }
 @keyframes riseIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -439,7 +550,7 @@ input[type=number]{-moz-appearance:textfield}
 .tabular{font-variant-numeric:tabular-nums}
 ::selection{background:var(--accent-soft);color:var(--t-1)}
 .bcq-app{min-height:100vh;background:radial-gradient(120% 60% at 50% -10%,var(--bg-rad-1) 0%,transparent 55%),radial-gradient(80% 40% at 80% 0%,var(--bg-rad-2) 0%,transparent 60%),var(--bg);padding:18px 16px calc(96px + env(safe-area-inset-bottom,0px));max-width:520px;margin:0 auto;font-family:"Geist",sans-serif}
-.bcq-nav{position:fixed;bottom:0;left:0;right:0;z-index:99;background:oklch(0.16 0.014 285 / 0.78);backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);border-top:1px solid var(--line);padding:8px 0 calc(8px + env(safe-area-inset-bottom,0px));max-width:520px;margin:0 auto}
+.bcq-nav{position:fixed;bottom:0;left:0;right:0;z-index:99;background:var(--nav-bg);backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);border-top:1px solid var(--line);padding:8px 0 calc(8px + env(safe-area-inset-bottom,0px));max-width:520px;margin:0 auto}
 .bcq-input{width:100%;padding:12px 14px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--elev-2);color:var(--t-1);font-size:15px;font-family:"Geist",sans-serif;outline:none;transition:border-color .2s var(--ease-out),background .2s var(--ease-out)}
 .bcq-input:focus{border-color:var(--accent-line);background:var(--elev-3)}
 .bcq-input::placeholder{color:var(--t-4)}
@@ -451,7 +562,7 @@ button{font-family:inherit;color:inherit}
 `;
 
 /* ═══ SHARED UI ═══ */
-const Tip=({active,payload,label})=>!active||!payload?.length?null:(<div style={{background:"oklch(0.18 0.018 285 / 0.96)",backdropFilter:"blur(20px)",border:"1px solid var(--line)",borderRadius:14,padding:"10px 14px",fontSize:12,color:"var(--t-1)",boxShadow:"var(--shadow-1)"}}><div className="mono" style={{fontWeight:600,marginBottom:6,fontSize:11,color:"var(--t-2)",textTransform:"uppercase",letterSpacing:".08em"}}>{label}</div>{payload.map((p,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}><span style={{width:7,height:7,borderRadius:"50%",background:p.color,display:"inline-block"}}/><span style={{color:"var(--t-3)",fontSize:11}}>{p.name}</span><span className="mono" style={{fontWeight:600,color:p.color,marginLeft:"auto",fontSize:12}}>{p.value}</span></div>))}</div>);
+const Tip=({active,payload,label})=>!active||!payload?.length?null:(<div style={{background:"var(--tip-bg)",backdropFilter:"blur(20px)",border:"1px solid var(--line)",borderRadius:14,padding:"10px 14px",fontSize:12,color:"var(--t-1)",boxShadow:"var(--shadow-1)"}}><div className="mono" style={{fontWeight:600,marginBottom:6,fontSize:11,color:"var(--t-2)",textTransform:"uppercase",letterSpacing:".08em"}}>{label}</div>{payload.map((p,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}><span style={{width:7,height:7,borderRadius:"50%",background:p.color,display:"inline-block"}}/><span style={{color:"var(--t-3)",fontSize:11}}>{p.name}</span><span className="mono" style={{fontWeight:600,color:p.color,marginLeft:"auto",fontSize:12}}>{p.value}</span></div>))}</div>);
 
 const Card=({title,value,unit,sub,color,icon,delay=0})=>(
   <div className="rise" style={{animationDelay:`${delay}s`,background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"16px 16px 14px",flex:"1 1 calc(50% - 6px)",minWidth:0,position:"relative",overflow:"hidden"}}>
@@ -686,7 +797,7 @@ class ErrorBoundary extends Component {
 }
 
 /* ═══ SETTINGS SHEET — editable profile, goals, macros, whey, peptides ═══ */
-function Settings({db,userId,userConfig,defaultProfile,onClose,onSave}){
+function Settings({db,userId,userConfig,defaultProfile,onClose,onSave,notifEnabled,notifPerm,requestNotifPermission,disableNotifs,exportData,exporting}){
   // Initialize form state from existing userConfig, falling back to PROFILES defaults
   const init = {
     name: userConfig?.name || defaultProfile?.name || "",
@@ -821,6 +932,31 @@ function Settings({db,userId,userConfig,defaultProfile,onClose,onSave}){
           <button onClick={save} disabled={saving} className="touch" style={{flex:2,padding:"14px",borderRadius:"var(--r-md)",border:"none",background:"var(--t-1)",color:"var(--bg)",fontSize:14,fontWeight:600,cursor:saving?"default":"pointer",opacity:saving?0.6:1}}>{saving?"Saving…":"Save changes"}</button>
         </div>
 
+        {/* Preferences */}
+        <div className="rise" style={{animationDelay:".36s",marginTop:28,...section}}>
+          <h2 className="serif" style={{fontSize:20,margin:"0 0 4px",fontStyle:"italic",color:"var(--t-1)",fontWeight:400,letterSpacing:"-0.015em"}}>Preferences</h2>
+          <p style={{fontSize:11.5,color:"var(--t-3)",margin:"0 0 16px"}}>Notifications and data tools.</p>
+
+          {/* Notifications row */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,paddingBottom:14,borderBottom:"1px solid var(--line-soft)",marginBottom:14}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13.5,fontWeight:600,color:"var(--t-1)"}}>Peptide reminders</div>
+              <div style={{fontSize:11.5,color:"var(--t-3)",marginTop:4,lineHeight:1.5}}>{notifPerm==="unsupported"?"Notifications aren't supported in this browser.":notifPerm==="denied"?"Blocked — enable in your browser/system settings to use this.":notifEnabled?"On. The app will alert you when a dose goes overdue (only while open).":"Off. Tap to enable."}</div>
+              <div style={{fontSize:11,color:"var(--t-4)",marginTop:6,fontStyle:"italic",lineHeight:1.4}}>iOS: install to home screen for the most reliable delivery (Share → Add to Home Screen).</div>
+            </div>
+            {notifPerm!=="unsupported"&&(<button onClick={notifEnabled?disableNotifs:requestNotifPermission} disabled={notifPerm==="denied"} className="touch" style={{padding:"10px 14px",borderRadius:"var(--r-sm)",border:notifEnabled?"1px solid var(--accent-line)":"1px solid var(--line-soft)",background:notifEnabled?"var(--accent-soft)":"var(--elev-2)",color:notifEnabled?"var(--accent)":notifPerm==="denied"?"var(--t-4)":"var(--t-2)",fontSize:12,fontWeight:600,cursor:notifPerm==="denied"?"default":"pointer",flexShrink:0}}>{notifEnabled?"On":notifPerm==="denied"?"Blocked":"Turn on"}</button>)}
+          </div>
+
+          {/* Export row */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13.5,fontWeight:600,color:"var(--t-1)"}}>Export your data</div>
+              <div style={{fontSize:11.5,color:"var(--t-3)",marginTop:4,lineHeight:1.5}}>Download every scan, meal, dose, Whoop entry, measurement, photo URL, and reconstitution batch as JSON. Yours to keep.</div>
+            </div>
+            <button onClick={exportData} disabled={exporting} className="touch" style={{padding:"10px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-2)",fontSize:12,fontWeight:600,cursor:exporting?"default":"pointer",flexShrink:0,opacity:exporting?0.6:1}}>{exporting?"…":"Export"}</button>
+          </div>
+        </div>
+
         {/* Danger zone */}
         <div className="rise" style={{animationDelay:".40s",marginTop:32,padding:"16px 18px",border:"1px dashed var(--line-soft)",borderRadius:"var(--r-md)"}}>
           <div style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:6}}>Reset</div>
@@ -852,6 +988,7 @@ function DashboardInner(){
 
   const [dark,setDark]=useState(true);
   useEffect(()=>{(async()=>{const t=await db.getConfig("theme");if(t==="light")setDark(false);})();},[db]);
+  useEffect(()=>{document.documentElement.setAttribute("data-theme",dark?"dark":"light");},[dark]);
   const toggleTheme=()=>{const next=!dark;setDark(next);db.setConfig("theme",next?"dark":"light");};
 
   const [userScans,setUserScans]=useState([]);const [scansLoaded,setScansLoaded]=useState(false);
@@ -952,6 +1089,59 @@ function DashboardInner(){
   const notDue=userPeps.filter(p=>!duePeptides.includes(p));
   const checkedCount=duePeptides.filter(p=>pepData.checks[p.id]).length;
 
+  /* ═══ NOTIFICATIONS — foreground reminders for overdue peptides ═══ */
+  const [notifEnabled,setNotifEnabled]=useState(false);
+  const [notifPerm,setNotifPerm]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
+  useEffect(()=>{(async()=>{const n=await db.getConfig("notifEnabled");if(n===true||n==="true")setNotifEnabled(true);})();},[db]);
+  const requestNotifPermission=useCallback(async()=>{if(typeof Notification==="undefined"){showToast("This browser doesn't support notifications","error");return;}try{const result=await Notification.requestPermission();setNotifPerm(result);if(result==="granted"){setNotifEnabled(true);db.setConfig("notifEnabled",true);showToast("Notifications enabled","success");}else{showToast("Notifications blocked — enable in browser settings","error");}}catch{showToast("Couldn't request permission","error");}},[db,showToast]);
+  const disableNotifs=useCallback(()=>{setNotifEnabled(false);db.setConfig("notifEnabled",false);showToast("Notifications off","success");},[db,showToast]);
+  /* Poll every 2 minutes for overdue peptides; fire one notif per peptide per day. */
+  useEffect(()=>{
+    if(!notifEnabled||notifPerm!=="granted")return;
+    const firedKey=`bcq-fired-${userId}-${todayKey()}`;
+    const check=()=>{
+      if(document.visibilityState!=="visible")return;
+      let fired=[];try{fired=JSON.parse(sessionStorage.getItem(firedKey)||"[]");}catch{}
+      duePeptides.forEach(p=>{
+        const checked=!!pepData.checks[p.id];
+        const ds=dueState(p,checked);
+        if(ds?.overdue&&!fired.includes(p.id)){
+          try{new Notification(`${p.name} — overdue`,{body:`${p.dose} · ${ds.label}`,icon:"/icon-192.png",tag:`bcq-${p.id}`});}catch{}
+          fired.push(p.id);
+          sessionStorage.setItem(firedKey,JSON.stringify(fired));
+        }
+      });
+    };
+    check();
+    const id=setInterval(check,120000);
+    const onVis=()=>{if(document.visibilityState==="visible")check();};
+    document.addEventListener("visibilitychange",onVis);
+    return()=>{clearInterval(id);document.removeEventListener("visibilitychange",onVis);};
+  },[notifEnabled,notifPerm,duePeptides,pepData.checks,userId]);
+
+  /* ═══ DATA EXPORT — full Supabase dump as JSON download ═══ */
+  const [exporting,setExporting]=useState(false);
+  const exportData=useCallback(async()=>{
+    setExporting(true);
+    try{
+      const tables=["inbody_scans","daily_macros","daily_peptides","daily_whoop","body_measurements","progress_photos"];
+      const result={user:userId,exported_at:new Date().toISOString(),tables:{}};
+      for(const t of tables){const rows=await db.list(t,5000);result.tables[t]=rows||[];}
+      const bRes=await fetch(`${SB}/peptide_batches?user_id=eq.${userId}&select=*&order=date_recon.desc&limit=5000`,{headers:hdr}).then(r=>r.ok?r.json():[]).catch(()=>[]);
+      result.tables.peptide_batches=bRes||[];
+      const cfgRows=await fetch(`${SB}/config?user_id=eq.${userId}&select=*`,{headers:hdr}).then(r=>r.ok?r.json():[]).catch(()=>[]);
+      result.config=cfgRows||[];
+      const blob=new Blob([JSON.stringify(result,null,2)],{type:"application/json"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;a.download=`bodycomp-hq-${userId}-${todayKey()}.json`;
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+      showToast("Data exported","success");
+    }catch{showToast("Export failed","error");}
+    setExporting(false);
+  },[userId,db,showToast]);
+
   /* ═══ INSIGHTS DATA — loaded when Body tab opens ═══ */
   const [insightsData,setInsightsData]=useState({pepHist:[],macroHist:[],whoopHist:[],meas:[]});
   const [insightsLoaded,setInsightsLoaded]=useState(false);
@@ -1027,7 +1217,7 @@ function DashboardInner(){
   if(!onboarded)return <Onboarding db={db} onComplete={handleOnboardComplete}/>;
 
   return(
-    <div className="bcq-app" style={{filter:dark?"none":"invert(0.94) hue-rotate(180deg)"}}>
+    <div className="bcq-app">
       <style>{STYLE}</style>
 
       {/* ═══ HEADER ═══ */}
@@ -1074,7 +1264,7 @@ function DashboardInner(){
           ))}
         </div>
       </div></>)}
-      {showSettings&&<Settings db={db} userId={userId} userConfig={userConfig} defaultProfile={defaultProfile} onClose={()=>setShowSettings(false)} onSave={(cfg)=>{setUserConfig(cfg);setShowSettings(false);}}/>}
+      {showSettings&&<Settings db={db} userId={userId} userConfig={userConfig} defaultProfile={defaultProfile} onClose={()=>setShowSettings(false)} onSave={(cfg)=>{setUserConfig(cfg);setShowSettings(false);}} notifEnabled={notifEnabled} notifPerm={notifPerm} requestNotifPermission={requestNotifPermission} disableNotifs={disableNotifs} exportData={exportData} exporting={exporting}/>}
 
       {/* ═══ OVERVIEW (BODY) ═══ */}
       {tab==="overview"&&(<>
@@ -1352,14 +1542,14 @@ function DashboardInner(){
           {duePeptides.length>0&&<div className="hbar" style={{marginBottom:18}}><i style={{width:`${checkedCount/duePeptides.length*100}%`,background:checkedCount===duePeptides.length?"var(--c-success)":`linear-gradient(90deg, var(--accent), var(--c-streak))`}}/></div>}
 
           {/* Checklist */}
-          {duePeptides.map((p,i)=>{const check=pepData.checks[p.id];const checked=!!check;const time=check?.time||"";const dose=check?.dose||"";const isEditing=editingDose===p.id;const curBatch=currentBatchFor(p.id);const batchStat=curBatch?batchStatus(curBatch):null;return(
-            <div key={p.id} className="rise" style={{animationDelay:`${i*0.04}s`,background:"var(--elev-1)",borderLeft:`3px solid ${checked?"var(--c-success)":p.color}`,borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:8,opacity:checked?0.78:1,transition:"opacity .25s var(--ease-out)"}}>
+          {duePeptides.map((p,i)=>{const check=pepData.checks[p.id];const checked=!!check;const time=check?.time||"";const dose=check?.dose||"";const isEditing=editingDose===p.id;const curBatch=currentBatchFor(p.id);const batchStat=curBatch?batchStatus(curBatch):null;const ds=dueState(p,checked);const pillColor=ds?ds.color:p.color;const pillLabel=ds?ds.label:p.time;return(
+            <div key={p.id} className={`rise${ds?.urgent?" ring-pulse":""}`} style={{animationDelay:`${i*0.04}s`,background:"var(--elev-1)",borderLeft:`3px solid ${checked?"var(--c-success)":ds?.overdue?ds.color:p.color}`,borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:8,opacity:checked?0.78:1,transition:"opacity .25s var(--ease-out)"}}>
               <div style={{display:"flex",alignItems:"center",gap:12}}>
                 <button onClick={()=>togglePep(p.id,p.dose)} className="touch" style={{width:28,height:28,borderRadius:8,border:`1.5px solid ${checked?"var(--c-success)":p.color}`,background:checked?"var(--c-success)":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer",padding:0,transition:"all .2s var(--ease-out)"}}>{checked&&<Icon n="check" s={16} c="var(--bg)" sw={2.5}/>}</button>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
                     <span style={{fontSize:14,fontWeight:600,color:checked?"var(--t-3)":"var(--t-1)",textDecoration:checked?"line-through":"none"}}>{p.name}</span>
-                    <span className="mono" style={{fontSize:9.5,color:p.color,background:`color-mix(in oklch, ${p.color} 14%, transparent)`,padding:"2px 8px",borderRadius:999,letterSpacing:".04em",fontWeight:600,flexShrink:0}}>{p.time}</span>
+                    <span className="mono" style={{fontSize:9.5,color:pillColor,background:`color-mix(in oklch, ${pillColor} 14%, transparent)`,padding:"2px 8px",borderRadius:999,letterSpacing:".04em",fontWeight:600,flexShrink:0}}>{pillLabel}</span>
                   </div>
                   <div className="mono" style={{fontSize:11.5,color:"var(--t-3)",marginTop:3,letterSpacing:".01em"}}>
                     {checked?(<span>✓ {time}{dose?` · ${dose}`:` · ${p.dose}`}</span>):p.dose}

@@ -158,6 +158,215 @@ const reorderOptionsFor = pepId => {
   };
 };
 
+/* ═══ PEPTIDE RECONSTITUTION PROTOCOLS ═══
+   Sourced from PeptideGuidesPH (peptideguidesph.github.io) + clinical literature.
+   Each peptide has one or more "options" — recommended one pre-fills the batch form.
+   stabilityDays is the reconstituted-product stability window (vs user-set expiry).
+   Peptides with shorter stability windows (TA-1: 7d, MOTS-c: 14d) get amber warnings
+   when a batch is used past that window, regardless of user-set expiry. */
+const RECONSTITUTION = {
+  reta: {
+    label: "Retatrutide",
+    options: [
+      {vial:5,  bac:2, conc:2.5,  note:"Forgiving for small doses · 250µg = 10u", recommended:false},
+      {vial:10, bac:2, conc:5,    note:"Standard · 2.5mg = 50u",                  recommended:false},
+      {vial:10, bac:1, conc:10,   note:"Compact · 2.5mg = 25u",                   recommended:false},
+      {vial:30, bac:3, conc:10,   note:"Cost-efficient reorder · 2.5mg = 25u, 4mg = 40u", recommended:true},
+    ],
+    stabilityDays: 28,
+    technique: [
+      "Allow vial and BAC water to reach room temperature (15–20 min)",
+      "Clean vial top with alcohol swab and let air-dry",
+      "Inject BAC water slowly down the vial wall to minimize foaming",
+      "Gently swirl in circular motions — DO NOT shake vigorously",
+      "Allow to fully dissolve (2–3 min); solution must be clear and colorless",
+    ],
+    storage: "Refrigerated 2–8°C, rotate injection sites weekly",
+    sources: ["PeptideGuidesPH /peptides/retatrutide/", "Phase 3 TRIUMPH trial protocol"],
+  },
+  klow: {
+    label: "KLOW (4-peptide blend)",
+    options: [
+      {vial:80, bac:4,  conc:20,    note:"PG conservative · 200–500mcg total = 1–2.5u", recommended:false},
+      {vial:80, bac:3,  conc:26.7,  note:"Your reconstitution · 40u = ~10.7mg total",   recommended:true},
+      {vial:80, bac:5,  conc:16,    note:"More dilute · 40u = ~6.4mg",                  recommended:false},
+    ],
+    stabilityDays: 42,
+    stabilityWarning: "PG conservative protocol uses 200–500mcg total per dose. Your 40u = ~10.7mg is substantially higher — community practice varies widely for this blend.",
+    technique: [
+      "Verify vial contents and individual peptide amounts before mixing",
+      "Allow vial and BAC water to reach room temperature",
+      "Inject BAC slowly down vial wall — avoid foaming",
+      "Gently swirl until dissolved — do not shake",
+      "Solution should be clear to slightly cloudy (acceptable for this blend)",
+      "Label with reconstitution date and concentration",
+    ],
+    storage: "Refrigerated 2–8°C immediately after reconstitution",
+    sources: ["PeptideGuidesPH /peptides/klow/"],
+  },
+  nad: {
+    label: "NAD+",
+    options: [
+      {vial:500, bac:2,   conc:250, note:"Concentrated · 50mg = 20u",      recommended:false},
+      {vial:500, bac:3,   conc:167, note:"Your reconstitution · 50mg = 30u", recommended:true},
+      {vial:500, bac:2.5, conc:200, note:"Standard · 50mg = 25u",            recommended:false},
+      {vial:1000,bac:5,   conc:200, note:"Larger vial · 50mg = 25u",         recommended:false},
+    ],
+    stabilityDays: 28,
+    technique: [
+      "Wipe both vial tops with alcohol swabs",
+      "Draw BAC water (typically 2–3 mL for a 500mg vial)",
+      "Inject water slowly, aiming at the glass wall",
+      "Gently swirl until completely dissolved — may take 2–3 minutes",
+      "Draw the prescribed dose using a fresh needle",
+    ],
+    storage: "Refrigerated 2–8°C, protect from light",
+    sources: ["PeptideGuidesPH /peptides/nad/"],
+  },
+  ta1: {
+    label: "Thymosin Alpha-1",
+    options: [
+      {vial:10, bac:1, conc:10,  note:"Your reconstitution · 1.5mg = 15u", recommended:true},
+      {vial:10, bac:2, conc:5,   note:"More forgiving · 1.5mg = 30u",      recommended:false},
+      {vial:5,  bac:1, conc:5,   note:"Smaller vial · 1.5mg = 30u",        recommended:false},
+      {vial:5,  bac:2, conc:2.5, note:"Most forgiving · 1.5mg = 60u",      recommended:false},
+    ],
+    stabilityDays: 7,
+    stabilityWarning: "TA-1 has a much shorter stability window than most peptides — 7 days vs the typical 28. Mix smaller batches more frequently.",
+    technique: [
+      "Allow vial to reach room temperature before opening (reduces condensation)",
+      "Inject BAC water slowly down the vial wall — avoid foaming",
+      "Gently swirl or roll until fully dissolved — DO NOT shake",
+      "Inspect solution before each use — discard if cloudy or discolored",
+    ],
+    storage: "Refrigerated 2–8°C, protect from light, avoid freeze-thaw",
+    sources: ["Multiple peptide dosing protocols (PG has no dedicated TA-1 page)"],
+  },
+  amino: {
+    label: "5-Amino-1MQ",
+    options: [
+      {vial:100, bac:2,  conc:50, note:"Standard mg-protocol · 2.5mg = 5u",  recommended:false},
+      {vial:100, bac:4,  conc:25, note:"More dilute · 2.5mg = 10u",          recommended:false},
+      {vial:100, bac:10, conc:10, note:"Your reconstitution · 2.5mg = 25u",  recommended:true},
+      {vial:10,  bac:1,  conc:10, note:"mcg-protocol vial",                  recommended:false},
+    ],
+    stabilityDays: 28,
+    technique: [
+      "Confirm whether you're following a mcg or mg protocol (1,000× difference!)",
+      "Wipe vial stopper and add BAC water slowly down the vial wall",
+      "Gently swirl until fully dissolved — do not shake",
+      "Label the vial with concentration and units (mg/mL)",
+    ],
+    storage: "Refrigerated 2–8°C",
+    sources: ["PeptideGuidesPH /peptides/5-amino-1mq/"],
+  },
+  snap8: {
+    label: "SNAP-8 (topical)",
+    topical: true,
+    options: [
+      {note:"3–5% concentration in serum base for daily preventive use", recommended:true},
+      {note:"5–10% for intensive wrinkle treatment",                     recommended:false},
+    ],
+    stabilityDays: null,
+    technique: [
+      "If powder: dissolve in distilled water OR add to serum base at 3–10% concentration",
+      "Apply to clean, dry skin BEFORE heavier products",
+      "Pea-sized amount to target areas (forehead, eyes, brow)",
+      "Gently pat into skin — avoid rubbing (reduces efficacy)",
+      "Allow 2–3 minutes for absorption before layering moisturizer/sunscreen",
+    ],
+    storage: "4–25°C, refrigerate the solution",
+    sources: ["PeptideGuidesPH /peptides/snap-8/"],
+  },
+  cjcipa: {
+    label: "CJC-1295 + Ipamorelin",
+    options: [
+      {vial:10, bac:2, conc:5,   note:"Blended vial · 100mcg each = 2u, 200mcg = 4u, 300mcg = 6u", recommended:true},
+      {vial:5,  bac:2, conc:2.5, note:"Single peptide vial · 200mcg = 8u",                          recommended:false},
+    ],
+    stabilityDays: 28,
+    technique: [
+      "Blended vial: 2 mL BAC → 1 mg/mL of each peptide",
+      "Inject 2–3 hours after last meal and 30–60 min before bed",
+      "Rotate subcutaneous sites (abdomen, thigh, upper arm)",
+    ],
+    storage: "Refrigerated 2–8°C",
+    sources: ["PeptideGuidesPH /peptides/cjc-ipa-protocol/"],
+  },
+  semax: {
+    label: "Semax + Selank (nasal sprays)",
+    preformulated: true,
+    options: [
+      {note:"Pre-formulated nasal spray · NO reconstitution required", recommended:true},
+    ],
+    stabilityDays: null,
+    technique: [
+      "Shake bottle gently before each use",
+      "Tilt head slightly back, spray into nostril, breathe in gently",
+      "Avoid blowing nose for 5 minutes after spraying",
+      "Alternate nostrils between doses",
+    ],
+    storage: "Refrigerated, use within label-stated period after opening",
+    sources: ["PeptideGuidesPH /peptides/semax/", "PeptideGuidesPH /peptides/selank-nasal/"],
+  },
+  motsc: {
+    label: "MOTS-c",
+    options: [
+      {vial:10, bac:1, conc:10, note:"Your reconstitution · 1.5mg = 15u", recommended:true},
+      {vial:10, bac:2, conc:5,  note:"More forgiving · 1.5mg = 30u",      recommended:false},
+      {vial:5,  bac:1, conc:5,  note:"Smaller vial · 1.5mg = 30u",        recommended:false},
+    ],
+    stabilityDays: 14,
+    stabilityWarning: "MOTS-c has a shorter stability window than most peptides — 14 days vs the typical 28. Mix smaller batches more frequently.",
+    technique: [
+      "Allow lyophilized vial to reach room temperature (~15–20 min)",
+      "Inject BAC water slowly down the vial side — NOT directly onto the powder",
+      "Gently swirl until dissolved — do not shake vigorously",
+    ],
+    storage: "Lyophilized: room temp short-term or freezer long-term. Reconstituted: 2–8°C",
+    sources: ["PeptideGuidesPH /peptides/mots-c/"],
+  },
+  glow: {
+    label: "GLOW (3-peptide blend)",
+    options: [
+      {vial:70, bac:3, conc:23.3, note:"Your reconstitution · 30u = ~7mg total", recommended:true},
+      {vial:70, bac:4, conc:17.5, note:"More dilute · 30u = ~5.25mg",            recommended:false},
+    ],
+    stabilityDays: 28,
+    technique: [
+      "Verify vial contents and individual peptide amounts before mixing",
+      "Allow vial and BAC water to reach room temperature",
+      "Inject BAC slowly down the vial wall to avoid foaming",
+      "Gently swirl until fully dissolved — do not shake",
+      "Label vial with reconstitution date, total volume, and individual concentrations",
+    ],
+    storage: "Refrigerated 2–8°C",
+    sources: ["PeptideGuidesPH /peptides/glow/"],
+  },
+};
+
+/* Helper: get recommended reconstitution option for a peptide */
+const recommendedReconFor = pepId => {
+  const r = RECONSTITUTION[pepId];
+  if (!r) return null;
+  return r.options.find(o => o.recommended) || r.options[0] || null;
+};
+
+/* Helper: days since a batch was reconstituted (used for stability warnings) */
+const daysSinceRecon = batch => {
+  if (!batch?.date_recon) return 0;
+  return Math.round((new Date() - new Date(batch.date_recon + "T12:00:00")) / 86400000);
+};
+
+/* Helper: true if a batch is being used beyond its peptide's PG-documented
+   stability window. Distinct from user-set expiry_date — this is the
+   evidence-based limit. */
+const isPastPGStability = batch => {
+  const recon = RECONSTITUTION[batch?.peptide_id];
+  if (!recon?.stabilityDays) return false;
+  return daysSinceRecon(batch) > recon.stabilityDays;
+};
+
 /* ═══ HELPERS ═══ */
 const enrich = d => {const fm=+(d.weight*d.fatPct/100).toFixed(1);return{...d,fatMass:fm,leanMass:+(d.weight-fm).toFixed(1),label:new Date(d.date).toLocaleDateString("en-US",{month:"short",day:"numeric"}),labelYr:new Date(d.date).toLocaleDateString("en-US",{month:"short",year:"2-digit"})};};
 
@@ -1191,6 +1400,8 @@ function DashboardInner(){
 
   /* ═══ REORDER SHEET — opens when user taps "Reorder" on a low-supply peptide ═══ */
   const [reorderModal,setReorderModal]=useState(null);
+  /* ═══ RECONSTITUTION GUIDE — opens when user taps "Recon" on a peptide card ═══ */
+  const [reconGuide,setReconGuide]=useState(null);
 
   /* ═══ NOTIFICATIONS — foreground reminders for overdue peptides ═══ */
   const [notifEnabled,setNotifEnabled]=useState(false);
@@ -1663,6 +1874,7 @@ function DashboardInner(){
                   {curBatch&&<div className="mono" style={{fontSize:10.5,color:batchStat.color,marginTop:4,letterSpacing:".01em",display:"inline-flex",alignItems:"center",gap:5}}>
                     <Icon n="vial" s={11} c={batchStat.color} sw={1.6}/> {concentration(curBatch)}mg/mL · {batchStat.label}{curBatch.storage?` · ${curBatch.storage}`:""}
                   </div>}
+                  {curBatch&&isPastPGStability(curBatch)&&(()=>{const r=RECONSTITUTION[p.id];return(<div className="mono" style={{fontSize:9.5,color:"var(--c-warn)",marginTop:3,letterSpacing:".02em"}}>⚠ Batch past PG's {r.stabilityDays}-day stability window</div>);})()}
                   <div style={{fontSize:11,color:"var(--t-4)",marginTop:5,lineHeight:1.45,fontStyle:"italic"}}>{p.purpose}</div>
                 </div>
               </div>
@@ -1788,6 +2000,7 @@ function DashboardInner(){
               <div style={{fontSize:10.5,color:"var(--t-4)",marginTop:5,fontStyle:"italic"}}>{p.supplyNote}</div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:9}}>
                 {p.daysSupply<=21&&<button onClick={()=>setReorderModal(p)} className="touch" style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${supplyColor}`,background:`color-mix(in oklch, ${supplyColor} 12%, transparent)`,color:supplyColor,fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={11} c={supplyColor} sw={1.7}/> Reorder</button>}
+                {RECONSTITUTION[p.id]&&<button onClick={()=>setReconGuide(p)} className="touch" style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${p.color}`,background:`color-mix(in oklch, ${p.color} 10%, transparent)`,color:p.color,fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={11} c={p.color} sw={1.7}/> Recon guide</button>}
                 <a href={pgUrlFor(p.id)} target="_blank" rel="noopener noreferrer" className="touch" style={{padding:"6px 12px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5}}>📚 PG Guide →</a>
               </div>
             </div>);
@@ -1834,7 +2047,13 @@ function DashboardInner(){
             </div>
             <div style={{marginBottom:12}}>
               <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Peptide</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>{userPeps.map(p=>(<button key={p.id} onClick={()=>setNewBatch({...newBatch,peptide_id:p.id})} className="touch" style={{padding:"7px 11px",borderRadius:999,border:newBatch.peptide_id===p.id?`1px solid ${p.color}`:"1px solid var(--line-soft)",background:newBatch.peptide_id===p.id?`color-mix(in oklch, ${p.color} 14%, transparent)`:"var(--elev-2)",color:newBatch.peptide_id===p.id?p.color:"var(--t-3)",fontSize:11.5,fontWeight:500,cursor:"pointer"}}>{p.name}</button>))}</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>{userPeps.map(p=>(<button key={p.id} onClick={()=>{const rec=recommendedReconFor(p.id);const stab=RECONSTITUTION[p.id]?.stabilityDays;setNewBatch({...newBatch,peptide_id:p.id,mg_total:rec?.vial?String(rec.vial):newBatch.mg_total,ml_bac:rec?.bac?String(rec.bac):newBatch.ml_bac,expiry_date:stab?addDays(newBatch.date_recon,stab):newBatch.expiry_date});}} className="touch" style={{padding:"7px 11px",borderRadius:999,border:newBatch.peptide_id===p.id?`1px solid ${p.color}`:"1px solid var(--line-soft)",background:newBatch.peptide_id===p.id?`color-mix(in oklch, ${p.color} 14%, transparent)`:"var(--elev-2)",color:newBatch.peptide_id===p.id?p.color:"var(--t-3)",fontSize:11.5,fontWeight:500,cursor:"pointer"}}>{p.name}</button>))}</div>
+              {newBatch.peptide_id&&recommendedReconFor(newBatch.peptide_id)&&(()=>{const rec=recommendedReconFor(newBatch.peptide_id);const r=RECONSTITUTION[newBatch.peptide_id];const stab=r?.stabilityDays;return(<div style={{marginTop:10,padding:"10px 12px",background:"var(--accent-soft)",borderLeft:"3px solid var(--accent)",borderRadius:"var(--r-sm)",fontSize:11.5,color:"var(--t-2)",lineHeight:1.5}}>
+                <div className="mono" style={{fontSize:9.5,color:"var(--accent)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Recommended for {r.label}</div>
+                {rec.vial?<><strong>{rec.vial}mg vial + {rec.bac}mL BAC → {rec.conc}mg/mL.</strong> {rec.note}.</>:rec.note}
+                {stab&&<div style={{fontSize:10.5,color:"var(--t-3)",marginTop:4}}>Stability: {stab} day{stab!==1?"s":""} after reconstitution</div>}
+                <button type="button" onClick={()=>setReconGuide({id:newBatch.peptide_id,name:r.label})} style={{background:"none",border:"none",color:"var(--accent)",fontSize:11,fontWeight:600,cursor:"pointer",padding:"4px 0 0",textDecoration:"underline"}}>See full guide →</button>
+              </div>);})()}
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
               <div>
@@ -1894,6 +2113,9 @@ function DashboardInner(){
               </div>
               {b.storage&&<div style={{fontSize:11,color:"var(--t-3)",marginBottom:4}}>📍 {b.storage}</div>}
               {b.notes&&<div style={{fontSize:11,color:"var(--t-4)",fontStyle:"italic",marginBottom:4}}>{b.notes}</div>}
+              {!b.exhausted&&isPastPGStability(b)&&(()=>{const r=RECONSTITUTION[b.peptide_id];const days=daysSinceRecon(b);return(<div style={{marginTop:6,padding:"7px 10px",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",borderLeft:"2px solid var(--c-warn)",borderRadius:6,fontSize:10.5,color:"var(--c-warn)",lineHeight:1.45}}>
+                <strong>⚠ Past PG-documented stability.</strong> Reconstituted {days} days ago — recommended window for {r.label} is {r.stabilityDays} days. Consider mixing a fresh batch.
+              </div>);})()}
               <div style={{display:"flex",gap:10,marginTop:8,flexWrap:"wrap"}}>
                 <button onClick={()=>updateBatch(b,{exhausted:!b.exhausted})} className="touch" style={{fontSize:11,color:b.exhausted?"var(--accent)":"var(--t-3)",background:"none",border:"none",cursor:"pointer",padding:"4px 0",display:"inline-flex",alignItems:"center",gap:4}}>
                   <Icon n={b.exhausted?"plus":"check"} s={12}/> Mark {b.exhausted?"active":"exhausted"}
@@ -2233,6 +2455,66 @@ function DashboardInner(){
           );})}
         </div>
       </nav>
+
+      {/* Reconstitution guide sheet — full per-peptide protocol */}
+      {reconGuide&&(()=>{const r=RECONSTITUTION[reconGuide.id];if(!r)return null;const recommended=r.options.find(o=>o.recommended);const others=r.options.filter(o=>!o.recommended);return(
+        <div onClick={()=>setReconGuide(null)} style={{position:"fixed",inset:0,zIndex:148,background:"oklch(0.05 0 0 / 0.78)",backdropFilter:"blur(10px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"20px"}}>
+          <div onClick={e=>e.stopPropagation()} className="sheet" style={{background:"var(--bg)",border:"1px solid var(--line)",borderRadius:"var(--r-lg)",padding:18,maxWidth:480,width:"100%",maxHeight:"92vh",overflowY:"auto"}}>
+            <div style={{width:34,height:4,background:"var(--elev-3)",borderRadius:2,margin:"0 auto 14px"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+              <h3 className="serif" style={{fontSize:26,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>Reconstitution</h3>
+              <button onClick={()=>setReconGuide(null)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={18}/></button>
+            </div>
+            <div className="mono" style={{fontSize:11,color:"var(--t-3)",letterSpacing:".06em",textTransform:"uppercase",fontWeight:600,marginBottom:14}}>{r.label}</div>
+
+            {r.preformulated&&<div style={{padding:"12px 14px",background:"var(--accent-soft)",borderLeft:"3px solid var(--accent)",borderRadius:"var(--r-sm)",fontSize:13,color:"var(--t-2)",marginBottom:14,lineHeight:1.55}}>{r.options[0].note}</div>}
+            {r.topical&&<div style={{padding:"12px 14px",background:"color-mix(in oklch, var(--c-warn) 8%, transparent)",borderLeft:"3px solid var(--c-warn)",borderRadius:"var(--r-sm)",fontSize:12.5,color:"var(--t-2)",marginBottom:14,lineHeight:1.55}}>⚠️ Topical peptide — NOT injected. Follow the application protocol below.</div>}
+
+            {/* Recommended option */}
+            {recommended&&!r.preformulated&&(<div style={{background:"var(--accent-soft)",borderLeft:"3px solid var(--accent)",borderRadius:"var(--r-sm)",padding:"14px 16px",marginBottom:10}}>
+              <div className="mono" style={{fontSize:9.5,color:"var(--accent)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:700,marginBottom:6}}>Recommended</div>
+              {recommended.vial?(<><div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:6}}>
+                <span className="serif tabular" style={{fontSize:26,color:"var(--accent)",fontStyle:"italic",lineHeight:1}}>{recommended.conc}</span>
+                <span className="mono" style={{fontSize:11.5,color:"var(--t-3)"}}>mg/mL</span>
+              </div>
+              <div className="mono" style={{fontSize:11,color:"var(--t-2)",marginBottom:4}}>{recommended.vial}mg vial + {recommended.bac}mL BAC water</div></>):null}
+              <div style={{fontSize:12,color:"var(--t-3)",lineHeight:1.45}}>{recommended.note}</div>
+            </div>)}
+
+            {/* Other options */}
+            {others.length>0&&!r.preformulated&&(<>
+              <div className="mono" style={{fontSize:10,color:"var(--t-3)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:8,marginTop:14}}>Other options</div>
+              {others.map((o,i)=>(<div key={i} style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
+                {o.vial?(<><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8,marginBottom:3}}>
+                  <span className="mono" style={{fontSize:11,color:"var(--t-2)"}}>{o.vial}mg vial + {o.bac}mL BAC</span>
+                  <span className="serif tabular" style={{fontSize:16,color:"var(--t-2)",fontStyle:"italic"}}>{o.conc}<span className="mono" style={{fontSize:10,color:"var(--t-4)"}}> mg/mL</span></span>
+                </div></>):null}
+                <div style={{fontSize:11,color:"var(--t-4)",lineHeight:1.45}}>{o.note}</div>
+              </div>))}
+            </>)}
+
+            {/* Stability warning if peptide has a notable short window */}
+            {r.stabilityWarning&&<div style={{marginTop:14,padding:"10px 14px",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",borderLeft:"3px solid var(--c-warn)",borderRadius:"var(--r-sm)",fontSize:11.5,color:"var(--t-2)",lineHeight:1.5}}>⚠ {r.stabilityWarning}</div>}
+
+            {/* Technique */}
+            <div className="mono" style={{fontSize:10,color:"var(--t-3)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:8,marginTop:16}}>{r.topical?"Application":r.preformulated?"Usage":"Technique"}</div>
+            <ol style={{margin:0,paddingLeft:20,fontSize:12.5,color:"var(--t-2)",lineHeight:1.6}}>{r.technique.map((t,i)=>(<li key={i} style={{marginBottom:4}}>{t}</li>))}</ol>
+
+            {/* Storage + stability */}
+            <div style={{marginTop:14,padding:"10px 14px",background:"var(--elev-1)",borderRadius:"var(--r-sm)"}}>
+              <div className="mono" style={{fontSize:9.5,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:4}}>Storage</div>
+              <div style={{fontSize:12,color:"var(--t-2)",lineHeight:1.45,marginBottom:r.stabilityDays?6:0}}>{r.storage}</div>
+              {r.stabilityDays&&<>
+                <div className="mono" style={{fontSize:9.5,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:4,marginTop:8}}>Stability window</div>
+                <div style={{fontSize:12,color:"var(--t-2)",lineHeight:1.45}}>{r.stabilityDays} day{r.stabilityDays!==1?"s":""} after reconstitution</div>
+              </>}
+            </div>
+
+            {/* Sources */}
+            <div className="mono" style={{fontSize:9,color:"var(--t-5)",letterSpacing:".08em",marginTop:14,textAlign:"center"}}>Sources: {r.sources.join(" · ")}</div>
+          </div>
+        </div>
+      );})()}
 
       {/* Reorder sheet — best-price options for a low-supply peptide */}
       {reorderModal&&(()=>{const ro=reorderOptionsFor(reorderModal.id);return(

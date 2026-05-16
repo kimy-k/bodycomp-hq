@@ -14,16 +14,20 @@ const makeDb=(uid,onErr=()=>{})=>({
   async storageUpload(bucket,path,blob,contentType="image/jpeg"){try{const r=await fetch(`${SB.replace("/rest/v1","")}/storage/v1/object/${bucket}/${path}`,{method:"POST",headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,"Content-Type":contentType,"x-upsert":"true"},body:blob});if(!r.ok)throw new Error(`upload: ${r.status}`);return `${SB.replace("/rest/v1","")}/storage/v1/object/public/${bucket}/${path}`;}catch(e){onErr(`Upload failed`);return null;}},
   async storageDelete(bucket,path){try{const r=await fetch(`${SB.replace("/rest/v1","")}/storage/v1/object/${bucket}/${path}`,{method:"DELETE",headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`}});return r.ok;}catch{return false;}},
   /* ─── Household-shared methods — fetch per-user with filtered queries and merge.
-     We use only user_id-filtered queries (which we know the anon role can run) and
-     coordinate across all known users from PROFILES. This avoids any filter-less
-     SELECT permission gaps on the anon role / row-level policies. */
+     Failures log to console but never toast. The empty-batches UI is the right
+     degraded experience; alarming the user provides no actionable info. To debug:
+     open browser devtools → Console for full status code + response body. */
   async listShared(table,limit=100,orderCol="date_recon"){
     const users=Object.keys(PROFILES);
-    const results=await Promise.all(users.map(u=>
-      fetch(`${SB}/${table}?user_id=eq.${u}&select=*&order=${orderCol}.desc&limit=${limit}`,{headers:hdr})
-        .then(r=>r.ok?r.json():null).catch(()=>null)
-    ));
-    if(results.every(r=>r===null)){onErr(`Couldn't load shared ${table}`);return[];}
+    const debug=[];
+    const results=await Promise.all(users.map(async u=>{
+      try{
+        const r=await fetch(`${SB}/${table}?user_id=eq.${u}&select=*&order=${orderCol}.desc&limit=${limit}`,{headers:hdr});
+        if(!r.ok){const body=await r.text().catch(()=>"");debug.push(`${u}: HTTP ${r.status} ${body.slice(0,200)}`);return null;}
+        return await r.json();
+      }catch(e){debug.push(`${u}: ${e.message}`);return null;}
+    }));
+    if(results.every(r=>r===null)){console.warn(`[BCQ] listShared ${table} — all queries failed:`,debug);return[];}
     const merged=results.filter(r=>Array.isArray(r)).flat();
     const seen=new Set();
     return merged
@@ -32,17 +36,20 @@ const makeDb=(uid,onErr=()=>{})=>({
       .slice(0,limit);
   },
   async delByIdShared(table,id,ownerId){
-    /* ownerId = the user_id stored on the row (audit trail of who created it).
-       Required because we delete via filtered query — works regardless of RLS state. */
-    if(!ownerId){onErr(`Couldn't delete (missing owner)`);return false;}
-    try{const r=await fetch(`${SB}/${table}?user_id=eq.${ownerId}&id=eq.${id}`,{method:"DELETE",headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return true;}catch(e){onErr(`Couldn't delete`);return false;}
+    if(!ownerId){console.warn(`[BCQ] delByIdShared ${table} — missing ownerId`);return false;}
+    try{const r=await fetch(`${SB}/${table}?user_id=eq.${ownerId}&id=eq.${id}`,{method:"DELETE",headers:hdr});if(!r.ok){const body=await r.text().catch(()=>"");console.warn(`[BCQ] delByIdShared ${table}: HTTP ${r.status}`,body);throw new Error(`${table}: ${r.status}`);}return true;}catch(e){onErr(`Couldn't delete`);return false;}
   },
   async listSharedSince(table,sinceDate,orderCol="date"){
     const users=Object.keys(PROFILES);
-    const results=await Promise.all(users.map(u=>
-      fetch(`${SB}/${table}?user_id=eq.${u}&${orderCol}=gte.${sinceDate}&select=*&order=${orderCol}.desc&limit=500`,{headers:hdr})
-        .then(r=>r.ok?r.json():null).catch(()=>null)
-    ));
+    const debug=[];
+    const results=await Promise.all(users.map(async u=>{
+      try{
+        const r=await fetch(`${SB}/${table}?user_id=eq.${u}&${orderCol}=gte.${sinceDate}&select=*&order=${orderCol}.desc&limit=500`,{headers:hdr});
+        if(!r.ok){debug.push(`${u}: HTTP ${r.status}`);return null;}
+        return await r.json();
+      }catch(e){debug.push(`${u}: ${e.message}`);return null;}
+    }));
+    if(results.every(r=>r===null))console.warn(`[BCQ] listSharedSince ${table}:`,debug);
     return results.filter(r=>Array.isArray(r)).flat();
   },
   async getConfig(key){try{const r=await fetch(`${SB}/config?user_id=eq.${uid}&key=eq.${key}&select=*`,{headers:hdr});if(!r.ok)throw new Error(`config: ${r.status}`);const d=await r.json();return d[0]?.value||null;}catch(e){return null;}},
@@ -1476,12 +1483,17 @@ function DashboardInner(){
   })();},[tab]);
 
   const todayDow=new Date().getDay();
+  /* userConfig.peptide_overrides holds per-peptide field overrides (dose, schedule,
+     time, status, startDate, totalWeeks, note). Merging here means every downstream
+     consumer of userPeps (Today checklist, Stack tab, supply alerts, inventory math)
+     automatically picks up edits without any further refactor. */
+  const peptideOverrides=userConfig?.peptide_overrides||{};
   const userPeps=PEPTIDES.filter(p=>{
     if(p.users&&!p.users.includes(userId))return false;
     const userPepIds=userConfig?.peptides;
     if(Array.isArray(userPepIds)&&userPepIds.length>0)return userPepIds.includes(p.id);
     return true;
-  });
+  }).map(p=>{const o=peptideOverrides[p.id];return o?{...p,...o}:p;});
   const duePeptides=userPeps.filter(p=>(p.status==="active"||p.status==="prn")&&p.schedule.includes(todayDow));
   const notDue=userPeps.filter(p=>!duePeptides.includes(p));
   const checkedCount=duePeptides.filter(p=>pepData.checks[p.id]).length;
@@ -1490,6 +1502,19 @@ function DashboardInner(){
   const [reorderModal,setReorderModal]=useState(null);
   /* ═══ RECONSTITUTION GUIDE — opens when user taps "Recon" on a peptide card ═══ */
   const [reconGuide,setReconGuide]=useState(null);
+  /* ═══ EDIT PEPTIDE SHEET — opens when user taps the edit icon on a Stack card ═══ */
+  const [editPepModal,setEditPepModal]=useState(null);
+  const savePepOverride=useCallback(async(pepId,patch)=>{
+    const next={...(userConfig?.peptide_overrides||{}),[pepId]:{...((userConfig?.peptide_overrides||{})[pepId]||{}),...patch}};
+    const ok=await db.setConfig("peptide_overrides",next);
+    if(ok){setUserConfig(c=>({...(c||{}),peptide_overrides:next}));showToast("Peptide updated","success");setEditPepModal(null);}else{showToast("Couldn't save changes","error");}
+  },[db,userConfig,showToast]);
+  const resetPepOverride=useCallback(async(pepId)=>{
+    if(!window.confirm("Reset this peptide back to its built-in defaults? Your edits will be lost."))return;
+    const next={...(userConfig?.peptide_overrides||{})};delete next[pepId];
+    const ok=await db.setConfig("peptide_overrides",next);
+    if(ok){setUserConfig(c=>({...(c||{}),peptide_overrides:next}));showToast("Reset to defaults","success");setEditPepModal(null);}
+  },[db,userConfig,showToast]);
 
   /* ═══ NOTIFICATIONS — foreground reminders for overdue peptides ═══ */
   const [notifEnabled,setNotifEnabled]=useState(false);
@@ -2112,9 +2137,10 @@ function DashboardInner(){
             return(<div key={p.id} className="rise" style={{animationDelay:`${i*0.04}s`,background:"var(--elev-1)",borderLeft:`3px solid ${p.color}`,borderRadius:"var(--r-sm)",padding:"14px 16px",marginBottom:10}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                 <span style={{fontSize:15,fontWeight:600,color:p.color}}>{p.name}</span>
-                <div style={{display:"flex",gap:5}}>
+                <div style={{display:"flex",gap:5,alignItems:"center"}}>
                   {p.totalWeeks>0&&<span className="mono" style={{fontSize:10,color:"var(--t-3)",background:"var(--elev-2)",padding:"3px 9px",borderRadius:999,letterSpacing:".02em"}}>Wk {p.week}/{p.totalWeeks}</span>}
                   {p.status==="prn"&&<span style={{fontSize:10,color:"var(--c-warn)",background:"color-mix(in oklch, var(--c-warn) 14%, transparent)",padding:"3px 9px",borderRadius:999,fontWeight:600,letterSpacing:".06em"}}>PRN</span>}
+                  <button onClick={()=>setEditPepModal(p)} className="touch" aria-label={`Edit ${p.name}`} style={{width:28,height:28,borderRadius:8,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",padding:0}}><Icon n="edit" s={13}/></button>
                 </div>
               </div>
               <div className="mono" style={{fontSize:12,color:"var(--t-2)",letterSpacing:".01em"}}>{p.dose}</div>
@@ -2142,7 +2168,10 @@ function DashboardInner(){
             {userPeps.filter(p=>p.status==="starting").map(p=>(<div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:`3px solid ${p.color}`,borderRadius:"var(--r-sm)",padding:"13px 16px",marginBottom:8}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:14,fontWeight:600,color:p.color}}>{p.name}</span>
-                <span className="mono" style={{fontSize:10.5,color:"var(--t-3)"}}>{p.dosesLeft} doses ready</span>
+                <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                  <span className="mono" style={{fontSize:10.5,color:"var(--t-3)"}}>{p.dosesLeft} doses ready</span>
+                  <button onClick={()=>setEditPepModal(p)} className="touch" aria-label={`Edit ${p.name}`} style={{width:26,height:26,borderRadius:7,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",padding:0}}><Icon n="edit" s={12}/></button>
+                </div>
               </div>
               <div className="mono" style={{fontSize:12,color:"var(--t-2)",marginTop:3}}>{p.dose}</div>
               <div style={{fontSize:11,color:"var(--t-3)",marginTop:2}}>{p.note}</div>
@@ -2155,7 +2184,10 @@ function DashboardInner(){
             {userPeps.filter(p=>p.status==="break").map(p=>(<div key={p.id} className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"11px 16px",marginBottom:6,opacity:.6}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:13,color:"var(--t-2)",display:"inline-flex",alignItems:"center",gap:6}}><Icon n="pause" s={12} c="var(--t-4)"/> {p.name}</span>
-                <span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>{p.dosesLeft} for C2</span>
+                <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                  <span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>{p.dosesLeft} for C2</span>
+                  <button onClick={()=>setEditPepModal(p)} className="touch" aria-label={`Edit ${p.name}`} style={{width:24,height:24,borderRadius:6,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-4)",cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",padding:0}}><Icon n="edit" s={11}/></button>
+                </div>
               </div>
               <div style={{fontSize:11.5,color:"var(--t-4)",marginTop:3}}>{p.note}</div>
             </div>))}
@@ -2656,6 +2688,86 @@ function DashboardInner(){
           </div>
         </div>
       );})()}
+
+      {/* Edit peptide sheet — adjust schedule, dose, status, dates per-user */}
+      {editPepModal&&(()=>{
+        const p=editPepModal;
+        const cur=peptideOverrides[p.id]||{};
+        const base=PEPTIDES.find(x=>x.id===p.id);
+        const eff={
+          dose:cur.dose??p.dose,
+          schedule:cur.schedule??p.schedule,
+          time:cur.time??p.time,
+          status:cur.status??p.status,
+          startDate:cur.startDate??p.startDate,
+          totalWeeks:cur.totalWeeks??p.totalWeeks,
+          note:cur.note??p.note,
+        };
+        const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+        const STATUSES=[["active","Active"],["starting","Starting"],["break","On break"],["prn","PRN"]];
+        const TIMES=["AM","PM","Bedtime","AM+PM","AM+Lunch"];
+        const isOverridden=Object.keys(cur).length>0;
+        return(<div onClick={()=>setEditPepModal(null)} style={{position:"fixed",inset:0,zIndex:150,background:"oklch(0.05 0 0 / 0.78)",backdropFilter:"blur(10px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"20px"}}>
+          <div onClick={e=>e.stopPropagation()} className="sheet" style={{background:"var(--bg)",border:"1px solid var(--line)",borderRadius:"var(--r-lg)",padding:18,maxWidth:480,width:"100%",maxHeight:"92vh",overflowY:"auto"}}>
+            <div style={{width:34,height:4,background:"var(--elev-3)",borderRadius:2,margin:"0 auto 14px"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+              <h3 className="serif" style={{fontSize:26,fontWeight:400,color:p.color,margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>Edit {p.name}</h3>
+              <button onClick={()=>setEditPepModal(null)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={18}/></button>
+            </div>
+            <div className="mono" style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".06em",marginBottom:14}}>Your edits stay private to {profile?.name||"this profile"} — they don't affect the other household member</div>
+
+            {/* Dose */}
+            <div style={{marginBottom:14}}>
+              <label className="mono" style={{display:"block",fontSize:10,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:5}}>Dose</label>
+              <input value={eff.dose} onChange={e=>setEditPepModal({...editPepModal,_dose:e.target.value})} className="bcq-input mono" placeholder="e.g. 2.5mg (25u)" style={{fontSize:13,padding:"10px 12px",width:"100%"}}/>
+            </div>
+
+            {/* Schedule (day toggles) */}
+            <div style={{marginBottom:14}}>
+              <label className="mono" style={{display:"block",fontSize:10,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:5}}>Schedule</label>
+              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{DAYS.map((d,idx)=>{const sched=editPepModal._schedule??eff.schedule;const on=sched.includes(idx);return(<button key={idx} onClick={()=>{const cur=editPepModal._schedule??eff.schedule;const next=on?cur.filter(x=>x!==idx):[...cur,idx].sort();setEditPepModal({...editPepModal,_schedule:next});}} className="touch" style={{flex:"1 0 auto",minWidth:42,padding:"9px 8px",borderRadius:"var(--r-sm)",border:`1px solid ${on?p.color:"var(--line-soft)"}`,background:on?`color-mix(in oklch, ${p.color} 18%, transparent)`:"var(--elev-1)",color:on?p.color:"var(--t-3)",fontSize:11.5,fontWeight:on?600:500,cursor:"pointer"}}>{d}</button>);})}</div>
+              <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:5,letterSpacing:".02em"}}>{(editPepModal._schedule??eff.schedule).length||"No"} day{(editPepModal._schedule??eff.schedule).length===1?"":"s"} per week</div>
+            </div>
+
+            {/* Time */}
+            <div style={{marginBottom:14}}>
+              <label className="mono" style={{display:"block",fontSize:10,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:5}}>Time</label>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{TIMES.map(t=>{const on=(editPepModal._time??eff.time)===t;return(<button key={t} onClick={()=>setEditPepModal({...editPepModal,_time:t})} className="touch" style={{padding:"7px 12px",borderRadius:999,border:`1px solid ${on?p.color:"var(--line-soft)"}`,background:on?`color-mix(in oklch, ${p.color} 15%, transparent)`:"var(--elev-1)",color:on?p.color:"var(--t-3)",fontSize:11.5,fontWeight:on?600:500,cursor:"pointer"}}>{t}</button>);})}</div>
+            </div>
+
+            {/* Status */}
+            <div style={{marginBottom:14}}>
+              <label className="mono" style={{display:"block",fontSize:10,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:5}}>Status</label>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{STATUSES.map(([v,l])=>{const on=(editPepModal._status??eff.status)===v;return(<button key={v} onClick={()=>setEditPepModal({...editPepModal,_status:v})} className="touch" style={{padding:"7px 12px",borderRadius:999,border:`1px solid ${on?p.color:"var(--line-soft)"}`,background:on?`color-mix(in oklch, ${p.color} 15%, transparent)`:"var(--elev-1)",color:on?p.color:"var(--t-3)",fontSize:11.5,fontWeight:on?600:500,cursor:"pointer"}}>{l}</button>);})}</div>
+            </div>
+
+            {/* Start date + total weeks */}
+            <div style={{display:"flex",gap:10,marginBottom:14}}>
+              <div style={{flex:1}}>
+                <label className="mono" style={{display:"block",fontSize:10,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:5}}>Start date</label>
+                <input type="date" value={editPepModal._startDate??eff.startDate??""} onChange={e=>setEditPepModal({...editPepModal,_startDate:e.target.value})} className="bcq-input" style={{fontSize:13,padding:"10px 12px",width:"100%"}}/>
+              </div>
+              <div style={{flex:1}}>
+                <label className="mono" style={{display:"block",fontSize:10,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:5}}>Total weeks</label>
+                <input type="number" value={editPepModal._totalWeeks??eff.totalWeeks??0} onChange={e=>setEditPepModal({...editPepModal,_totalWeeks:+e.target.value||0})} className="bcq-input mono" style={{fontSize:13,padding:"10px 12px",width:"100%"}}/>
+              </div>
+            </div>
+
+            {/* Note */}
+            <div style={{marginBottom:16}}>
+              <label className="mono" style={{display:"block",fontSize:10,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:5}}>Note</label>
+              <input value={editPepModal._note??eff.note??""} onChange={e=>setEditPepModal({...editPepModal,_note:e.target.value})} className="bcq-input" placeholder="e.g. Mon/Wed/Fri" style={{fontSize:13,padding:"10px 12px",width:"100%"}}/>
+            </div>
+
+            {/* Save / Reset buttons */}
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{const patch={};const dose=editPepModal._dose??eff.dose;if(dose!==base.dose)patch.dose=dose;else if(cur.dose)patch.dose=null;const sched=editPepModal._schedule??eff.schedule;if(JSON.stringify(sched)!==JSON.stringify(base.schedule))patch.schedule=sched;const time=editPepModal._time??eff.time;if(time!==base.time)patch.time=time;const status=editPepModal._status??eff.status;if(status!==base.status)patch.status=status;const sd=editPepModal._startDate??eff.startDate;if(sd!==base.startDate)patch.startDate=sd;const tw=editPepModal._totalWeeks??eff.totalWeeks;if(tw!==base.totalWeeks)patch.totalWeeks=tw;const note=editPepModal._note??eff.note;if(note!==base.note)patch.note=note;Object.keys(patch).forEach(k=>{if(patch[k]===null)delete patch[k];});savePepOverride(p.id,patch);}} className="touch" style={{flex:1,padding:"13px",borderRadius:"var(--r-md)",border:"none",background:p.color,color:"var(--bg)",fontSize:14,fontWeight:600,cursor:"pointer"}}>Save changes</button>
+              {isOverridden&&<button onClick={()=>resetPepOverride(p.id)} className="touch" style={{padding:"13px 16px",borderRadius:"var(--r-md)",border:"1px solid var(--line-soft)",background:"transparent",color:"var(--t-3)",fontSize:12.5,fontWeight:600,cursor:"pointer"}}>Reset</button>}
+            </div>
+            {isOverridden&&<div style={{fontSize:10.5,color:"var(--t-4)",marginTop:8,fontStyle:"italic",textAlign:"center"}}>This peptide has custom edits. Reset returns it to built-in defaults.</div>}
+          </div>
+        </div>);
+      })()}
 
       {/* Reorder sheet — best-price options for a low-supply peptide */}
       {reorderModal&&(()=>{const ro=reorderOptionsFor(reorderModal.id);return(

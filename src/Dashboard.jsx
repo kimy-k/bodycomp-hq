@@ -15,7 +15,7 @@ import {
 import {SB, SB_KEY, hdr, makeDb} from "./supabase.js";
 import {
   PROFILES, SCANS, WHEY, COL, calcCal,
-  PEPTIDES, AVAILABLE_PEPS, SELLERS,
+  PEPTIDES, DEFAULT_STACK, AVAILABLE_PEPS, SELLERS,
   PRODUCT_FOR_PEPTIDE, PRICES,
   PG_SLUG_FOR_PEPTIDE, PG_BASE, PG_DIRECTORY, pgUrlFor,
   reorderOptionsFor, RECONSTITUTION, recommendedReconFor,
@@ -154,17 +154,82 @@ function DashboardInner(){
   })();},[tab]);
 
   const todayDow=new Date().getDay();
-  /* userConfig.peptide_overrides holds per-peptide field overrides (dose, schedule,
-     time, status, startDate, totalWeeks, note). Merging here means every downstream
-     consumer of userPeps (Today checklist, Stack tab, supply alerts, inventory math)
-     automatically picks up edits without any further refactor. */
-  const peptideOverrides=userConfig?.peptide_overrides||{};
-  const userPeps=PEPTIDES.filter(p=>{
-    if(p.users&&!p.users.includes(userId))return false;
-    const userPepIds=userConfig?.peptides;
-    if(Array.isArray(userPepIds)&&userPepIds.length>0)return userPepIds.includes(p.id);
-    return true;
-  }).map(p=>{const o=peptideOverrides[p.id];return o?{...p,...o}:p;});
+
+  /* ═══ PEPTIDE STACK (P10) — per-user editable peptide list, sourced from DB ═══
+     The catalog (PEPTIDES) defines what peptides exist. The stack table holds
+     which ones each user is taking and their dose/schedule/timing/status. On first
+     boot for a user, we backfill from DEFAULT_STACK + any legacy peptide_overrides. */
+  const [peptideStack,setPeptideStack]=useState([]);
+  const [stackLoading,setStackLoading]=useState(true);
+  useEffect(()=>{
+    if(!db||!userId)return;
+    (async()=>{
+      setStackLoading(true);
+      let stack=await db.getStack();
+      if(stack.length===0){
+        /* First boot for this user — seed from DEFAULT_STACK + any legacy overrides */
+        const legacyOverrides=userConfig?.peptide_overrides||{};
+        const legacyPepIds=userConfig?.peptides;
+        const userHasLegacyToggle=Array.isArray(legacyPepIds)&&legacyPepIds.length>0;
+        const seedRows=Object.entries(DEFAULT_STACK)
+          .filter(([id,d])=>{
+            if(d.users&&!d.users.includes(userId))return false;
+            if(userHasLegacyToggle)return legacyPepIds.includes(id);
+            return true;
+          })
+          .map(([id,d])=>{
+            const o=legacyOverrides[id]||{};
+            /* legacy overrides used camelCase startDate/totalWeeks/cycleEnd; map them */
+            return {
+              peptide_id:id,
+              enabled:true,
+              dose:o.dose??d.dose,
+              schedule:o.schedule??d.schedule,
+              time:o.time??d.time,
+              status:o.status??d.status,
+              start_date:o.startDate??d.start_date??null,
+              total_weeks:o.totalWeeks??d.total_weeks??null,
+              cycle_end:o.cycleEnd??d.cycle_end??null,
+              note:o.note??d.note??null,
+            };
+          });
+        if(seedRows.length>0){
+          await db.bulkInsertStack(seedRows);
+          /* Clear legacy keys so they don't re-seed if user clears stack later */
+          if(userConfig?.peptide_overrides){await db.setConfig("peptide_overrides",null);}
+          stack=await db.getStack();
+        }
+      }
+      setPeptideStack(stack);
+      setStackLoading(false);
+    })();
+  },[db,userId]); // userConfig intentionally excluded to avoid re-seeding on every config change
+
+  /* Merge catalog + stack to get user's effective peptide list. Stack rows are the
+     source of truth for runtime state; catalog provides name/color/purpose. */
+  const userPeps=useMemo(()=>{
+    const cat=Object.fromEntries(PEPTIDES.map(p=>[p.id,p]));
+    return peptideStack
+      .filter(s=>s.enabled)
+      .map(s=>{
+        const c=cat[s.peptide_id];
+        if(!c)return null; /* peptide removed from catalog — skip */
+        return {
+          ...c,
+          dose:s.dose||"",
+          schedule:Array.isArray(s.schedule)?s.schedule:[],
+          time:s.time||"",
+          status:s.status||"active",
+          startDate:s.start_date,
+          totalWeeks:s.total_weeks,
+          cycleEnd:s.cycle_end,
+          note:s.note,
+          _stackId:s.id, /* opaque ref for editing */
+        };
+      })
+      .filter(Boolean);
+  },[peptideStack]);
+
   const duePeptides=userPeps.filter(p=>(p.status==="active"||p.status==="prn")&&p.schedule.includes(todayDow));
   const notDue=userPeps.filter(p=>!duePeptides.includes(p));
   const checkedCount=duePeptides.filter(p=>pepData.checks[p.id]).length;
@@ -175,17 +240,44 @@ function DashboardInner(){
   const [reconGuide,setReconGuide]=useState(null);
   /* ═══ EDIT PEPTIDE SHEET — opens when user taps the edit icon on a Stack card ═══ */
   const [editPepModal,setEditPepModal]=useState(null);
+  /* Save edits to peptide_stack via upsert, then refresh local state */
   const savePepOverride=useCallback(async(pepId,patch)=>{
-    const next={...(userConfig?.peptide_overrides||{}),[pepId]:{...((userConfig?.peptide_overrides||{})[pepId]||{}),...patch}};
-    const ok=await db.setConfig("peptide_overrides",next);
-    if(ok){setUserConfig(c=>({...(c||{}),peptide_overrides:next}));showToast("Peptide updated","success");setEditPepModal(null);}else{showToast("Couldn't save changes","error");}
-  },[db,userConfig,showToast]);
+    /* Map camelCase form fields to snake_case DB columns */
+    const dbPatch={};
+    if(patch.dose!==undefined)dbPatch.dose=patch.dose;
+    if(patch.schedule!==undefined)dbPatch.schedule=patch.schedule;
+    if(patch.time!==undefined)dbPatch.time=patch.time;
+    if(patch.status!==undefined)dbPatch.status=patch.status;
+    if(patch.startDate!==undefined)dbPatch.start_date=patch.startDate||null;
+    if(patch.totalWeeks!==undefined)dbPatch.total_weeks=patch.totalWeeks||null;
+    if(patch.cycleEnd!==undefined)dbPatch.cycle_end=patch.cycleEnd||null;
+    if(patch.note!==undefined)dbPatch.note=patch.note;
+    if(patch.enabled!==undefined)dbPatch.enabled=patch.enabled;
+    const row=await db.upsertStackEntry(pepId,dbPatch);
+    if(row){
+      setPeptideStack(prev=>{
+        const i=prev.findIndex(r=>r.peptide_id===pepId);
+        return i>=0?prev.map(r=>r.peptide_id===pepId?row:r):[...prev,row];
+      });
+      showToast("Peptide updated","success");
+      setEditPepModal(null);
+    }else{showToast("Couldn't save changes","error");}
+  },[db,showToast]);
   const resetPepOverride=useCallback(async(pepId)=>{
     if(!window.confirm("Reset this peptide back to its built-in defaults? Your edits will be lost."))return;
-    const next={...(userConfig?.peptide_overrides||{})};delete next[pepId];
-    const ok=await db.setConfig("peptide_overrides",next);
-    if(ok){setUserConfig(c=>({...(c||{}),peptide_overrides:next}));showToast("Reset to defaults","success");setEditPepModal(null);}
-  },[db,userConfig,showToast]);
+    const d=DEFAULT_STACK[pepId];
+    if(!d){showToast("No defaults for this peptide","error");return;}
+    const row=await db.upsertStackEntry(pepId,{
+      dose:d.dose,schedule:d.schedule,time:d.time,status:d.status,
+      start_date:d.start_date??null,total_weeks:d.total_weeks??null,
+      cycle_end:d.cycle_end??null,note:d.note??null,enabled:true,
+    });
+    if(row){
+      setPeptideStack(prev=>prev.map(r=>r.peptide_id===pepId?row:r));
+      showToast("Reset to defaults","success");
+      setEditPepModal(null);
+    }
+  },[db,showToast]);
 
   /* ═══ NOTIFICATIONS — foreground reminders for overdue peptides ═══ */
   const [notifEnabled,setNotifEnabled]=useState(false);
@@ -387,7 +479,17 @@ function DashboardInner(){
           ))}
         </div>
       </div></>)}
-      {showSettings&&<Settings db={db} userId={userId} userConfig={userConfig} defaultProfile={defaultProfile} onClose={()=>setShowSettings(false)} onSave={(cfg)=>{setUserConfig(cfg);setShowSettings(false);}} notifEnabled={notifEnabled} notifPerm={notifPerm} requestNotifPermission={requestNotifPermission} disableNotifs={disableNotifs} exportData={exportData} exporting={exporting} switchUser={switchUser}/>}
+      {showSettings&&<Settings db={db} userId={userId} userConfig={userConfig} defaultProfile={defaultProfile} peptideStack={peptideStack} onStackToggle={async(pepId,enabled)=>{
+        /* If enabling and no row exists yet (new peptide added to catalog later), seed from DEFAULT_STACK */
+        const existing=peptideStack.find(s=>s.peptide_id===pepId);
+        let patch={enabled};
+        if(enabled&&!existing){
+          const d=DEFAULT_STACK[pepId];
+          if(d){patch={enabled:true,dose:d.dose,schedule:d.schedule,time:d.time,status:d.status,start_date:d.start_date??null,total_weeks:d.total_weeks??null,cycle_end:d.cycle_end??null,note:d.note??null};}
+        }
+        const row=await db.upsertStackEntry(pepId,patch);
+        if(row){setPeptideStack(prev=>{const i=prev.findIndex(r=>r.peptide_id===pepId);return i>=0?prev.map(r=>r.peptide_id===pepId?row:r):[...prev,row];});}
+      }} onClose={()=>setShowSettings(false)} onSave={(cfg)=>{setUserConfig(cfg);setShowSettings(false);}} notifEnabled={notifEnabled} notifPerm={notifPerm} requestNotifPermission={requestNotifPermission} disableNotifs={disableNotifs} exportData={exportData} exporting={exporting} switchUser={switchUser}/>}
 
       {/* ═══ OVERVIEW (BODY) ═══ */}
       {tab==="overview"&&(<>
@@ -643,16 +745,16 @@ function DashboardInner(){
         {pepSub==="today"&&(<>
           {/* Supply alerts — use live inventory from shared batches when available, else hardcoded supplyNote */}
           {(()=>{
-            const enriched=userPeps.filter(p=>p.status==="active").map(p=>{const inv=inventoryFor(p);return{peptide:p,daysSupply:inv?.daysSupply??p.daysSupply,dosesRemaining:inv?.dosesRemaining,liveNote:inv?`${inv.dosesRemaining}/${inv.totalDosesInVial} doses left in current vial`:p.supplyNote,isLive:!!inv};}).filter(x=>x.daysSupply<=14).sort((a,b)=>a.daysSupply-b.daysSupply);
+            const enriched=userPeps.filter(p=>p.status==="active").map(p=>{const inv=inventoryFor(p);return{peptide:p,daysSupply:inv?.daysSupply,dosesRemaining:inv?.dosesRemaining,liveNote:inv?`${inv.dosesRemaining}/${inv.totalDosesInVial} doses left in current vial`:null,isLive:!!inv};}).filter(x=>x.daysSupply!=null&&x.daysSupply<=14).sort((a,b)=>a.daysSupply-b.daysSupply);
             if(enriched.length===0)return null;
-            return(<div style={{marginBottom:16}}>{enriched.map(({peptide:p,daysSupply,liveNote,isLive})=>{const urgent=daysSupply<=7;return(<div key={p.id} className="rise" style={{background:urgent?"color-mix(in oklch, var(--c-danger) 10%, var(--elev-1))":"color-mix(in oklch, var(--c-warn) 8%, var(--elev-1))",borderLeft:`3px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
+            return(<div style={{marginBottom:16}}>{enriched.map(({peptide:p,daysSupply,dosesRemaining,liveNote,isLive})=>{const urgent=daysSupply<=7;return(<div key={p.id} className="rise" style={{background:urgent?"color-mix(in oklch, var(--c-danger) 10%, var(--elev-1))":"color-mix(in oklch, var(--c-warn) 8%, var(--elev-1))",borderLeft:`3px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:urgent?"var(--c-danger)":"var(--c-warn)"}}><Icon n="warn" s={15} c={urgent?"var(--c-danger)":"var(--c-warn)"} sw={2}/> {p.name}{isLive&&<span className="mono" style={{fontSize:9,color:"var(--accent)",background:"var(--accent-soft)",padding:"1px 6px",borderRadius:999,letterSpacing:".06em",fontWeight:600,marginLeft:4}}>LIVE</span>}</span>
                 <span className="mono" style={{fontSize:11.5,fontWeight:600,color:urgent?"var(--c-danger)":"var(--c-warn)"}}>{daysSupply}d left</span>
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,gap:10}}>
                 <div style={{fontSize:11,color:"var(--t-3)",flex:1,minWidth:0}}>{liveNote}</div>
-                <button onClick={()=>setReorderModal(p)} className="touch" style={{padding:"5px 11px",borderRadius:999,border:`1px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,background:`color-mix(in oklch, ${urgent?"var(--c-danger)":"var(--c-warn)"} 14%, transparent)`,color:urgent?"var(--c-danger)":"var(--c-warn)",fontSize:11,fontWeight:600,cursor:"pointer",flexShrink:0,display:"inline-flex",alignItems:"center",gap:4}}>Reorder →</button>
+                <button onClick={()=>setReorderModal({...p,daysSupply,dosesLeft:dosesRemaining,supplyNote:liveNote})} className="touch" style={{padding:"5px 11px",borderRadius:999,border:`1px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,background:`color-mix(in oklch, ${urgent?"var(--c-danger)":"var(--c-warn)"} 14%, transparent)`,color:urgent?"var(--c-danger)":"var(--c-warn)",fontSize:11,fontWeight:600,cursor:"pointer",flexShrink:0,display:"inline-flex",alignItems:"center",gap:4}}>Reorder →</button>
               </div>
             </div>);})}</div>);
           })()}
@@ -787,32 +889,39 @@ function DashboardInner(){
         {pepSub==="all"&&(<>
           <H2 sub={`${userPeps.filter(p=>p.status==="active"||p.status==="prn").length} running`}>Active stack</H2>
           {userPeps.filter(p=>p.status==="active"||p.status==="prn").map((p,i)=>{
-            const cyclePct=p.totalWeeks>0?Math.min(100,(p.week/p.totalWeeks)*100):0;
-            const supplyColor=p.daysSupply<=4?"var(--c-danger)":p.daysSupply<=14?"var(--c-warn)":"var(--c-success)";
+            /* Compute current cycle week from start_date instead of stale p.week field */
+            const weekNow=p.startDate?Math.max(0,Math.floor((Date.now()-new Date(p.startDate+"T12:00:00").getTime())/(7*24*60*60*1000))+1):0;
+            const cyclePct=p.totalWeeks>0?Math.min(100,(weekNow/p.totalWeeks)*100):0;
+            /* Compute live supply from current batch — replaces stale dosesLeft/daysSupply/supplyNote */
+            const inv=inventoryFor(p);
+            const daysSupply=inv?.daysSupply;
+            const dosesLeft=inv?.dosesRemaining;
+            const supplyNote=inv?`${inv.dosesRemaining}/${inv.totalDosesInVial} doses left · live`:null;
+            const supplyColor=daysSupply==null?"var(--t-4)":daysSupply<=4?"var(--c-danger)":daysSupply<=14?"var(--c-warn)":"var(--c-success)";
             const daysToEnd=p.cycleEnd?Math.max(0,Math.round((new Date(p.cycleEnd)-new Date())/(1000*60*60*24))):null;
             return(<div key={p.id} className="rise" style={{animationDelay:`${i*0.04}s`,background:"var(--elev-1)",borderLeft:`3px solid ${p.color}`,borderRadius:"var(--r-sm)",padding:"14px 16px",marginBottom:10}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                 <span style={{fontSize:15,fontWeight:600,color:p.color}}>{p.name}</span>
                 <div style={{display:"flex",gap:5,alignItems:"center"}}>
-                  {p.totalWeeks>0&&<span className="mono" style={{fontSize:10,color:"var(--t-3)",background:"var(--elev-2)",padding:"3px 9px",borderRadius:999,letterSpacing:".02em"}}>Wk {p.week}/{p.totalWeeks}</span>}
+                  {p.totalWeeks>0&&<span className="mono" style={{fontSize:10,color:"var(--t-3)",background:"var(--elev-2)",padding:"3px 9px",borderRadius:999,letterSpacing:".02em"}}>Wk {weekNow}/{p.totalWeeks}</span>}
                   {p.status==="prn"&&<span style={{fontSize:10,color:"var(--c-warn)",background:"color-mix(in oklch, var(--c-warn) 14%, transparent)",padding:"3px 9px",borderRadius:999,fontWeight:600,letterSpacing:".06em"}}>PRN</span>}
                   <button onClick={()=>setEditPepModal(p)} className="touch" aria-label={`Edit ${p.name}`} style={{width:28,height:28,borderRadius:8,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",padding:0}}><Icon n="edit" s={13}/></button>
                 </div>
               </div>
               <div className="mono" style={{fontSize:12,color:"var(--t-2)",letterSpacing:".01em"}}>{p.dose}</div>
-              <div style={{fontSize:11.5,color:"var(--t-3)",marginTop:3}}>{p.time} · {p.note}</div>
+              <div style={{fontSize:11.5,color:"var(--t-3)",marginTop:3}}>{p.time}{p.note?` · ${p.note}`:""}</div>
               <div style={{fontSize:11,color:"var(--t-4)",marginTop:6,lineHeight:1.5,paddingLeft:10,borderLeft:`1.5px solid color-mix(in oklch, ${p.color} 30%, transparent)`,fontStyle:"italic"}}>{p.purpose}</div>
               {p.totalWeeks>0&&(<div style={{marginTop:10}}>
                 <div className="mono" style={{display:"flex",justifyContent:"space-between",fontSize:9.5,color:"var(--t-3)",marginBottom:4,letterSpacing:".06em",textTransform:"uppercase"}}><span>Cycle</span><span>{daysToEnd!==null?`${daysToEnd}d left`:""}</span></div>
                 <div className="hbar" style={{height:3}}><i style={{width:`${cyclePct}%`,background:p.color,opacity:.6}}/></div>
               </div>)}
-              <div style={{marginTop:8}}>
-                <div className="mono" style={{display:"flex",justifyContent:"space-between",fontSize:9.5,color:"var(--t-3)",marginBottom:4,letterSpacing:".06em",textTransform:"uppercase"}}><span>Supply</span><span style={{color:supplyColor,fontWeight:600}}>{p.dosesLeft} doses · {p.daysSupply}d</span></div>
-                <div className="hbar" style={{height:3}}><i style={{width:`${Math.min(100,p.daysSupply/30*100)}%`,background:supplyColor,opacity:.55}}/></div>
-              </div>
-              <div style={{fontSize:10.5,color:"var(--t-4)",marginTop:5,fontStyle:"italic"}}>{p.supplyNote}</div>
+              {inv&&(<div style={{marginTop:8}}>
+                <div className="mono" style={{display:"flex",justifyContent:"space-between",fontSize:9.5,color:"var(--t-3)",marginBottom:4,letterSpacing:".06em",textTransform:"uppercase"}}><span>Supply</span><span style={{color:supplyColor,fontWeight:600}}>{dosesLeft} doses · {daysSupply}d</span></div>
+                <div className="hbar" style={{height:3}}><i style={{width:`${Math.min(100,(daysSupply||0)/30*100)}%`,background:supplyColor,opacity:.55}}/></div>
+                <div style={{fontSize:10.5,color:"var(--t-4)",marginTop:5,fontStyle:"italic"}}>{supplyNote}</div>
+              </div>)}
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:9}}>
-                {p.daysSupply<=21&&<button onClick={()=>setReorderModal(p)} className="touch" style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${supplyColor}`,background:`color-mix(in oklch, ${supplyColor} 12%, transparent)`,color:supplyColor,fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={11} c={supplyColor} sw={1.7}/> Reorder</button>}
+                {daysSupply!=null&&daysSupply<=21&&<button onClick={()=>setReorderModal({...p,daysSupply,dosesLeft,supplyNote})} className="touch" style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${supplyColor}`,background:`color-mix(in oklch, ${supplyColor} 12%, transparent)`,color:supplyColor,fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={11} c={supplyColor} sw={1.7}/> Reorder</button>}
                 {RECONSTITUTION[p.id]&&<button onClick={()=>setReconGuide(p)} className="touch" style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${p.color}`,background:`color-mix(in oklch, ${p.color} 10%, transparent)`,color:p.color,fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={11} c={p.color} sw={1.7}/> Recon guide</button>}
                 <a href={pgUrlFor(p.id)} target="_blank" rel="noopener noreferrer" className="touch" style={{padding:"6px 12px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5}}>📚 PG Guide →</a>
               </div>
@@ -821,32 +930,32 @@ function DashboardInner(){
 
           {userPeps.filter(p=>p.status==="starting").length>0&&<>
             <H2>Starting soon</H2>
-            {userPeps.filter(p=>p.status==="starting").map(p=>(<div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:`3px solid ${p.color}`,borderRadius:"var(--r-sm)",padding:"13px 16px",marginBottom:8}}>
+            {userPeps.filter(p=>p.status==="starting").map(p=>{const inv=inventoryFor(p);return(<div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:`3px solid ${p.color}`,borderRadius:"var(--r-sm)",padding:"13px 16px",marginBottom:8}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:14,fontWeight:600,color:p.color}}>{p.name}</span>
                 <div style={{display:"flex",gap:5,alignItems:"center"}}>
-                  <span className="mono" style={{fontSize:10.5,color:"var(--t-3)"}}>{p.dosesLeft} doses ready</span>
+                  {inv&&<span className="mono" style={{fontSize:10.5,color:"var(--t-3)"}}>{inv.dosesRemaining} doses ready</span>}
                   <button onClick={()=>setEditPepModal(p)} className="touch" aria-label={`Edit ${p.name}`} style={{width:26,height:26,borderRadius:7,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",padding:0}}><Icon n="edit" s={12}/></button>
                 </div>
               </div>
               <div className="mono" style={{fontSize:12,color:"var(--t-2)",marginTop:3}}>{p.dose}</div>
               <div style={{fontSize:11,color:"var(--t-3)",marginTop:2}}>{p.note}</div>
               <div style={{fontSize:11,color:"var(--t-4)",marginTop:5,lineHeight:1.5,fontStyle:"italic"}}>{p.purpose}</div>
-            </div>))}
+            </div>);})}
           </>}
 
           {userPeps.filter(p=>p.status==="break").length>0&&<>
             <H2>On break</H2>
-            {userPeps.filter(p=>p.status==="break").map(p=>(<div key={p.id} className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"11px 16px",marginBottom:6,opacity:.6}}>
+            {userPeps.filter(p=>p.status==="break").map(p=>{const inv=inventoryFor(p);return(<div key={p.id} className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"11px 16px",marginBottom:6,opacity:.6}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:13,color:"var(--t-2)",display:"inline-flex",alignItems:"center",gap:6}}><Icon n="pause" s={12} c="var(--t-4)"/> {p.name}</span>
                 <div style={{display:"flex",gap:5,alignItems:"center"}}>
-                  <span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>{p.dosesLeft} for C2</span>
+                  {inv&&<span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>{inv.dosesRemaining} ready</span>}
                   <button onClick={()=>setEditPepModal(p)} className="touch" aria-label={`Edit ${p.name}`} style={{width:24,height:24,borderRadius:6,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-4)",cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",padding:0}}><Icon n="edit" s={11}/></button>
                 </div>
               </div>
               <div style={{fontSize:11.5,color:"var(--t-4)",marginTop:3}}>{p.note}</div>
-            </div>))}
+            </div>);})}
           </>}
         </>)}
 
@@ -1348,21 +1457,21 @@ function DashboardInner(){
       {/* Edit peptide sheet — adjust schedule, dose, status, dates per-user */}
       {editPepModal&&(()=>{
         const p=editPepModal;
-        const cur=peptideOverrides[p.id]||{};
-        const base=PEPTIDES.find(x=>x.id===p.id);
+        /* userPeps already contains merged stack values, so p.dose/schedule/etc.
+           ARE the current saved values. No separate override lookup needed. */
         const eff={
-          dose:cur.dose??p.dose,
-          schedule:cur.schedule??p.schedule,
-          time:cur.time??p.time,
-          status:cur.status??p.status,
-          startDate:cur.startDate??p.startDate,
-          totalWeeks:cur.totalWeeks??p.totalWeeks,
-          note:cur.note??p.note,
+          dose:p.dose,
+          schedule:p.schedule,
+          time:p.time,
+          status:p.status,
+          startDate:p.startDate,
+          totalWeeks:p.totalWeeks,
+          note:p.note,
         };
         const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
         const STATUSES=[["active","Active"],["starting","Starting"],["break","On break"],["prn","PRN"]];
         const TIMES=["AM","PM","Bedtime","AM+PM","AM+Lunch"];
-        const isOverridden=Object.keys(cur).length>0;
+        const hasDefaults=!!DEFAULT_STACK[p.id];
         return(<div onClick={()=>setEditPepModal(null)} style={{position:"fixed",inset:0,zIndex:150,background:"oklch(0.05 0 0 / 0.78)",backdropFilter:"blur(10px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"20px"}}>
           <div onClick={e=>e.stopPropagation()} className="sheet" style={{background:"var(--bg)",border:"1px solid var(--line)",borderRadius:"var(--r-lg)",padding:18,maxWidth:480,width:"100%",maxHeight:"92vh",overflowY:"auto"}}>
             <div style={{width:34,height:4,background:"var(--elev-3)",borderRadius:2,margin:"0 auto 14px"}}/>
@@ -1417,10 +1526,22 @@ function DashboardInner(){
 
             {/* Save / Reset buttons */}
             <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>{const patch={};const dose=editPepModal._dose??eff.dose;if(dose!==base.dose)patch.dose=dose;else if(cur.dose)patch.dose=null;const sched=editPepModal._schedule??eff.schedule;if(JSON.stringify(sched)!==JSON.stringify(base.schedule))patch.schedule=sched;const time=editPepModal._time??eff.time;if(time!==base.time)patch.time=time;const status=editPepModal._status??eff.status;if(status!==base.status)patch.status=status;const sd=editPepModal._startDate??eff.startDate;if(sd!==base.startDate)patch.startDate=sd;const tw=editPepModal._totalWeeks??eff.totalWeeks;if(tw!==base.totalWeeks)patch.totalWeeks=tw;const note=editPepModal._note??eff.note;if(note!==base.note)patch.note=note;Object.keys(patch).forEach(k=>{if(patch[k]===null)delete patch[k];});savePepOverride(p.id,patch);}} className="touch" style={{flex:1,padding:"13px",borderRadius:"var(--r-md)",border:"none",background:p.color,color:"var(--bg)",fontSize:14,fontWeight:600,cursor:"pointer"}}>Save changes</button>
-              {isOverridden&&<button onClick={()=>resetPepOverride(p.id)} className="touch" style={{padding:"13px 16px",borderRadius:"var(--r-md)",border:"1px solid var(--line-soft)",background:"transparent",color:"var(--t-3)",fontSize:12.5,fontWeight:600,cursor:"pointer"}}>Reset</button>}
+              <button onClick={()=>{
+                /* Send ALL editable fields — DB is source of truth, no diffing needed */
+                const patch={
+                  dose:editPepModal._dose??eff.dose,
+                  schedule:editPepModal._schedule??eff.schedule,
+                  time:editPepModal._time??eff.time,
+                  status:editPepModal._status??eff.status,
+                  startDate:editPepModal._startDate??eff.startDate,
+                  totalWeeks:editPepModal._totalWeeks??eff.totalWeeks,
+                  note:editPepModal._note??eff.note,
+                };
+                savePepOverride(p.id,patch);
+              }} className="touch" style={{flex:1,padding:"13px",borderRadius:"var(--r-md)",border:"none",background:p.color,color:"var(--bg)",fontSize:14,fontWeight:600,cursor:"pointer"}}>Save changes</button>
+              {hasDefaults&&<button onClick={()=>resetPepOverride(p.id)} className="touch" style={{padding:"13px 16px",borderRadius:"var(--r-md)",border:"1px solid var(--line-soft)",background:"transparent",color:"var(--t-3)",fontSize:12.5,fontWeight:600,cursor:"pointer"}}>Reset</button>}
             </div>
-            {isOverridden&&<div style={{fontSize:10.5,color:"var(--t-4)",marginTop:8,fontStyle:"italic",textAlign:"center"}}>This peptide has custom edits. Reset returns it to built-in defaults.</div>}
+            {hasDefaults&&<div style={{fontSize:10.5,color:"var(--t-4)",marginTop:8,fontStyle:"italic",textAlign:"center"}}>Reset returns this peptide to its built-in defaults.</div>}
           </div>
         </div>);
       })()}
@@ -1435,7 +1556,7 @@ function DashboardInner(){
               <button onClick={()=>setReorderModal(null)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={18}/></button>
             </div>
             <div className="mono" style={{fontSize:11,color:"var(--t-3)",letterSpacing:".04em",marginBottom:4}}>{ro?.productLabel||"Product not catalogued"}</div>
-            <div style={{fontSize:12,color:"var(--t-3)",marginBottom:10,fontStyle:"italic"}}>{reorderModal.supplyNote} · {reorderModal.daysSupply} day{reorderModal.daysSupply!==1?"s":""} of supply</div>
+            {reorderModal.daysSupply!=null&&<div style={{fontSize:12,color:"var(--t-3)",marginBottom:10,fontStyle:"italic"}}>{reorderModal.supplyNote||""}{reorderModal.supplyNote?" · ":""}{reorderModal.daysSupply} day{reorderModal.daysSupply!==1?"s":""} of supply</div>}
             {(()=>{const partnerName=Object.entries(PROFILES).filter(([id])=>id!==userId).map(([,p])=>p.name)[0];return(<div style={{display:"flex",alignItems:"center",gap:7,padding:"7px 11px",background:"var(--accent-soft)",borderRadius:"var(--r-sm)",marginBottom:14}}>
               <Icon n="users" s={13} c="var(--accent)"/>
               <span className="mono" style={{fontSize:10.5,color:"var(--accent)",letterSpacing:".04em",fontWeight:600}}>Shared inventory{partnerName?` with ${partnerName}`:""} — reordered vials show up for both profiles</span>

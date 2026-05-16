@@ -185,4 +185,60 @@ export const makeDb = (uid, onErr = () => {}) => ({
       return false;
     }
   },
+  /* ─── Peptide stack methods (P10) — per-user editable stack stored in DB. */
+  async getStack() {
+    try {
+      const r = await fetch(`${SB}/peptide_stack?user_id=eq.${uid}&select=*&order=peptide_id.asc`, {headers: hdr});
+      if (!r.ok) throw new Error(`peptide_stack: ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      onErr(`Couldn't load stack`);
+      return [];
+    }
+  },
+  async bulkInsertStack(rows) {
+    /* rows: array of {peptide_id, enabled, dose, schedule, time, status, start_date, total_weeks, cycle_end, note}.
+       Each gets user_id stamped. Used once per user for first-boot backfill. */
+    if (!Array.isArray(rows) || rows.length === 0) return true;
+    const enriched = rows.map(r => ({...r, user_id: uid}));
+    try {
+      const r = await fetch(`${SB}/peptide_stack`, {
+        method: "POST",
+        headers: {...hdr, Prefer: "resolution=merge-duplicates"},
+        body: JSON.stringify(enriched),
+      });
+      if (!r.ok) {
+        const body = await r.text().catch(() => "");
+        console.warn(`[BCQ] bulkInsertStack: HTTP ${r.status}`, body);
+        throw new Error(`peptide_stack: ${r.status}`);
+      }
+      return true;
+    } catch (e) {
+      onErr(`Couldn't seed stack`);
+      return false;
+    }
+  },
+  async upsertStackEntry(peptideId, patch) {
+    /* Upsert one row keyed by (user_id, peptide_id). patch can include any of
+       {enabled, dose, schedule, time, status, start_date, total_weeks, cycle_end, note}.
+       Returns the updated row or null on failure. */
+    if (!peptideId) return null;
+    try {
+      const r = await fetch(`${SB}/peptide_stack?on_conflict=user_id,peptide_id`, {
+        method: "POST",
+        headers: {...hdr, Prefer: "resolution=merge-duplicates,return=representation"},
+        body: JSON.stringify({user_id: uid, peptide_id: peptideId, ...patch}),
+      });
+      if (!r.ok) {
+        const body = await r.text().catch(() => "");
+        console.warn(`[BCQ] upsertStackEntry: HTTP ${r.status}`, body);
+        throw new Error(`peptide_stack: ${r.status}`);
+      }
+      const data = await r.json();
+      return Array.isArray(data) ? data[0] : data;
+    } catch (e) {
+      onErr(`Couldn't save stack entry`);
+      return null;
+    }
+  },
 });

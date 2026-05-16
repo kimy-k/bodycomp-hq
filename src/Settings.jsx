@@ -1,13 +1,13 @@
 /* ═══ SETTINGS SHEET ═══
-   Editable profile, goals, macros, whey, peptide toggles, notif setup, export, switch user.
-   Reads userConfig from parent, writes via onSave callback. */
+   Editable profile, goals, macros, whey, peptide stack manager, notif setup, export, switch user.
+   Reads userConfig + peptideStack from parent, writes via onSave / onStackToggle callbacks. */
 
 import {useState} from "react";
 import {Icon} from "./Icon.jsx";
 import {STYLE} from "./styles.js";
-import {PROFILES, PEPTIDES, AVAILABLE_PEPS} from "./data.js";
+import {PROFILES, PEPTIDES} from "./data.js";
 
-export function Settings({db,userId,userConfig,defaultProfile,onClose,onSave,notifEnabled,notifPerm,requestNotifPermission,disableNotifs,exportData,exporting,switchUser}){
+export function Settings({db,userId,userConfig,defaultProfile,peptideStack,onStackToggle,onClose,onSave,notifEnabled,notifPerm,requestNotifPermission,disableNotifs,exportData,exporting,switchUser}){
   // Initialize form state from existing userConfig, falling back to PROFILES defaults
   const init = {
     name: userConfig?.name || defaultProfile?.name || "",
@@ -23,17 +23,13 @@ export function Settings({db,userId,userConfig,defaultProfile,onClose,onSave,not
     targetCarbs: userConfig?.targets?.carbs ?? defaultProfile?.targets?.carbs ?? "",
     wheyProtein: userConfig?.wheyProtein || "",
     wheyScoops: userConfig?.wheyScoops || "",
-    peptides: Array.isArray(userConfig?.peptides) ? userConfig.peptides : [],
   };
   const [d,setD]=useState(init);
   const [saving,setSaving]=useState(false);
   const up=(k,v)=>setD(prev=>({...prev,[k]:v}));
-  const togglePep=(id)=>{const p=[...d.peptides];const i=p.indexOf(id);if(i>=0)p.splice(i,1);else p.push(id);setD({...d,peptides:p});};
-  // Only show peptides this user is allowed to track (matches PEPTIDES.users filter)
-  const availablePeps = AVAILABLE_PEPS.filter(p=>{
-    const meta = PEPTIDES.find(x=>x.id===p.id);
-    return !meta?.users || meta.users.includes(userId);
-  });
+  /* Stack enable/disable is driven by parent — local lookup just maps peptide_id → bool */
+  const stackById = Object.fromEntries((peptideStack||[]).map(s=>[s.peptide_id, s]));
+  const isEnabled = (id) => !!stackById[id]?.enabled;
   const save = async () => {
     setSaving(true);
     const payload = {
@@ -52,7 +48,6 @@ export function Settings({db,userId,userConfig,defaultProfile,onClose,onSave,not
       },
       wheyProtein: +(d.wheyProtein||0),
       wheyScoops: +(d.wheyScoops||0),
-      peptides: d.peptides,
     };
     try{await db.setConfig("profile",payload);onSave(payload);}finally{setSaving(false);}
   };
@@ -119,17 +114,17 @@ export function Settings({db,userId,userConfig,defaultProfile,onClose,onSave,not
           </div>
         </div>
 
-        {/* Peptides */}
+        {/* Peptides — manage your stack from the catalog */}
         {showPep && <div className="rise r5" style={section}>
-          <h2 className="serif" style={{fontSize:20,margin:"0 0 4px",fontStyle:"italic",color:"var(--t-1)",fontWeight:400,letterSpacing:"-0.015em"}}>Peptide stack</h2>
-          <p style={{fontSize:11.5,color:"var(--t-3)",margin:"0 0 14px"}}>Toggle which peptides you're currently running. Leave all unchecked to show every available peptide.</p>
+          <h2 className="serif" style={{fontSize:20,margin:"0 0 4px",fontStyle:"italic",color:"var(--t-1)",fontWeight:400,letterSpacing:"-0.015em"}}>Your stack</h2>
+          <p style={{fontSize:11.5,color:"var(--t-3)",margin:"0 0 14px"}}>Toggle which peptides are in your stack. Edit dose, schedule, and timing from the Peptides tab → tap a card.</p>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {availablePeps.map(p=>{const on=d.peptides.includes(p.id);return(
-              <button key={p.id} onClick={()=>togglePep(p.id)} style={{display:"flex",alignItems:"center",gap:11,padding:"11px 13px",borderRadius:"var(--r-sm)",border:`1px solid ${on?p.color:"var(--line-soft)"}`,background:on?`color-mix(in oklch, ${p.color} 8%, transparent)`:"transparent",cursor:"pointer",textAlign:"left",minHeight:50,transition:"all .2s var(--ease-out)"}}>
+            {PEPTIDES.map(p=>{const on=isEnabled(p.id);const cur=stackById[p.id];return(
+              <button key={p.id} onClick={()=>onStackToggle&&onStackToggle(p.id,!on)} style={{display:"flex",alignItems:"center",gap:11,padding:"11px 13px",borderRadius:"var(--r-sm)",border:`1px solid ${on?p.color:"var(--line-soft)"}`,background:on?`color-mix(in oklch, ${p.color} 8%, transparent)`:"transparent",cursor:"pointer",textAlign:"left",minHeight:50,transition:"all .2s var(--ease-out)"}}>
                 <div style={{width:20,height:20,borderRadius:5,border:`1.5px solid ${on?p.color:"var(--t-4)"}`,background:on?p.color:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{on&&<Icon n="check" s={13} c="var(--bg)" sw={2.5}/>}</div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:13.5,color:on?"var(--t-1)":"var(--t-2)",fontWeight:600}}>{p.name}</div>
-                  <div style={{fontSize:11,color:"var(--t-4)",marginTop:1}}>{p.sub}</div>
+                  <div style={{fontSize:11,color:"var(--t-4)",marginTop:1}}>{p.sub}{on&&cur?.dose?` · ${cur.dose}`:""}</div>
                 </div>
               </button>
             );})}

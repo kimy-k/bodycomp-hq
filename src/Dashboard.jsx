@@ -5,13 +5,13 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 const SB="https://xstinpgwhpjwoohpkjgn.supabase.co/rest/v1";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzdGlucGd3aHBqd29vaHBramduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MTI4MzksImV4cCI6MjA5NDQ4ODgzOX0.XVrnWxg4MXOB9iBxkq9rP9T8XBsBjS8Ff85jC4MhLPc";
 const hdr={apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,"Content-Type":"application/json"};
-const makeDb=(uid)=>({
-  async get(table,dateVal){try{const r=await fetch(`${SB}/${table}?user_id=eq.${uid}&date=eq.${dateVal}&select=*`,{headers:hdr});const d=await r.json();return d[0]||null;}catch{return null;}},
-  async upsert(table,row){try{await fetch(`${SB}/${table}`,{method:"POST",headers:{...hdr,Prefer:"resolution=merge-duplicates"},body:JSON.stringify({...row,user_id:uid})});}catch(e){console.error("db upsert:",e);}},
-  async list(table,limit=14){try{const r=await fetch(`${SB}/${table}?user_id=eq.${uid}&select=*&order=date.desc&limit=${limit}`,{headers:hdr});return await r.json();}catch{return[];}},
-  async del(table,dateVal){try{await fetch(`${SB}/${table}?user_id=eq.${uid}&date=eq.${dateVal}`,{method:"DELETE",headers:hdr});}catch{}},
-  async getConfig(key){try{const r=await fetch(`${SB}/config?user_id=eq.${uid}&key=eq.${key}&select=*`,{headers:hdr});const d=await r.json();return d[0]?.value||null;}catch{return null;}},
-  async setConfig(key,value){try{await fetch(`${SB}/config`,{method:"POST",headers:{...hdr,Prefer:"resolution=merge-duplicates"},body:JSON.stringify({user_id:uid,key,value,updated_at:new Date().toISOString()})});}catch{}},
+const makeDb=(uid,onErr=()=>{})=>({
+  async get(table,dateVal){try{const r=await fetch(`${SB}/${table}?user_id=eq.${uid}&date=eq.${dateVal}&select=*`,{headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);const d=await r.json();return d[0]||null;}catch(e){onErr(`Couldn't load ${table}`);return null;}},
+  async upsert(table,row){try{const r=await fetch(`${SB}/${table}`,{method:"POST",headers:{...hdr,Prefer:"resolution=merge-duplicates"},body:JSON.stringify({...row,user_id:uid})});if(!r.ok)throw new Error(`${table}: ${r.status}`);return true;}catch(e){console.error("db upsert:",e);onErr(`Couldn't save ${table}`);return false;}},
+  async list(table,limit=14){try{const r=await fetch(`${SB}/${table}?user_id=eq.${uid}&select=*&order=date.desc&limit=${limit}`,{headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return await r.json();}catch(e){onErr(`Couldn't load ${table}`);return[];}},
+  async del(table,dateVal){try{const r=await fetch(`${SB}/${table}?user_id=eq.${uid}&date=eq.${dateVal}`,{method:"DELETE",headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return true;}catch(e){onErr(`Couldn't delete ${table}`);return false;}},
+  async getConfig(key){try{const r=await fetch(`${SB}/config?user_id=eq.${uid}&key=eq.${key}&select=*`,{headers:hdr});if(!r.ok)throw new Error(`config: ${r.status}`);const d=await r.json();return d[0]?.value||null;}catch(e){return null;}},
+  async setConfig(key,value){try{const r=await fetch(`${SB}/config`,{method:"POST",headers:{...hdr,Prefer:"resolution=merge-duplicates"},body:JSON.stringify({user_id:uid,key,value,updated_at:new Date().toISOString()})});if(!r.ok)throw new Error(`config: ${r.status}`);return true;}catch(e){onErr(`Couldn't save settings`);return false;}},
 });
 
 const PROFILES={
@@ -210,6 +210,23 @@ const Insight=({icon,title,text,color,delay=0})=>(<div className="rise" style={{
 </div>);
 
 const cBox={background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"14px 6px 6px 0",border:"none"};
+
+/* Skeleton loader — shimmering placeholder bars while data fetches */
+const Skel=({h=14,w="100%",mb=8,r=6,style={}})=>(<div style={{height:h,width:w,marginBottom:mb,borderRadius:r,background:"linear-gradient(90deg, var(--elev-1) 0%, var(--elev-2) 50%, var(--elev-1) 100%)",backgroundSize:"200% 100%",animation:"shimmer 1.6s var(--ease-out) infinite",...style}}/>);
+const SkelTab=()=>(<div className="fade">
+  <Skel h={140} mb={14} r={20}/>
+  <Skel h={64} mb={12} r={14}/>
+  <div style={{display:"flex",gap:8,marginBottom:14}}>{[1,2,3].map(i=>(<Skel key={i} h={68} mb={0} r={12}/>))}</div>
+  <Skel h={54} mb={18} r={12}/>
+  <Skel h={18} w="40%" mb={12}/>
+  {[1,2,3].map(i=>(<Skel key={i} h={48} mb={6} r={8}/>))}
+</div>);
+
+/* Toast — bottom-center brief notification, used for save failures */
+const Toast=({toast})=>!toast?null:(<div className="sheet" style={{position:"fixed",bottom:"calc(96px + env(safe-area-inset-bottom,0px))",left:"50%",transform:"translateX(-50%)",zIndex:200,background:toast.type==="error"?"color-mix(in oklch, var(--c-danger) 18%, var(--elev-2))":"color-mix(in oklch, var(--c-success) 18%, var(--elev-2))",border:`1px solid ${toast.type==="error"?"var(--c-danger)":"var(--c-success)"}`,borderRadius:"var(--r-md)",padding:"11px 18px",color:"var(--t-1)",fontSize:13,fontWeight:500,boxShadow:"var(--shadow-1)",maxWidth:"min(90vw, 360px)",display:"flex",alignItems:"center",gap:8}}>
+  <Icon n={toast.type==="error"?"warn":"check"} s={16} c={toast.type==="error"?"var(--c-danger)":"var(--c-success)"} sw={2}/>
+  <span>{toast.msg}</span>
+</div>);
 
 /* ═══ ONBOARDING ═══ */
 const AVAILABLE_PEPS=[
@@ -527,6 +544,13 @@ function Settings({db,userId,userConfig,defaultProfile,onClose,onSave}){
           <button onClick={onClose} className="touch" style={{flex:1,padding:"14px",borderRadius:"var(--r-md)",border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-2)",fontSize:14,fontWeight:600,cursor:"pointer"}}>Cancel</button>
           <button onClick={save} disabled={saving} className="touch" style={{flex:2,padding:"14px",borderRadius:"var(--r-md)",border:"none",background:"var(--t-1)",color:"var(--bg)",fontSize:14,fontWeight:600,cursor:saving?"default":"pointer",opacity:saving?0.6:1}}>{saving?"Saving…":"Save changes"}</button>
         </div>
+
+        {/* Danger zone */}
+        <div className="rise" style={{animationDelay:".40s",marginTop:32,padding:"16px 18px",border:"1px dashed var(--line-soft)",borderRadius:"var(--r-md)"}}>
+          <div style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:6}}>Reset</div>
+          <p style={{fontSize:12,color:"var(--t-3)",margin:"0 0 12px",lineHeight:1.5}}>Re-run the onboarding wizard. Your saved scans, meals, peptide logs, and Whoop entries stay intact — only profile setup is replayed.</p>
+          <button onClick={async()=>{if(!window.confirm("Re-run onboarding? Your data stays — only profile setup is replayed."))return;await db.setConfig("onboarded",false);window.location.reload();}} className="touch" style={{padding:"11px 16px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"transparent",color:"var(--t-2)",fontSize:12.5,fontWeight:600,cursor:"pointer"}}>Re-run onboarding</button>
+        </div>
       </div>
     </div>
   );
@@ -539,9 +563,11 @@ function DashboardInner(){
   const [userId,setUserId]=useState(urlUser||"kim");
   const locked=!!urlUser;
   const [userConfig,setUserConfig]=useState(null);
+  const [toast,setToast]=useState(null);
+  const showToast=useCallback((msg,type="error")=>{const id=Date.now()+Math.random();setToast({msg,type,id});setTimeout(()=>setToast(t=>t&&t.id===id?null:t),3800);},[]);
   const defaultProfile=PROFILES[userId]||PROFILES.kim;
   const profile=userConfig?{...defaultProfile,name:userConfig.name||defaultProfile.name,targets:userConfig.targets||defaultProfile.targets}:defaultProfile;
-  const db=useMemo(()=>makeDb(userId),[userId]);
+  const db=useMemo(()=>makeDb(userId,msg=>showToast(msg,"error")),[userId,showToast]);
   const TARGETS=profile.targets;
 
   const [onboarded,setOnboarded]=useState(null);
@@ -579,6 +605,8 @@ function DashboardInner(){
   const [favs,setFavs]=useState([]);const [showFavs,setShowFavs]=useState(false);
   const [editId,setEditId]=useState(null);const [editMeal,setEditMeal]=useState({name:"",protein:"",fat:"",carbs:"",tag:""});
   const day=todayKey();
+  /* Whey config derived from userConfig (Settings). Sensible defaults match the original constant (25g protein/scoop × 2 scoops). */
+  const whey=useMemo(()=>{const perScoop=+(userConfig?.wheyProtein||25);const scoops=+(userConfig?.wheyScoops||2);return{protein:perScoop*scoops,fat:+(scoops*0.5).toFixed(1),carbs:scoops*2,scoops,perScoop,enabled:perScoop>0&&scoops>0,label:scoops>0?`Whey · ${scoops} scoop${scoops!==1?"s":""}`:"Whey"};},[userConfig]);
 
   useEffect(()=>{setMeals([]);setWheyOn(true);setMLoading(true);(async()=>{
     const row=await db.get("daily_macros",day);
@@ -597,10 +625,10 @@ function DashboardInner(){
 
   useEffect(()=>{if(macroSub!=="history"||tab!=="macros")return;(async()=>{
     const rows=await db.list("daily_macros",14);
-    const res=rows.map(md=>{let t={cal:0,protein:0,fat:0,carbs:0};(md.meals||[]).forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});t.cal=calcCal(t.protein,t.fat,t.carbs);if(md.whey!==false){t.protein+=WHEY.protein;t.fat+=WHEY.fat;t.carbs+=WHEY.carbs;t.cal+=calcCal(WHEY.protein,WHEY.fat,WHEY.carbs);}return{date:md.date,...t};});
+    const res=rows.map(md=>{let t={cal:0,protein:0,fat:0,carbs:0};(md.meals||[]).forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});t.cal=calcCal(t.protein,t.fat,t.carbs);if(md.whey!==false&&whey.enabled){t.protein+=whey.protein;t.fat+=whey.fat;t.carbs+=whey.carbs;t.cal+=calcCal(whey.protein,whey.fat,whey.carbs);}return{date:md.date,...t};});
     setHistDays(res);
   })();},[macroSub,tab]);
-  const totals=useMemo(()=>{let t={protein:0,fat:0,carbs:0};meals.forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});if(wheyOn){t.protein+=WHEY.protein;t.fat+=WHEY.fat;t.carbs+=WHEY.carbs;}t.cal=calcCal(t.protein,t.fat,t.carbs);return t;},[meals,wheyOn]);
+  const totals=useMemo(()=>{let t={protein:0,fat:0,carbs:0};meals.forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});if(wheyOn&&whey.enabled){t.protein+=whey.protein;t.fat+=whey.fat;t.carbs+=whey.carbs;}t.cal=calcCal(t.protein,t.fat,t.carbs);return t;},[meals,wheyOn,whey]);
   const rem={cal:TARGETS.cal-totals.cal,protein:TARGETS.protein-totals.protein};
   const weekAvgProtein=useMemo(()=>{if(histDays.length===0)return null;const recent=histDays.slice(0,7);return Math.round(recent.reduce((s,d)=>s+d.protein,0)/recent.length);},[histDays]);
   const addMeal=()=>{if(!newMeal.name)return;const m={name:newMeal.name,protein:+(newMeal.protein||0),fat:+(newMeal.fat||0),carbs:+(newMeal.carbs||0),tag:newMeal.tag||"Other",id:Date.now()};saveMacro([...meals,m],wheyOn);setNewMeal({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});setAdding(false);};
@@ -708,8 +736,8 @@ function DashboardInner(){
         <div className="hbar"><i style={{width:`${pctDone}%`,background:`linear-gradient(90deg, var(--accent), oklch(0.82 0.16 80))`}}/></div>
       </div>}
 
-      {/* More menu sheet */}
-      {showMore&&(<div style={{position:"fixed",bottom:90,left:0,right:0,zIndex:100,padding:"0 16px",maxWidth:520,margin:"0 auto"}}>
+      {/* More menu sheet with outside-tap-to-close backdrop */}
+      {showMore&&(<><div onClick={()=>setShowMore(false)} style={{position:"fixed",inset:0,zIndex:99,background:"transparent"}}/><div style={{position:"fixed",bottom:90,left:0,right:0,zIndex:100,padding:"0 16px",maxWidth:520,margin:"0 auto"}}>
         <div className="sheet" style={{background:"oklch(0.18 0.018 285 / 0.96)",backdropFilter:"blur(28px) saturate(180%)",borderRadius:"var(--r-md)",border:"1px solid var(--line)",padding:6,display:"flex",flexDirection:"column",gap:2,boxShadow:"var(--shadow-1)"}}>
           {[["data","scale","Data"],["projection","target","Projection"],["monthly","calendar","Monthly"]].map(([id,ic,label])=>(
             <button key={id} onClick={()=>{setTab(id);setShowMore(false);}} className="touch" style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:"var(--r-sm)",border:"none",background:tab===id?"var(--accent-soft)":"transparent",cursor:"pointer",width:"100%",textAlign:"left",color:tab===id?"var(--accent)":"var(--t-2)"}}>
@@ -718,9 +746,7 @@ function DashboardInner(){
             </button>
           ))}
         </div>
-      </div>)}
-
-      {/* Settings sheet */}
+      </div></>)}
       {showSettings&&<Settings db={db} userId={userId} userConfig={userConfig} defaultProfile={defaultProfile} onClose={()=>setShowSettings(false)} onSave={(cfg)=>{setUserConfig(cfg);setShowSettings(false);}}/>}
 
       {/* ═══ OVERVIEW (BODY) ═══ */}
@@ -778,6 +804,7 @@ function DashboardInner(){
       </>)}
 
       {/* ═══ MACROS ═══ */}
+      {tab==="macros"&&mLoading&&<SkelTab/>}
       {tab==="macros"&&!mLoading&&(<>
         <div style={{display:"flex",gap:6,marginBottom:16}}>{[["log","Today"],["history","History"]].map(([k,l])=>(<TabBtn key={k} active={macroSub===k} onClick={()=>setMacroSub(k)}>{l}</TabBtn>))}</div>
 
@@ -834,14 +861,14 @@ function DashboardInner(){
             ))}
           </div>
 
-          {/* Whey toggle */}
-          <button onClick={toggleWhey} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:wheyOn?"var(--accent-soft)":"var(--elev-1)",border:wheyOn?"1px solid var(--accent-line)":"1px solid transparent",borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:18,cursor:"pointer",transition:"all .2s var(--ease-out)",minHeight:54}}>
+          {/* Whey toggle — only shown when configured in Settings */}
+          {whey.enabled&&<button onClick={toggleWhey} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:wheyOn?"var(--accent-soft)":"var(--elev-1)",border:wheyOn?"1px solid var(--accent-line)":"1px solid transparent",borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:18,cursor:"pointer",transition:"all .2s var(--ease-out)",minHeight:54}}>
             <div style={{textAlign:"left"}}>
-              <div style={{fontSize:13.5,fontWeight:600,color:"var(--t-1)"}}>Whey Isolate · 2 scoops</div>
-              <div className="mono" style={{fontSize:11,color:"var(--t-3)",marginTop:2,letterSpacing:".01em"}}>{calcCal(WHEY.protein,WHEY.fat,WHEY.carbs)} kcal · {WHEY.protein}g protein</div>
+              <div style={{fontSize:13.5,fontWeight:600,color:"var(--t-1)"}}>{whey.label}</div>
+              <div className="mono" style={{fontSize:11,color:"var(--t-3)",marginTop:2,letterSpacing:".01em"}}>{calcCal(whey.protein,whey.fat,whey.carbs)} kcal · {whey.protein}g protein</div>
             </div>
             <div style={{width:42,height:24,borderRadius:12,background:wheyOn?"var(--accent)":"var(--elev-3)",display:"flex",alignItems:"center",padding:"0 3px",transition:"background .2s var(--ease-out)"}}><div style={{width:18,height:18,borderRadius:9,background:"var(--bg)",transform:wheyOn?"translateX(18px)":"translateX(0)",transition:"transform .25s var(--ease-out)"}}/></div>
-          </button>
+          </button>}
 
           {/* Meals list header */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
@@ -955,6 +982,7 @@ function DashboardInner(){
       </>)}
 
       {/* ═══ PEPTIDES ═══ */}
+      {tab==="peptides"&&pepLoading&&<SkelTab/>}
       {tab==="peptides"&&!pepLoading&&(<>
         <div style={{display:"flex",gap:6,marginBottom:16}}>{[["today","Today"],["all","Stack"],["history","History"]].map(([k,l])=>(<TabBtn key={k} active={pepSub===k} onClick={()=>setPepSub(k)}>{l}</TabBtn>))}</div>
 
@@ -1227,6 +1255,7 @@ function DashboardInner(){
       </>)}
 
       {/* ═══ WHOOP ═══ */}
+      {tab==="whoop"&&whoopLoading&&<SkelTab/>}
       {tab==="whoop"&&!whoopLoading&&(<>
         <H2 sub="Log your daily Whoop metrics">Today's recovery</H2>
 
@@ -1358,6 +1387,9 @@ function DashboardInner(){
           );})}
         </div>
       </nav>
+
+      {/* Save error / success toast — floats above everything */}
+      <Toast toast={toast}/>
     </div>
   );
 }

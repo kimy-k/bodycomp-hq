@@ -50,17 +50,23 @@ const calcCal = (p,f,c) => Math.round((p||0)*4+(f||0)*9+(c||0)*4);
 
 /* ═══ PEPTIDE CONFIG ═══ */
 const PEPTIDES = [
-  {id:"reta",users:["kim"],name:"Retatrutide",dose:"2.5mg (25u)",schedule:[2],time:"AM",status:"active",startDate:"2026-03-10",week:10,totalWeeks:12,cycleEnd:"2026-06-01",note:"Bump to 4mg May 19",color:"oklch(0.70 0.18 25)",dosesLeft:5,daysSupply:35,supplyNote:"Pen 2 + RTA backup",purpose:"Triple agonist (GLP-1/GIP/Glucagon). Suppresses appetite, accelerates fat loss, improves insulin sensitivity. Your primary weight-loss peptide."},
-  {id:"klow",users:["kim","bernadette"],name:"Klow",dose:"40u (10.7mg)",schedule:[0,1,2,3,4,5,6],time:"PM",status:"active",startDate:"2026-05-01",week:3,totalWeeks:4,cycleEnd:"2026-05-28",note:"Daily · Cycle ends May 28",color:"oklch(0.76 0.17 160)",dosesLeft:7,daysSupply:7,supplyNote:"~1 week left",purpose:"4-in-1 blend: BPC-157 (gut healing) + TB-500 (tissue repair) + GHK-Cu (skin/collagen) + KPV (anti-inflammatory). Recovery, healing, skin quality."},
-  {id:"nad",users:["kim","bernadette"],name:"NAD+",dose:"50mg (30u)",schedule:[1,3],time:"AM",status:"active",startDate:"2026-04-06",week:6,totalWeeks:12,cycleEnd:"2026-06-29",note:"Mon/Wed",color:"oklch(0.74 0.14 240)",dosesLeft:40,daysSupply:140,supplyNote:"5 vials · well stocked",purpose:"Cellular energy currency. Activates sirtuins (longevity genes), supports DNA repair, boosts mitochondrial function. Anti-aging and metabolic support."},
-  {id:"ta1",users:["kim","bernadette"],name:"Thymosin Alpha-1",dose:"1.5mg (15u)",schedule:[1,4],time:"AM",status:"active",startDate:"2026-05-16",week:1,totalWeeks:8,cycleEnd:"2026-07-11",note:"Mon/Thu · Just started",color:"oklch(0.74 0.16 305)",dosesLeft:6,daysSupply:21,supplyNote:"2 vials × 3 doses",purpose:"Immune modulator from the thymus. Boosts T-cell function, enhances immune surveillance, anti-viral/anti-tumor activity. Strengthens immune system."},
-  {id:"amino",users:["kim","bernadette"],name:"5-Amino-1MQ",dose:"2.5mg (25u) BID",schedule:[0,1,2,3,4,5,6],time:"AM+PM",status:"active",startDate:"2026-05-16",week:1,totalWeeks:4,cycleEnd:"2026-06-13",note:"Daily BID · Just started",color:"oklch(0.78 0.16 50)",dosesLeft:4,daysSupply:4,supplyNote:"4 days only — reorder now",purpose:"NNMT enzyme inhibitor. Blocks fat storage pathway, increases metabolic rate, promotes fat cell energy expenditure. Direct fat-loss mechanism separate from Reta."},
-  {id:"snap8",users:["kim","bernadette"],name:"Snap-8",dose:"Topical AM+PM",schedule:[0,1,2,3,4,5,6],time:"AM+PM",status:"active",startDate:"2026-05-16",week:1,totalWeeks:12,cycleEnd:"2026-08-08",note:"Topical",color:"oklch(0.76 0.18 335)",dosesLeft:28,daysSupply:28,supplyNote:"1 vial ~4 weeks",purpose:"Acetyl octapeptide-3 (topical). Relaxes facial muscles like mild Botox — reduces fine lines and wrinkles. Applied to skin, not injected."},
-  {id:"cjcipa",users:["kim","bernadette"],name:"CJC+Ipamorelin",dose:"100mcg ea (3u)",schedule:[1,2,3,4,5],time:"Bedtime",status:"starting",startDate:"2026-05-17",week:0,totalWeeks:12,cycleEnd:"2026-08-09",note:"Starts May 17 · 5on/2off",color:"oklch(0.78 0.14 180)",dosesLeft:60,daysSupply:84,supplyNote:"2 vials · 12+ weeks",purpose:"Dual GH secretagogue. CJC amplifies natural growth hormone pulses, Ipamorelin triggers them. Together: deeper sleep, fat loss, recovery, skin, anti-aging. Tesamorelin replacement without nightmares."},
-  {id:"semax",users:["kim","bernadette"],name:"Semax+Selank",dose:"200mcg x2 daily",schedule:[1,2,3,4,5],time:"AM+Lunch",status:"prn",startDate:"2026-04-20",week:0,totalWeeks:0,note:"PRN for focus",color:"oklch(0.84 0.14 90)",dosesLeft:60,daysSupply:60,supplyNote:"~60 doses per bottle",purpose:"Nootropic nasal sprays. Semax: boosts BDNF, sharpens focus and memory. Selank: anxiolytic, calms without sedation. Together: calm clarity for demanding work."},
-  {id:"motsc",users:["kim","bernadette"],name:"MOTS-c",dose:"1.5mg (30u)",schedule:[],time:"—",status:"break",startDate:"2026-04-14",week:0,totalWeeks:5,cycleEnd:null,note:"Break until ~Jun 10 · 2 vials ready for Cycle 2",color:"oklch(0.66 0.02 285)",dosesLeft:12,daysSupply:42,supplyNote:"2 Pepmuse vials for C2",purpose:"Mitochondrial peptide. Enhances exercise capacity, improves insulin sensitivity, activates AMPK (the exercise-mimetic pathway). Makes workouts more effective."},
-  {id:"glow",users:["kim","bernadette"],name:"Glow",dose:"30u (7mg)",schedule:[],time:"—",status:"break",startDate:"2026-03-12",week:0,totalWeeks:8,cycleEnd:null,note:"Break until ~May 21",color:"oklch(0.66 0.02 285)",dosesLeft:10,daysSupply:21,supplyNote:"Vials available",purpose:"3-in-1 blend: BPC-157 + TB-500 + GHK-Cu. Same as Klow minus KPV. Healing, recovery, skin/collagen. Original version before switching to Klow."},
+  {id:"reta",users:["kim"],name:"Retatrutide",sub:"Triple agonist",dose:"2.5mg (25u)",schedule:[2],time:"AM",status:"active",startDate:"2026-03-10",week:10,totalWeeks:12,cycleEnd:"2026-06-01",note:"Bump to 4mg May 19",color:"oklch(0.70 0.18 25)",dosesLeft:5,daysSupply:35,supplyNote:"Pen 2 + RTA backup",purpose:"Triple agonist (GLP-1/GIP/Glucagon). Suppresses appetite, accelerates fat loss, improves insulin sensitivity. Your primary weight-loss peptide."},
+  {id:"klow",users:["kim","bernadette"],name:"Klow",sub:"BPC + TB + GHK + KPV",dose:"40u (10.7mg)",schedule:[0,1,2,3,4,5,6],time:"PM",status:"active",startDate:"2026-05-01",week:3,totalWeeks:4,cycleEnd:"2026-05-28",note:"Daily · Cycle ends May 28",color:"oklch(0.76 0.17 160)",dosesLeft:7,daysSupply:7,supplyNote:"~1 week left",purpose:"4-in-1 blend: BPC-157 (gut healing) + TB-500 (tissue repair) + GHK-Cu (skin/collagen) + KPV (anti-inflammatory). Recovery, healing, skin quality."},
+  {id:"nad",users:["kim","bernadette"],name:"NAD+",sub:"Cellular energy",dose:"50mg (30u)",schedule:[1,3],time:"AM",status:"active",startDate:"2026-04-06",week:6,totalWeeks:12,cycleEnd:"2026-06-29",note:"Mon/Wed",color:"oklch(0.74 0.14 240)",dosesLeft:40,daysSupply:140,supplyNote:"5 vials · well stocked",purpose:"Cellular energy currency. Activates sirtuins (longevity genes), supports DNA repair, boosts mitochondrial function. Anti-aging and metabolic support."},
+  {id:"ta1",users:["kim","bernadette"],name:"Thymosin Alpha-1",sub:"Immune modulator",dose:"1.5mg (15u)",schedule:[1,4],time:"AM",status:"active",startDate:"2026-05-16",week:1,totalWeeks:8,cycleEnd:"2026-07-11",note:"Mon/Thu · Just started",color:"oklch(0.74 0.16 305)",dosesLeft:6,daysSupply:21,supplyNote:"2 vials × 3 doses",purpose:"Immune modulator from the thymus. Boosts T-cell function, enhances immune surveillance, anti-viral/anti-tumor activity. Strengthens immune system."},
+  {id:"amino",users:["kim","bernadette"],name:"5-Amino-1MQ",sub:"NNMT inhibitor",dose:"2.5mg (25u) BID",schedule:[0,1,2,3,4,5,6],time:"AM+PM",status:"active",startDate:"2026-05-16",week:1,totalWeeks:4,cycleEnd:"2026-06-13",note:"Daily BID · Just started",color:"oklch(0.78 0.16 50)",dosesLeft:4,daysSupply:4,supplyNote:"4 days only — reorder now",purpose:"NNMT enzyme inhibitor. Blocks fat storage pathway, increases metabolic rate, promotes fat cell energy expenditure. Direct fat-loss mechanism separate from Reta."},
+  {id:"snap8",users:["kim","bernadette"],name:"Snap-8",sub:"Topical · anti-aging",dose:"Topical AM+PM",schedule:[0,1,2,3,4,5,6],time:"AM+PM",status:"active",startDate:"2026-05-16",week:1,totalWeeks:12,cycleEnd:"2026-08-08",note:"Topical",color:"oklch(0.76 0.18 335)",dosesLeft:28,daysSupply:28,supplyNote:"1 vial ~4 weeks",purpose:"Acetyl octapeptide-3 (topical). Relaxes facial muscles like mild Botox — reduces fine lines and wrinkles. Applied to skin, not injected."},
+  {id:"cjcipa",users:["kim","bernadette"],name:"CJC+Ipamorelin",sub:"GH secretagogue",dose:"100mcg ea (3u)",schedule:[1,2,3,4,5],time:"Bedtime",status:"starting",startDate:"2026-05-17",week:0,totalWeeks:12,cycleEnd:"2026-08-09",note:"Starts May 17 · 5on/2off",color:"oklch(0.78 0.14 180)",dosesLeft:60,daysSupply:84,supplyNote:"2 vials · 12+ weeks",purpose:"Dual GH secretagogue. CJC amplifies natural growth hormone pulses, Ipamorelin triggers them. Together: deeper sleep, fat loss, recovery, skin, anti-aging."},
+  {id:"tesa",users:["kim","bernadette"],name:"Tesamorelin",sub:"GHRH analog · visceral fat",dose:"2mg (20u)",schedule:[1,3,5],time:"AM",status:"active",startDate:"2026-04-01",week:7,totalWeeks:12,cycleEnd:"2026-06-22",note:"Mon/Wed/Fri",color:"oklch(0.72 0.15 280)",dosesLeft:15,daysSupply:35,supplyNote:"~5 weeks supply",purpose:"GHRH analog. Targets visceral abdominal fat, lifts IGF-1, supports lean mass preservation. FDA-approved for HIV lipodystrophy; used off-label for body comp."},
+  {id:"semax",users:["kim","bernadette"],name:"Semax+Selank",sub:"Nootropic sprays",dose:"200mcg x2 daily",schedule:[1,2,3,4,5],time:"AM+Lunch",status:"prn",startDate:"2026-04-20",week:0,totalWeeks:0,note:"PRN for focus",color:"oklch(0.84 0.14 90)",dosesLeft:60,daysSupply:60,supplyNote:"~60 doses per bottle",purpose:"Nootropic nasal sprays. Semax: boosts BDNF, sharpens focus and memory. Selank: anxiolytic, calms without sedation. Together: calm clarity for demanding work."},
+  {id:"motsc",users:["kim","bernadette"],name:"MOTS-c",sub:"Mitochondrial",dose:"1.5mg (30u)",schedule:[],time:"—",status:"break",startDate:"2026-04-14",week:0,totalWeeks:5,cycleEnd:null,note:"Break until ~Jun 10 · 2 vials ready for Cycle 2",color:"oklch(0.66 0.02 285)",dosesLeft:12,daysSupply:42,supplyNote:"2 Pepmuse vials for C2",purpose:"Mitochondrial peptide. Enhances exercise capacity, improves insulin sensitivity, activates AMPK (the exercise-mimetic pathway). Makes workouts more effective."},
+  {id:"glow",users:["kim","bernadette"],name:"Glow",sub:"BPC + TB + GHK",dose:"30u (7mg)",schedule:[],time:"—",status:"break",startDate:"2026-03-12",week:0,totalWeeks:8,cycleEnd:null,note:"Break until ~May 21",color:"oklch(0.66 0.02 285)",dosesLeft:10,daysSupply:21,supplyNote:"Vials available",purpose:"3-in-1 blend: BPC-157 + TB-500 + GHK-Cu. Same as Klow minus KPV. Healing, recovery, skin/collagen. Original version before switching to Klow."},
 ];
+
+/* Auto-derived from PEPTIDES so the Settings toggle list, Onboarding selector,
+   Stack tab, and Today checklist always stay in sync. Add a new peptide once
+   to PEPTIDES and it flows everywhere. */
+const AVAILABLE_PEPS = PEPTIDES.map(p=>({id:p.id,name:p.name,sub:p.sub,color:p.color}));
 
 /* ═══ PEPTIDE SUPPLIERS — PH reseller catalog ═══
    Contact info verified against PeptideGuidesPH directory (https://yellow-fire-83c6.peptideguidesph.workers.dev/).
@@ -95,6 +101,7 @@ const PRODUCT_FOR_PEPTIDE = {
   amino:  "amino_1mq_10",  // 10mg vial; switch to "amino_1mq_5" if you reorder smaller
   snap8:  "snap8_10mg",
   cjcipa: "cjcipa",        // no community price data yet — browse stores directly
+  tesa:   "tesa10",        // 10mg vial, 3 sellers
   semax:  "semax_selank",
   motsc:  "motsc10",
   glow:   "glow",
@@ -142,6 +149,7 @@ const PG_SLUG_FOR_PEPTIDE = {
   amino:  "5-amino-1mq",
   snap8:  "snap-8",
   cjcipa: "cjc-ipa-protocol",
+  tesa:   "tesamorelin",
   semax:  "semax",
   motsc:  "mots-c",
   glow:   "glow",
@@ -313,6 +321,26 @@ const RECONSTITUTION = {
     ],
     storage: "Refrigerated 2–8°C",
     sources: ["PeptideGuidesPH /peptides/cjc-ipa-protocol/"],
+  },
+  tesa: {
+    label: "Tesamorelin",
+    options: [
+      {vial:2,    bac:0.5, conc:4,    note:"Egrifta SV preparation · 1.4mg = 0.35mL · USE IMMEDIATELY (single-use)", recommended:false},
+      {vial:11.6, bac:1.3, conc:8.92, note:"Egrifta WR preparation · stable 7 days at room temp",                    recommended:false},
+      {vial:10,   bac:2,   conc:5,    note:"Common community recon · 2mg = 0.4mL (40u) · use within 7 days",         recommended:true},
+      {vial:10,   bac:1,   conc:10,   note:"Compact · 2mg = 0.2mL (20u) · use within 7 days",                        recommended:false},
+    ],
+    stabilityDays: 7,
+    technique: [
+      "Allow lyophilized vial and BAC water to reach room temperature first",
+      "Wipe vial stopper with alcohol swab, let air-dry",
+      "Inject BAC water slowly DOWN the vial wall (do not blast onto powder)",
+      "Gently swirl to dissolve — vigorous shaking denatures the GHRH protein",
+      "Solution must be CLEAR and COLORLESS — any yellow/brown tint = discard",
+      "Inject SubQ in abdomen avoiding navel ±2 inches; rotate sites weekly",
+    ],
+    storage: "After reconstitution: refrigerate or room temp ≤25°C; USE WITHIN 7 DAYS. Tesa is unusually unstable — much shorter window than reta or NAD+.",
+    sources: ["PeptideGuidesPH /peptides/tesamorelin/", "Egrifta SV/WR prescribing information"],
   },
   semax: {
     label: "Semax + Selank (nasal sprays)",
@@ -947,18 +975,6 @@ const Toast=({toast})=>!toast?null:(<div className="sheet" style={{position:"fix
 </div>);
 
 /* ═══ ONBOARDING ═══ */
-const AVAILABLE_PEPS=[
-  {id:"klow",name:"Klow",sub:"BPC + TB + GHK + KPV",color:"oklch(0.76 0.17 160)"},
-  {id:"nad",name:"NAD+",sub:"Cellular energy",color:"oklch(0.74 0.14 240)"},
-  {id:"ta1",name:"Thymosin Alpha-1",sub:"Immune modulator",color:"oklch(0.74 0.16 305)"},
-  {id:"amino",name:"5-Amino-1MQ",sub:"NNMT inhibitor",color:"oklch(0.78 0.16 50)"},
-  {id:"snap8",name:"Snap-8",sub:"Topical · anti-aging",color:"oklch(0.76 0.18 335)"},
-  {id:"cjcipa",name:"CJC+Ipamorelin",sub:"GH secretagogue",color:"oklch(0.78 0.14 180)"},
-  {id:"semax",name:"Semax + Selank",sub:"Nootropic",color:"oklch(0.84 0.14 90)"},
-  {id:"motsc",name:"MOTS-c",sub:"Mitochondrial",color:"oklch(0.76 0.17 150)"},
-  {id:"glow",name:"Glow",sub:"BPC + TB + GHK",color:"oklch(0.78 0.16 140)"},
-  {id:"reta",name:"Retatrutide",sub:"Triple agonist",color:"oklch(0.70 0.18 25)"},
-];
 
 function Onboarding({db,onComplete}){
   const [step,setStep]=useState(0);

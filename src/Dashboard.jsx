@@ -80,14 +80,182 @@ const cBox={background:"rgba(255,255,255,0.02)",borderRadius:16,padding:"14px 6p
 const inp={width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",boxSizing:"border-box"};
 
 /* ═══ MAIN ═══ */
+/* ═══ STYLES ═══ */
+const FONT_URL="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap";
+const STYLE=`@import url('${FONT_URL}');
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fillBar{from{width:0}to{width:var(--fill)}}
+@keyframes pop{0%{transform:scale(0.8)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{animation:fadeIn 0.4s ease both}
+.pop{animation:pop 0.3s ease both}
+.slide-up{animation:slideUp 0.35s ease both}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:'Outfit',sans-serif;margin:0}
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}`;
+
+/* ═══ ONBOARDING WIZARD ═══ */
+const AVAILABLE_PEPS=[
+  {id:"klow",name:"Klow (BPC+TB+GHK+KPV)",color:"#34d399"},
+  {id:"nad",name:"NAD+",color:"#60a5fa"},
+  {id:"ta1",name:"Thymosin Alpha-1",color:"#c084fc"},
+  {id:"amino",name:"5-Amino-1MQ",color:"#fb923c"},
+  {id:"snap8",name:"Snap-8 (topical)",color:"#e879f9"},
+  {id:"cjcipa",name:"CJC+Ipamorelin",color:"#2dd4bf"},
+  {id:"semax",name:"Semax+Selank",color:"#fcd34d"},
+  {id:"motsc",name:"MOTS-c",color:"#94a3b8"},
+  {id:"glow",name:"Glow (BPC+TB+GHK)",color:"#6ee7b7"},
+  {id:"reta",name:"Retatrutide",color:"#f87171"},
+];
+
+function Onboarding({db,onComplete}){
+  const [step,setStep]=useState(0);
+  const [d,setD]=useState({name:"",height:"",weight:"",age:"",gender:"female",activity:"light",targetBf:"30",targetCal:"",targetProtein:"",targetFat:"",targetCarbs:"",wheyProtein:"",wheyScoops:"",peptides:[],scanWeight:"",scanMuscle:"",scanFat:"",scanDate:new Date().toISOString().slice(0,10)});
+  const up=(k,v)=>setD({...d,[k]:v});
+  const togglePep=(id)=>{const p=[...d.peptides];const i=p.indexOf(id);if(i>=0)p.splice(i,1);else p.push(id);setD({...d,peptides:p});};
+  const finish=async()=>{
+    const targets={cal:+(d.targetCal||1600),protein:+(d.targetProtein||120),fat:+(d.targetFat||50),carbs:+(d.targetCarbs||150)};
+    await db.setConfig("profile",{name:d.name,height:+(d.height||155),weight:+(d.weight||0),age:+(d.age||30),gender:d.gender,activity:d.activity,targets,goalBf:+(d.targetBf||30),peptides:d.peptides,wheyProtein:+(d.wheyProtein||0),wheyScoops:+(d.wheyScoops||0)});
+    if(d.scanWeight&&d.scanFat){db.upsert("inbody_scans",{date:d.scanDate,weight:+d.scanWeight,muscle:+(d.scanMuscle||0),fat_pct:+d.scanFat});}
+    await db.setConfig("onboarded",true);
+    onComplete({name:d.name,targets,goalBf:+(d.targetBf||30),peptides:d.peptides,wheyProtein:+(d.wheyProtein||0),wheyScoops:+(d.wheyScoops||0)});
+  };
+  const bg="linear-gradient(135deg,#0f0f1a 0%,#1a1025 50%,#0f0f1a 100%)";
+  const inp={width:"100%",padding:"14px 16px",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:16,fontFamily:"Outfit",outline:"none"};
+  const btn=(active)=>({width:"100%",padding:"16px",borderRadius:16,border:"none",background:active?"linear-gradient(135deg,#a78bfa,#7c3aed)":"rgba(255,255,255,0.06)",color:active?"#fff":"rgba(255,255,255,0.2)",fontSize:16,fontWeight:700,fontFamily:"Outfit",cursor:active?"pointer":"default"});
+
+  const steps=[
+    // Step 0: Welcome
+    <div key={0} className="slide-up" style={{textAlign:"center",padding:"60px 0"}}>
+      <div style={{fontSize:64,marginBottom:20}}>📊</div>
+      <h1 style={{fontSize:28,fontWeight:800,color:"#fff",margin:"0 0 8px",letterSpacing:"-0.5px"}}>Body Comp HQ</h1>
+      <p style={{fontSize:15,color:"rgba(255,255,255,0.4)",margin:"0 0 40px",lineHeight:1.6}}>Track your body composition, nutrition, peptides, and recovery — all in one place.</p>
+      <button onClick={()=>setStep(1)} style={btn(true)}>Let's Get Started</button>
+    </div>,
+    // Step 1: Profile
+    <div key={1} className="slide-up">
+      <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 4px"}}>About You</h2>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.35)",margin:"0 0 24px"}}>We'll calculate your BMR, TDEE, and recommended deficit</p>
+      <label style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:6,display:"block",fontWeight:600}}>YOUR NAME</label>
+      <input value={d.name} onChange={e=>up("name",e.target.value)} placeholder="e.g. Bernadette" style={{...inp,marginBottom:16}}/>
+      <div style={{display:"flex",gap:12,marginBottom:16}}>
+        <div style={{flex:1}}><label style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:6,display:"block",fontWeight:600}}>AGE</label><input type="number" value={d.age} onChange={e=>up("age",e.target.value)} placeholder="30" style={inp}/></div>
+        <div style={{flex:1}}><label style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:6,display:"block",fontWeight:600}}>GENDER</label><div style={{display:"flex",gap:6}}>{[["female","♀ Female"],["male","♂ Male"]].map(([v,l])=>(<button key={v} onClick={()=>up("gender",v)} style={{flex:1,padding:"12px 8px",borderRadius:12,border:`1px solid ${d.gender===v?"#a78bfa44":"rgba(255,255,255,0.06)"}`,background:d.gender===v?"rgba(167,139,250,0.1)":"transparent",color:d.gender===v?"#a78bfa":"rgba(255,255,255,0.3)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"Outfit"}}>{l}</button>))}</div></div>
+      </div>
+      <div style={{display:"flex",gap:12,marginBottom:16}}>
+        <div style={{flex:1}}><label style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:6,display:"block",fontWeight:600}}>HEIGHT (cm)</label><input type="number" value={d.height} onChange={e=>up("height",e.target.value)} placeholder="155" style={inp}/></div>
+        <div style={{flex:1}}><label style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:6,display:"block",fontWeight:600}}>WEIGHT (kg)</label><input type="number" value={d.weight} onChange={e=>up("weight",e.target.value)} placeholder="54" style={inp}/></div>
+      </div>
+      <label style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:8,display:"block",fontWeight:600}}>ACTIVITY LEVEL</label>
+      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:20}}>
+        {[["sedentary","Sedentary","Office job, little exercise"],["light","Lightly Active","Light exercise 1-3 days/week"],["moderate","Moderately Active","Moderate exercise 3-5 days/week"],["active","Very Active","Hard exercise 6-7 days/week"]].map(([v,l,desc])=>(<button key={v} onClick={()=>up("activity",v)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",borderRadius:12,border:`1px solid ${d.activity===v?"#a78bfa44":"rgba(255,255,255,0.06)"}`,background:d.activity===v?"rgba(167,139,250,0.08)":"transparent",cursor:"pointer",textAlign:"left"}}>
+          <div><div style={{fontSize:13,color:d.activity===v?"#a78bfa":"rgba(255,255,255,0.5)",fontWeight:600,fontFamily:"Outfit"}}>{l}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.2)",fontFamily:"Outfit"}}>{desc}</div></div>
+          {d.activity===v&&<span style={{color:"#a78bfa",fontSize:16}}>✓</span>}
+        </button>))}
+      </div>
+      {/* Live BMR/TDEE preview */}
+      {d.weight&&d.height&&d.age&&(()=>{
+        const bmr=d.gender==="male"?10*(+d.weight)+6.25*(+d.height)-5*(+d.age)+5:10*(+d.weight)+6.25*(+d.height)-5*(+d.age)-161;
+        const mult={sedentary:1.2,light:1.375,moderate:1.55,active:1.725}[d.activity]||1.375;
+        const tdee=Math.round(bmr*mult);
+        return(<div style={{background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.15)",borderRadius:14,padding:14,marginBottom:20}}>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginBottom:8}}>YOUR ESTIMATED NUMBERS</div>
+          <div style={{display:"flex",justifyContent:"space-around",textAlign:"center"}}>
+            <div><div style={{fontSize:22,fontWeight:800,color:"#60a5fa"}}>{Math.round(bmr)}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>BMR</div></div>
+            <div><div style={{fontSize:22,fontWeight:800,color:"#a78bfa"}}>{tdee}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>TDEE</div></div>
+            <div><div style={{fontSize:22,fontWeight:800,color:"#4ade80"}}>{Math.round(tdee*0.8)}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>20% deficit</div></div>
+          </div>
+        </div>);
+      })()}
+      <button onClick={()=>setStep(2)} style={btn(d.name&&d.weight&&d.height)}>Continue</button>
+    </div>,
+    // Step 2: Goals & Nutrition
+    <div key={2} className="slide-up">
+      <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 4px"}}>Goals & Nutrition</h2>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.35)",margin:"0 0 24px"}}>Set your targets — we'll track your progress daily</p>
+      <label style={{fontSize:12,color:"#f472b6",marginBottom:6,display:"block",fontWeight:700}}>TARGET BODY FAT %</label>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.2)",margin:"-2px 0 8px"}}>What body fat percentage are you working toward?</p>
+      <input type="number" value={d.targetBf} onChange={e=>up("targetBf",e.target.value)} placeholder="30" style={{...inp,fontSize:28,fontWeight:800,textAlign:"center",marginBottom:24}}/>
+      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,padding:16,marginBottom:20,border:"1px solid rgba(255,255,255,0.06)"}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:4}}>Daily Meal Plan</div>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.25)",margin:"0 0 12px"}}>Enter your meal plan targets (from your nutritionist or app)</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><label style={{fontSize:10,color:"#a78bfa",fontWeight:700,display:"block",marginBottom:4}}>CALORIES (kcal)</label><input type="number" value={d.targetCal} onChange={e=>up("targetCal",e.target.value)} placeholder="1600" style={inp}/></div>
+          <div><label style={{fontSize:10,color:"#f472b6",fontWeight:700,display:"block",marginBottom:4}}>PROTEIN (g)</label><input type="number" value={d.targetProtein} onChange={e=>up("targetProtein",e.target.value)} placeholder="120" style={inp}/></div>
+          <div><label style={{fontSize:10,color:"#fbbf24",fontWeight:700,display:"block",marginBottom:4}}>FAT (g)</label><input type="number" value={d.targetFat} onChange={e=>up("targetFat",e.target.value)} placeholder="50" style={inp}/></div>
+          <div><label style={{fontSize:10,color:"#60a5fa",fontWeight:700,display:"block",marginBottom:4}}>CARBS (g)</label><input type="number" value={d.targetCarbs} onChange={e=>up("targetCarbs",e.target.value)} placeholder="150" style={inp}/></div>
+        </div>
+      </div>
+      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,padding:16,marginBottom:24,border:"1px solid rgba(255,255,255,0.06)"}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:4}}>Whey Protein</div>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.25)",margin:"0 0 12px"}}>Do you take whey protein? Enter per-scoop protein (g) and daily scoops</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><label style={{fontSize:10,color:"#f472b6",fontWeight:700,display:"block",marginBottom:4}}>PROTEIN/SCOOP (g)</label><input type="number" value={d.wheyProtein} onChange={e=>up("wheyProtein",e.target.value)} placeholder="25" style={inp}/></div>
+          <div><label style={{fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:700,display:"block",marginBottom:4}}>SCOOPS/DAY</label><input type="number" value={d.wheyScoops} onChange={e=>up("wheyScoops",e.target.value)} placeholder="2" style={inp}/></div>
+        </div>
+      </div>
+      <button onClick={()=>setStep(3)} style={btn(true)}>Continue</button>
+    </div>,
+    // Step 3: Peptides
+    <div key={3} className="slide-up">
+      <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 4px"}}>Your Peptides</h2>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.35)",margin:"0 0 20px"}}>Select which peptides you're currently taking</p>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:24}}>
+        {AVAILABLE_PEPS.map(p=>{const on=d.peptides.includes(p.id);return(
+          <button key={p.id} onClick={()=>togglePep(p.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderRadius:12,border:`1px solid ${on?p.color+"44":"rgba(255,255,255,0.06)"}`,background:on?p.color+"12":"transparent",cursor:"pointer",textAlign:"left"}}>
+            <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${on?p.color:"rgba(255,255,255,0.15)"}`,background:on?p.color:"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#0a0a14",flexShrink:0}}>{on?"✓":""}</div>
+            <span style={{fontSize:14,color:on?"#fff":"rgba(255,255,255,0.4)",fontWeight:on?600:400,fontFamily:"Outfit"}}>{p.name}</span>
+          </button>
+        );})}
+      </div>
+      <button onClick={()=>setStep(4)} style={btn(true)}>{d.peptides.length>0?`Continue with ${d.peptides.length} peptides`:"Skip — no peptides"}</button>
+    </div>,
+    // Step 4: First InBody scan
+    <div key={4} className="slide-up">
+      <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 4px"}}>Your Latest InBody Scan</h2>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.35)",margin:"0 0 24px"}}>Add your most recent scan — or skip and add later</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
+        <div><label style={{fontSize:10,color:"#a78bfa",fontWeight:700,display:"block",marginBottom:4}}>WEIGHT (kg)</label><input type="number" step="0.1" value={d.scanWeight} onChange={e=>up("scanWeight",e.target.value)} placeholder="54.1" style={{...inp,textAlign:"center",fontSize:18,fontWeight:700}}/></div>
+        <div><label style={{fontSize:10,color:"#34d399",fontWeight:700,display:"block",marginBottom:4}}>MUSCLE (kg)</label><input type="number" step="0.1" value={d.scanMuscle} onChange={e=>up("scanMuscle",e.target.value)} placeholder="18.0" style={{...inp,textAlign:"center",fontSize:18,fontWeight:700}}/></div>
+        <div><label style={{fontSize:10,color:"#f472b6",fontWeight:700,display:"block",marginBottom:4}}>BODY FAT %</label><input type="number" step="0.1" value={d.scanFat} onChange={e=>up("scanFat",e.target.value)} placeholder="37.6" style={{...inp,textAlign:"center",fontSize:18,fontWeight:700}}/></div>
+      </div>
+      <label style={{fontSize:10,color:"rgba(255,255,255,0.3)",fontWeight:600,display:"block",marginBottom:4}}>SCAN DATE</label>
+      <input type="date" value={d.scanDate} onChange={e=>up("scanDate",e.target.value)} style={{...inp,colorScheme:"dark",marginBottom:24}}/>
+      <button onClick={finish} style={btn(true)}>{d.scanWeight?"Save & Launch":"Skip — I'll add later"}</button>
+    </div>,
+  ];
+
+  return(
+    <div style={{minHeight:"100vh",background:bg,padding:"24px 20px",maxWidth:480,margin:"0 auto",fontFamily:"Outfit"}}>
+      <style>{STYLE}</style>
+      {step>0&&<div style={{display:"flex",gap:4,marginBottom:28}}>{[1,2,3,4].map(i=>(<div key={i} style={{flex:1,height:3,borderRadius:2,background:i<=step?"#a78bfa":"rgba(255,255,255,0.06)"}}/>))}</div>}
+      {step>0&&<button onClick={()=>setStep(step-1)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",fontSize:13,cursor:"pointer",padding:0,marginBottom:16,fontFamily:"Outfit"}}>← Back</button>}
+      {steps[step]}
+    </div>
+  );
+}
+
 export default function Dashboard(){
   const [tab,setTab]=useState("macros");
   const urlUser=useMemo(()=>{try{const p=new URLSearchParams(window.location.search);return p.get("user");}catch{return null;}},[]);
   const [userId,setUserId]=useState(urlUser||"kim");
   const locked=!!urlUser;
-  const profile=PROFILES[userId]||PROFILES.kim;
+  const [userConfig,setUserConfig]=useState(null);
+  const defaultProfile=PROFILES[userId]||PROFILES.kim;
+  const profile=userConfig?{...defaultProfile,name:userConfig.name||defaultProfile.name,targets:userConfig.targets||defaultProfile.targets}:defaultProfile;
   const db=useMemo(()=>makeDb(userId),[userId]);
   const TARGETS=profile.targets;
+
+  // Onboarding check
+  const [onboarded,setOnboarded]=useState(null); // null=loading, true/false
+  useEffect(()=>{(async()=>{const ob=await db.getConfig("onboarded");const cfg=await db.getConfig("profile");if(cfg)setUserConfig(cfg);setOnboarded(!!ob);})();},[db]);
+
+  const handleOnboardComplete=(cfg)=>{setUserConfig(cfg);setOnboarded(true);};
+
+  // Show loading
+  if(onboarded===null)return(<div style={{minHeight:"100vh",background:"#0f0f1a",display:"flex",alignItems:"center",justifyContent:"center"}}><style>{STYLE}</style><div style={{color:"rgba(255,255,255,0.3)",fontSize:14,fontFamily:"Outfit"}}>Loading...</div></div>);
+  // Show onboarding
+  if(!onboarded)return <Onboarding db={db} onComplete={handleOnboardComplete}/>;
 
   const [dark,setDark]=useState(true);
   useEffect(()=>{(async()=>{const t=await db.getConfig("theme");if(t==="light")setDark(false);})();},[db]);
@@ -109,7 +277,7 @@ export default function Dashboard(){
   const first=data[0]||{fatPct:40,weight:60,muscle:18,fatMass:24,leanMass:36};
   const last=data.length>0?data[data.length-1]:first;
   const best=data.length>0?data.reduce((a,b)=>b.fatPct<a.fatPct?b:a):first;
-  const goalPct=30;
+  const goalPct=userConfig?.goalBf||30;
   const fatToLose=data.length>0?+(last.fatMass-(last.leanMass/(1-goalPct/100))*goalPct/100).toFixed(1):0;
   const pctDone=data.length>0?Math.min(100,+(((first.fatPct-last.fatPct)/(first.fatPct-goalPct))*100).toFixed(0)):0;
   const {scenarios,projections}=useMemo(()=>buildProj(last),[last]);
@@ -204,24 +372,40 @@ export default function Dashboard(){
   const saveWhoop=async(d)=>{setWhoopData(d);db.upsert("daily_whoop",{date:day,...d});};
   const [whoopInput,setWhoopInput]=useState({recovery:"",sleep:"",strain:""});
 
+  const navItems=[{id:"macros",icon:"🍽️",label:"Macros"},profile.showPeptides&&{id:"peptides",icon:"🧬",label:"Peps"},{id:"overview",icon:"📊",label:"Body"},{id:"whoop",icon:"💚",label:"Whoop"},{id:"more",icon:"⋯",label:"More"}].filter(Boolean);
+  const [showMore,setShowMore]=useState(false);
+
   return(
-    <div style={{minHeight:"100vh",background:dark?"#0a0a14":"#f0f0f5",fontFamily:"'DM Sans',-apple-system,sans-serif",padding:"20px 16px 60px",maxWidth:800,margin:"0 auto"}}>
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0f0f1a 0%,#1a1025 50%,#0f0f1a 100%)",fontFamily:"Outfit",padding:"16px 16px 90px",maxWidth:480,margin:"0 auto"}}>
+      <style>{STYLE}</style>
       <div style={{filter:dark?"none":"invert(0.93) hue-rotate(180deg)",color:"#e0e0e0"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-        <div style={{width:32,height:32,borderRadius:10,background:"linear-gradient(135deg,#a78bfa,#6d28d9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>📊</div>
-        <div style={{flex:1}}><h1 style={{fontSize:19,fontWeight:800,margin:0,background:"linear-gradient(90deg,#e0e0e0,#a78bfa)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Body Comp HQ</h1><p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:0}}>{profile.emoji} {profile.name} · Goal: 30% BF{data.length>0?` · ${pctDone}% there`:""}</p></div>
-        {!locked&&<div style={{display:"flex",gap:4,marginRight:6}}>
-          {Object.entries(PROFILES).map(([id,p])=>(<button key={id} onClick={()=>setUserId(id)} style={{width:30,height:30,borderRadius:8,border:userId===id?"2px solid #a78bfa":"1px solid rgba(255,255,255,0.08)",background:userId===id?"rgba(167,139,250,0.15)":"transparent",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{p.emoji}</button>))}
-        </div>}
-        <button onClick={toggleTheme} style={{width:36,height:36,borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.05)",color:"#fff",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{dark?"☀️":"🌙"}</button>
+      {/* Header */}
+      <div className="fade-in" style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+        <div>
+          <h1 style={{fontSize:22,fontWeight:800,margin:0,color:"#fff",letterSpacing:"-0.5px"}}>Body Comp HQ</h1>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>{profile.name}{data.length>0?` · ${pctDone}% to goal`:""}</p>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          {!locked&&Object.entries(PROFILES).map(([id,p])=>(<button key={id} onClick={()=>setUserId(id)} style={{width:32,height:32,borderRadius:10,border:userId===id?"2px solid #a78bfa":"1px solid rgba(255,255,255,0.06)",background:userId===id?"rgba(167,139,250,0.12)":"transparent",fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{p.emoji}</button>))}
+          <button onClick={toggleTheme} style={{width:32,height:32,borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",background:"transparent",color:"#fff",fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{dark?"☀️":"🌙"}</button>
+        </div>
       </div>
-      <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"10px 14px",marginBottom:16}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:11,fontWeight:700,color:"#a78bfa"}}>🎯 30%</span><span style={{fontSize:11,fontWeight:700,color:"#4ade80"}}>{pctDone}%</span></div>
-        <div style={{height:6,background:"rgba(255,255,255,0.06)",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pctDone}%`,background:"linear-gradient(90deg,#a78bfa,#4ade80)",borderRadius:3}}/></div>
-      </div>
-      <div style={{display:"flex",gap:3,marginBottom:18,overflowX:"auto",paddingBottom:2}}>
-        {[["macros","Macros"],profile.showPeptides&&["peptides","Peps"],["overview","Body"],["data","Data"],data.length>1&&["projection","Proj"],data.length>1&&["monthly","Month"],["whoop","Whoop"]].filter(Boolean).map(([k,l])=>(<TabBtn key={k} active={tab===k} onClick={()=>setTab(k)}>{l}</TabBtn>))}
-      </div>
+      {/* Goal bar */}
+      {data.length>0&&<div className="fade-in" style={{background:"rgba(255,255,255,0.03)",borderRadius:14,padding:"12px 14px",marginBottom:20,border:"1px solid rgba(255,255,255,0.04)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.5)"}}>Goal: {goalPct}% body fat</span><span style={{fontSize:12,fontWeight:800,color:"#a78bfa"}}>{pctDone}%</span></div>
+        <div style={{height:6,background:"rgba(255,255,255,0.06)",borderRadius:3,overflow:"hidden"}}><div className="fade-in" style={{height:"100%",width:`${pctDone}%`,background:"linear-gradient(90deg,#a78bfa,#4ade80)",borderRadius:3,transition:"width 0.8s ease"}}/></div>
+      </div>}
+
+      {/* More menu overlay */}
+      {showMore&&(<div style={{position:"fixed",bottom:72,left:0,right:0,zIndex:100,padding:"0 16px",maxWidth:480,margin:"0 auto"}}>
+        <div className="slide-up" style={{background:"rgba(20,15,30,0.95)",backdropFilter:"blur(20px)",borderRadius:16,border:"1px solid rgba(255,255,255,0.08)",padding:8,display:"flex",flexDirection:"column",gap:2}}>
+          {[["data","📋","Data"],["projection","🎯","Projection"],["monthly","📅","Monthly"]].map(([id,icon,label])=>(
+            <button key={id} onClick={()=>{setTab(id);setShowMore(false);}} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderRadius:12,border:"none",background:tab===id?"rgba(167,139,250,0.1)":"transparent",cursor:"pointer",width:"100%",textAlign:"left"}}>
+              <span style={{fontSize:18}}>{icon}</span><span style={{fontSize:14,color:tab===id?"#a78bfa":"rgba(255,255,255,0.5)",fontWeight:tab===id?700:400,fontFamily:"Outfit"}}>{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>)}
 
       {/* ═══ OVERVIEW ═══ */}
       {tab==="overview"&&(<>
@@ -269,6 +453,24 @@ export default function Dashboard(){
             </div>
             <div style={{fontSize:11,color:rem.protein>0?"rgba(255,255,255,0.35)":"#4ade80",fontWeight:600}}>{rem.protein>0?`${Math.round(rem.protein)}g to go`:"✓ Target hit!"}</div>
           </div>
+
+          {/* TDEE / Deficit card */}
+          {userConfig?.weight&&userConfig?.height&&userConfig?.age&&(<div className="fade-in" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:14,padding:"12px 14px",marginBottom:12}}>
+            {(()=>{
+              const w=userConfig.weight,h=userConfig.height,a=userConfig.age;
+              const bmr=userConfig.gender==="male"?10*w+6.25*h-5*a+5:10*w+6.25*h-5*a-161;
+              const mult={sedentary:1.2,light:1.375,moderate:1.55,active:1.725}[userConfig.activity]||1.375;
+              const tdee=Math.round(bmr*mult);
+              const deficit=tdee-TARGETS.cal;
+              const defPct=Math.round(deficit/tdee*100);
+              return(<div style={{display:"flex",justifyContent:"space-around",textAlign:"center"}}>
+                <div><div style={{fontSize:10,color:"rgba(255,255,255,0.25)"}}>BMR</div><div style={{fontSize:18,fontWeight:800,color:"#60a5fa"}}>{Math.round(bmr)}</div></div>
+                <div><div style={{fontSize:10,color:"rgba(255,255,255,0.25)"}}>TDEE</div><div style={{fontSize:18,fontWeight:800,color:"#a78bfa"}}>{tdee}</div></div>
+                <div><div style={{fontSize:10,color:"rgba(255,255,255,0.25)"}}>Target</div><div style={{fontSize:18,fontWeight:800,color:"#fff"}}>{TARGETS.cal}</div></div>
+                <div><div style={{fontSize:10,color:"rgba(255,255,255,0.25)"}}>Deficit</div><div style={{fontSize:18,fontWeight:800,color:deficit>0?"#4ade80":"#f87171"}}>{deficit>0?`-${deficit}`:"+"+Math.abs(deficit)}</div><div style={{fontSize:9,color:"rgba(255,255,255,0.15)"}}>{defPct}%</div></div>
+              </div>);
+            })()}
+          </div>)}
 
           {/* Secondary macros row */}
           <div style={{display:"flex",gap:8,marginBottom:14}}>
@@ -707,7 +909,19 @@ export default function Dashboard(){
         <div style={{marginTop:6,fontSize:9,color:"rgba(255,255,255,0.15)"}}>★ best fat% · ● latest · ✕ = user-added (deletable)</div>
       </>)}
 
-      <div style={{marginTop:32,textAlign:"center",fontSize:9,color:"rgba(255,255,255,0.1)"}}>Body Comp HQ · BGC</div>
+      <div style={{marginTop:32,textAlign:"center",fontSize:9,color:"rgba(255,255,255,0.06)"}}>Body Comp HQ</div>
+      </div>
+
+      {/* Bottom Navigation */}
+      <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:99,background:"rgba(10,8,18,0.92)",backdropFilter:"blur(20px)",borderTop:"1px solid rgba(255,255,255,0.06)",padding:"6px 0 env(safe-area-inset-bottom,8px)",maxWidth:480,margin:"0 auto"}}>
+        <div style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>
+          {navItems.map(n=>{const active=n.id==="more"?["data","projection","monthly"].includes(tab):tab===n.id;return(
+            <button key={n.id} onClick={()=>{if(n.id==="more"){setShowMore(!showMore);}else{setTab(n.id);setShowMore(false);}}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"6px 12px",background:"none",border:"none",cursor:"pointer",minWidth:56}}>
+              <span style={{fontSize:22,filter:active?"none":"grayscale(1) opacity(0.4)",transition:"filter 0.2s"}}>{n.icon}</span>
+              <span style={{fontSize:10,fontWeight:active?700:400,color:active?"#a78bfa":"rgba(255,255,255,0.3)",fontFamily:"Outfit",transition:"color 0.2s"}}>{n.label}</span>
+            </button>
+          );})}
+        </div>
       </div>
     </div>
   );

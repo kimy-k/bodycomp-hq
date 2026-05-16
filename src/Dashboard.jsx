@@ -59,16 +59,27 @@ const PEPTIDES = [
 ];
 
 /* ═══ PEPTIDE SUPPLIERS — PH reseller catalog ═══
-   Edit prices & links below as you re-survey the market.
-   Prices in PHP per single vial/unit. Null = no data yet for that seller × product. */
+   Contact info verified against PeptideGuidesPH directory (https://yellow-fire-83c6.peptideguidesph.workers.dev/).
+   Sellers with verified:true appear on the PG vetted list.
+   Edit prices & links below as you re-survey the market. Prices in PHP per single vial/unit. */
 const SELLERS = {
-  avo:       {name:"AVO Supply",   shopee:"https://shopee.ph/avosupplyph",          instagram:"https://instagram.com/avo.supply",          whatsapp:null, notes:"Bac water + 8 swabs + recon syringe + 6 insulin syringes"},
-  pepticore: {name:"PeptiCorePH",  shopee:"https://shopee.ph/pepticoreph",          instagram:"https://instagram.com/pepticoreph",         whatsapp:null, notes:"Bac water + 7 syringes + 7 swabs + cap"},
-  synthe:    {name:"Synthe",       shopee:null,                                      instagram:"https://instagram.com/synthe.ph",          whatsapp:null, notes:"Verified store"},
-  pepmuse:   {name:"Pepmuse",      shopee:"https://shopee.ph/pepmuse",              instagram:"https://instagram.com/pepmuse",             whatsapp:null, notes:"Anti-aging specialist · MOTS-c winner"},
-  peptora:   {name:"Peptora",      shopee:"https://shopee.ph/peptora",              instagram:null,                                        whatsapp:null, notes:"Branded packaging · 5pc bundle pricing"},
-  purepept:  {name:"PurePept",     shopee:"https://shopee.ph/purepept",             instagram:null,                                        whatsapp:null, notes:"Competitive pricing"},
-  rowan:     {name:"Rowan/LUMI+",  shopee:"https://shopee.ph/rowan.dermaceuticals", instagram:"https://instagram.com/lumiplus.peptides",   whatsapp:null, notes:"Aggressive Shopee discounts · LUMI+ branding"},
+  studiowellness: {name:"Studio Wellness PH",shopee:null,                                          instagram:null,                                                  whatsapp:null,                website:"https://studiowellnesshq.com",                          notes:"Cheapest GLP-1 starting on the PG directory · ₱1,700+",verified:true},
+  thepepstory:    {name:"The Peptide Story",  shopee:null,                                          instagram:"https://instagram.com/thepepstory.main",             whatsapp:null,                website:null,                                                    notes:"GLP-1 from ₱1,900",                                    verified:true},
+  avo:            {name:"AVO Supply",         shopee:"https://shopee.ph/avosupplyph",              instagram:"https://instagram.com/avo.supply",                   whatsapp:"+639691671360",     website:null,                                                    notes:"Bac water + 8 swabs + recon syringe + 6 insulin syringes", verified:true},
+  chemwatch:      {name:"ChemWatchPH",        shopee:null,                                          instagram:"https://instagram.com/chemwatchph",                  whatsapp:null,                website:null,                                                    notes:"GLP-1 from ₱2,299",                                    verified:true},
+  synthe:         {name:"Synthe PH",          shopee:null,                                          instagram:"https://instagram.com/synthe.ph",                    whatsapp:"+639171145168",     website:null,                                                    notes:"GLP-1 from ₱2,499",                                    verified:true},
+  slimease:       {name:"SlimEase",           shopee:null,                                          instagram:null,                                                  whatsapp:null,                website:"https://www.facebook.com/people/SlimEase/61580302303569/", notes:"GLP-1 from ₱2,500 · FB shop",                          verified:true},
+  trive:          {name:"Trive",              shopee:null,                                          instagram:null,                                                  whatsapp:null,                website:"https://www.facebook.com/your.trive",                   notes:"GLP-1 from ₱3,000 · FB shop",                          verified:true},
+  pepticore:      {name:"PeptiCorePH",        shopee:"https://shopee.ph/pepticoreph",              instagram:"https://instagram.com/pepticoreph",                  whatsapp:null,                website:null,                                                    notes:"Bac water + 7 syringes + 7 swabs + cap · KLOW exclusive", verified:false},
+  pepside:        {name:"Pepside PH",         shopee:null,                                          instagram:"https://www.tiktok.com/@pepsideph",                  whatsapp:null,                website:null,                                                    notes:"GLP-1 from ₱3,500 · TikTok shop",                      verified:true},
+  fitpeptide:     {name:"Fit Peptide",        shopee:null,                                          instagram:null,                                                  whatsapp:null,                website:"https://www.facebook.com/share/1BB7sMq77K/?mibextid=wwXIfr", notes:"GLP-1 from ₱3,500 · FB shop",                        verified:true},
+  elevate:        {name:"Elevate Therapeutics",shopee:null,                                         instagram:null,                                                  whatsapp:"+639159398073",     website:null,                                                    notes:"GLP-1 from ₱3,500 · Telegram-first",                   verified:true},
+  pepmuse:        {name:"Pepmuse",            shopee:"https://shopee.ph/pepmuse",                  instagram:"https://instagram.com/pepmuse",                      whatsapp:null,                website:null,                                                    notes:"Anti-aging specialist · MOTS-c winner",                verified:false},
+  peptora:        {name:"Peptora",            shopee:null,                                          instagram:"https://instagram.com/peptaura",                     whatsapp:null,                website:null,                                                    notes:"Branded packaging · 5pc bundle pricing · GLP-1 ₱3,999", verified:true},
+  peptide30:      {name:"Peptide30",          shopee:null,                                          instagram:null,                                                  whatsapp:null,                website:"https://www.lazada.com.ph/shop/peptide30-glp1-hub",      notes:"GLP-1 from ₱4,000 · Lazada",                           verified:true},
+  noxa:           {name:"Noxa",               shopee:null,                                          instagram:null,                                                  whatsapp:null,                website:"https://noxa.is/",                                      notes:"GLP-1 from ₱4,800",                                    verified:true},
+  purepept:       {name:"PurePept",           shopee:"https://shopee.ph/purepept",                 instagram:null,                                                  whatsapp:null,                website:null,                                                    notes:"Competitive pricing",                                  verified:false},
+  rowan:          {name:"Rowan/LUMI+",        shopee:"https://shopee.ph/rowan.dermaceuticals",     instagram:"https://instagram.com/lumiplus.peptides",            whatsapp:null,                website:null,                                                    notes:"Aggressive Shopee discounts · LUMI+ branding",         verified:false},
 };
 
 /* Map peptide IDs → product key in PRICES. Adjust if you reorder different sizes. */
@@ -83,6 +94,27 @@ const PRODUCT_FOR_PEPTIDE = {
   semax:  "semax_selank",
   motsc:  "motsc10",
   glow:   "glow",
+};
+
+/* Map peptide IDs → PeptideGuidesPH educational page slug.
+   Null = no specific page; we'll just link to the main peptide library. */
+const PG_SLUG_FOR_PEPTIDE = {
+  reta:   "retatrutide",
+  klow:   "klow",
+  nad:    "nad",
+  ta1:    null,            // PG doesn't have a dedicated Thymosin α-1 page
+  amino:  "5-amino-1mq",
+  snap8:  "snap-8",
+  cjcipa: "cjc-ipa-protocol",
+  semax:  "semax",
+  motsc:  "mots-c",
+  glow:   "glow",
+};
+const PG_BASE = "https://peptideguidesph.github.io";
+const PG_DIRECTORY = "https://yellow-fire-83c6.peptideguidesph.workers.dev/";
+const pgUrlFor = pepId => {
+  const slug = PG_SLUG_FOR_PEPTIDE[pepId];
+  return slug ? `${PG_BASE}/peptides/${slug}/` : `${PG_BASE}/peptides/`;
 };
 
 /* PHP per vial/unit. Add a key for each seller that stocks the product. */
@@ -1754,7 +1786,10 @@ function DashboardInner(){
                 <div className="hbar" style={{height:3}}><i style={{width:`${Math.min(100,p.daysSupply/30*100)}%`,background:supplyColor,opacity:.55}}/></div>
               </div>
               <div style={{fontSize:10.5,color:"var(--t-4)",marginTop:5,fontStyle:"italic"}}>{p.supplyNote}</div>
-              {p.daysSupply<=21&&<button onClick={()=>setReorderModal(p)} className="touch" style={{marginTop:9,padding:"6px 12px",borderRadius:999,border:`1px solid ${supplyColor}`,background:`color-mix(in oklch, ${supplyColor} 12%, transparent)`,color:supplyColor,fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={11} c={supplyColor} sw={1.7}/> Reorder · find best price</button>}
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:9}}>
+                {p.daysSupply<=21&&<button onClick={()=>setReorderModal(p)} className="touch" style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${supplyColor}`,background:`color-mix(in oklch, ${supplyColor} 12%, transparent)`,color:supplyColor,fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={11} c={supplyColor} sw={1.7}/> Reorder</button>}
+                <a href={pgUrlFor(p.id)} target="_blank" rel="noopener noreferrer" className="touch" style={{padding:"6px 12px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5}}>📚 PG Guide →</a>
+              </div>
             </div>);
           })}
 
@@ -2229,6 +2264,7 @@ function DashboardInner(){
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
                     <span style={{fontSize:14,fontWeight:600,color:"var(--t-1)"}}>{o.seller.name}</span>
+                    {o.seller.verified&&<span title="Vetted by PeptideGuidesPH" style={{fontSize:9.5,fontWeight:700,color:"var(--accent)",background:"var(--accent-soft)",padding:"2px 7px",borderRadius:999,letterSpacing:".08em",textTransform:"uppercase",display:"inline-flex",alignItems:"center",gap:3}}><Icon n="check" s={10} c="var(--accent)" sw={2.5}/>PG vetted</span>}
                     {o.isBest&&<span style={{fontSize:9.5,fontWeight:700,color:"var(--c-success)",background:"color-mix(in oklch, var(--c-success) 14%, transparent)",padding:"2px 7px",borderRadius:999,letterSpacing:".08em",textTransform:"uppercase"}}>Best price</span>}
                     {o.knownStockist&&!o.isBest&&<span style={{fontSize:9.5,fontWeight:600,color:"var(--t-3)",background:"var(--elev-2)",padding:"2px 7px",borderRadius:999,letterSpacing:".06em",textTransform:"uppercase"}}>Stockist</span>}
                   </div>
@@ -2243,12 +2279,16 @@ function DashboardInner(){
               </div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 {o.seller.shopee&&<a href={o.seller.shopee} target="_blank" rel="noopener noreferrer" className="touch" style={{padding:"7px 12px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:11.5,fontWeight:600,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5}}>Shopee →</a>}
-                {o.seller.instagram&&<a href={o.seller.instagram} target="_blank" rel="noopener noreferrer" className="touch" style={{padding:"7px 12px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-2)",fontSize:11.5,fontWeight:600,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5}}>Instagram →</a>}
+                {o.seller.instagram&&<a href={o.seller.instagram} target="_blank" rel="noopener noreferrer" className="touch" style={{padding:"7px 12px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-2)",fontSize:11.5,fontWeight:600,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5}}>{o.seller.instagram.includes("tiktok")?"TikTok →":"Instagram →"}</a>}
                 {o.seller.whatsapp&&<a href={`https://wa.me/${o.seller.whatsapp.replace(/[^0-9]/g,"")}`} target="_blank" rel="noopener noreferrer" className="touch" style={{padding:"7px 12px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-2)",fontSize:11.5,fontWeight:600,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5}}>WhatsApp →</a>}
+                {o.seller.website&&<a href={o.seller.website} target="_blank" rel="noopener noreferrer" className="touch" style={{padding:"7px 12px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-2)",fontSize:11.5,fontWeight:600,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5}}>{o.seller.website.includes("facebook")?"Facebook →":o.seller.website.includes("lazada")?"Lazada →":"Website →"}</a>}
               </div>
             </div>))}</div>
 
-            <div className="mono" style={{fontSize:9.5,color:"var(--t-5)",letterSpacing:".08em",textTransform:"uppercase",marginTop:14,textAlign:"center"}}>Always verify before paying · prices change weekly</div>
+            {/* PeptideGuidesPH directory link */}
+            <a href={PG_DIRECTORY} target="_blank" rel="noopener noreferrer" className="touch" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:12,padding:"10px 14px",borderRadius:"var(--r-sm)",border:"1px dashed var(--line)",background:"transparent",color:"var(--t-3)",fontSize:11.5,textDecoration:"none"}}><Icon n="image" s={13} c="var(--t-3)" sw={1.6}/> Browse the live PeptideGuidesPH directory →</a>
+
+            <div className="mono" style={{fontSize:9.5,color:"var(--t-5)",letterSpacing:".08em",textTransform:"uppercase",marginTop:10,textAlign:"center"}}>Always verify before paying · prices change weekly</div>
           </div>
         </div>
       );})()}

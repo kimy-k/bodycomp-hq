@@ -13,10 +13,38 @@ const makeDb=(uid,onErr=()=>{})=>({
   async delById(table,id){try{const r=await fetch(`${SB}/${table}?user_id=eq.${uid}&id=eq.${id}`,{method:"DELETE",headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return true;}catch(e){onErr(`Couldn't delete`);return false;}},
   async storageUpload(bucket,path,blob,contentType="image/jpeg"){try{const r=await fetch(`${SB.replace("/rest/v1","")}/storage/v1/object/${bucket}/${path}`,{method:"POST",headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,"Content-Type":contentType,"x-upsert":"true"},body:blob});if(!r.ok)throw new Error(`upload: ${r.status}`);return `${SB.replace("/rest/v1","")}/storage/v1/object/public/${bucket}/${path}`;}catch(e){onErr(`Upload failed`);return null;}},
   async storageDelete(bucket,path){try{const r=await fetch(`${SB.replace("/rest/v1","")}/storage/v1/object/${bucket}/${path}`,{method:"DELETE",headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`}});return r.ok;}catch{return false;}},
-  /* ─── Household-shared methods — do NOT filter by user_id ─── */
-  async listShared(table,limit=100,orderCol="date_recon"){try{const r=await fetch(`${SB}/${table}?select=*&order=${orderCol}.desc&limit=${limit}`,{headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return await r.json();}catch(e){onErr(`Couldn't load shared ${table}`);return[];}},
-  async delByIdShared(table,id){try{const r=await fetch(`${SB}/${table}?id=eq.${id}`,{method:"DELETE",headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return true;}catch(e){onErr(`Couldn't delete`);return false;}},
-  async listSharedSince(table,sinceDate,orderCol="date"){try{const r=await fetch(`${SB}/${table}?${orderCol}=gte.${sinceDate}&select=*&order=${orderCol}.desc&limit=500`,{headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return await r.json();}catch(e){return[];}},
+  /* ─── Household-shared methods — fetch per-user with filtered queries and merge.
+     We use only user_id-filtered queries (which we know the anon role can run) and
+     coordinate across all known users from PROFILES. This avoids any filter-less
+     SELECT permission gaps on the anon role / row-level policies. */
+  async listShared(table,limit=100,orderCol="date_recon"){
+    const users=Object.keys(PROFILES);
+    const results=await Promise.all(users.map(u=>
+      fetch(`${SB}/${table}?user_id=eq.${u}&select=*&order=${orderCol}.desc&limit=${limit}`,{headers:hdr})
+        .then(r=>r.ok?r.json():null).catch(()=>null)
+    ));
+    if(results.every(r=>r===null)){onErr(`Couldn't load shared ${table}`);return[];}
+    const merged=results.filter(r=>Array.isArray(r)).flat();
+    const seen=new Set();
+    return merged
+      .filter(r=>{if(seen.has(r.id))return false;seen.add(r.id);return true;})
+      .sort((a,b)=>String(b[orderCol]||"").localeCompare(String(a[orderCol]||"")))
+      .slice(0,limit);
+  },
+  async delByIdShared(table,id,ownerId){
+    /* ownerId = the user_id stored on the row (audit trail of who created it).
+       Required because we delete via filtered query — works regardless of RLS state. */
+    if(!ownerId){onErr(`Couldn't delete (missing owner)`);return false;}
+    try{const r=await fetch(`${SB}/${table}?user_id=eq.${ownerId}&id=eq.${id}`,{method:"DELETE",headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return true;}catch(e){onErr(`Couldn't delete`);return false;}
+  },
+  async listSharedSince(table,sinceDate,orderCol="date"){
+    const users=Object.keys(PROFILES);
+    const results=await Promise.all(users.map(u=>
+      fetch(`${SB}/${table}?user_id=eq.${u}&${orderCol}=gte.${sinceDate}&select=*&order=${orderCol}.desc&limit=500`,{headers:hdr})
+        .then(r=>r.ok?r.json():null).catch(()=>null)
+    ));
+    return results.filter(r=>Array.isArray(r)).flat();
+  },
   async getConfig(key){try{const r=await fetch(`${SB}/config?user_id=eq.${uid}&key=eq.${key}&select=*`,{headers:hdr});if(!r.ok)throw new Error(`config: ${r.status}`);const d=await r.json();return d[0]?.value||null;}catch(e){return null;}},
   async setConfig(key,value){try{const r=await fetch(`${SB}/config`,{method:"POST",headers:{...hdr,Prefer:"resolution=merge-duplicates"},body:JSON.stringify({user_id:uid,key,value,updated_at:new Date().toISOString()})});if(!r.ok)throw new Error(`config: ${r.status}`);return true;}catch(e){onErr(`Couldn't save settings`);return false;}},
 });
@@ -1582,8 +1610,8 @@ function DashboardInner(){
   const batchStatus=b=>{if(b.exhausted)return{label:"Exhausted",color:"var(--t-4)",rank:3};if(b.expiry_date){const days=Math.round((new Date(b.expiry_date+"T23:59:59")-new Date())/(1000*60*60*24));if(days<0)return{label:"Expired",color:"var(--c-danger)",rank:2,days};if(days<=7)return{label:`${days}d to expiry`,color:"var(--c-warn)",rank:1,days};return{label:`${days}d to expiry`,color:"var(--c-success)",rank:0,days};}return{label:"Active",color:"var(--c-success)",rank:0};};
   const currentBatchFor=(pepId)=>{const active=batches.filter(b=>b.peptide_id===pepId&&!b.exhausted&&(!b.expiry_date||new Date(b.expiry_date+"T23:59:59")>=new Date()));return active.sort((a,b)=>b.date_recon.localeCompare(a.date_recon))[0]||null;};
   const saveBatch=async()=>{if(!newBatch.peptide_id||!newBatch.mg_total||!newBatch.ml_bac)return;const row={peptide_id:newBatch.peptide_id,date_recon:newBatch.date_recon,mg_total:+newBatch.mg_total,ml_bac:+newBatch.ml_bac,storage:newBatch.storage||null,expiry_date:newBatch.expiry_date||addDays(newBatch.date_recon,30),notes:newBatch.notes||null,exhausted:false};const ok=await db.upsert("peptide_batches",row);if(ok){const rows=await db.listShared("peptide_batches",100,"date_recon");setBatches(rows||[]);setNewBatch({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:""});setAddingBatch(false);showToast("Batch logged · shared with household","success");}};
-  const updateBatch=async(b,patch)=>{const updated={...b,...patch};const res=await fetch(`${SB}/peptide_batches?id=eq.${b.id}`,{method:"PATCH",headers:{...hdr,Prefer:"return=minimal"},body:JSON.stringify(patch)}).catch(()=>null);if(res&&res.ok){setBatches(batches.map(x=>x.id===b.id?updated:x));}else{showToast("Couldn't update batch","error");}};
-  const deleteBatch=async(b)=>{if(!window.confirm("Delete this shared batch entry? It will disappear from both profiles."))return;const ok=await db.delByIdShared("peptide_batches",b.id);if(ok){setBatches(batches.filter(x=>x.id!==b.id));setEditingBatch(null);showToast("Batch deleted","success");}};
+  const updateBatch=async(b,patch)=>{const updated={...b,...patch};const res=await fetch(`${SB}/peptide_batches?id=eq.${b.id}&user_id=eq.${b.user_id}`,{method:"PATCH",headers:{...hdr,Prefer:"return=minimal"},body:JSON.stringify(patch)}).catch(()=>null);if(res&&res.ok){setBatches(batches.map(x=>x.id===b.id?updated:x));}else{showToast("Couldn't update batch","error");}};
+  const deleteBatch=async(b)=>{if(!window.confirm("Delete this shared batch entry? It will disappear from both profiles."))return;const ok=await db.delByIdShared("peptide_batches",b.id,b.user_id);if(ok){setBatches(batches.filter(x=>x.id!==b.id));setEditingBatch(null);showToast("Batch deleted","success");}};
 
   /* ═══ CROSS-USER DOSE LOG — for shared-inventory math
        When ANY user (Kim or Bea) logs a peptide dose, it counts against the shared

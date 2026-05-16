@@ -7,9 +7,15 @@ import {Icon} from "./Icon.jsx";
 import {STYLE} from "./styles.js";
 import {AVAILABLE_PEPS} from "./data.js";
 
+/** Local-date YYYY-MM-DD for scan date default (matches helpers.js todayKey logic). */
+const todayLocal = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+};
+
 export function Onboarding({db,onComplete}){
   const [step,setStep]=useState(0);
-  const [d,setD]=useState({name:"",height:"",weight:"",age:"",gender:"female",activity:"light",targetBf:"30",targetCal:"",targetProtein:"",targetFat:"",targetCarbs:"",wheyProtein:"",wheyScoops:"",peptides:[],scanWeight:"",scanMuscle:"",scanFat:"",scanDate:new Date().toISOString().slice(0,10)});
+  const [d,setD]=useState({name:"",height:"",weight:"",age:"",gender:"female",activity:"light",targetBf:"30",targetCal:"",targetProtein:"",targetFat:"",targetCarbs:"",wheyProtein:"",wheyScoops:"",peptides:[],scanWeight:"",scanMuscle:"",scanFat:"",scanDate:todayLocal()});
   const up=(k,v)=>setD({...d,[k]:v});
   const togglePep=(id)=>{const p=[...d.peptides];const i=p.indexOf(id);if(i>=0)p.splice(i,1);else p.push(id);setD({...d,peptides:p});};
   const finish=async()=>{

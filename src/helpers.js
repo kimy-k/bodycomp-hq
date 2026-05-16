@@ -1,14 +1,25 @@
 /* ═══ HELPERS ═══ Pure utility functions, no React, no DOM-DOM, no fetch.
    Most have no dependencies. compressImage uses canvas (browser-only). */
 
-/** Today's date as "YYYY-MM-DD" (local time, sliced via UTC ISO). */
-export const todayKey = () => new Date().toISOString().slice(0, 10);
+/** Format a Date as "YYYY-MM-DD" using LOCAL date components.
+ *  Using toISOString() here would silently shift to UTC and break in any
+ *  non-UTC timezone — Manila is +8 so the date flips ~8 hours before midnight
+ *  local, which made Saturday's peptide checks appear on Sunday morning. */
+export const localDateKey = (date = new Date()) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
 
-/** Add N days to a "YYYY-MM-DD" string, return new "YYYY-MM-DD". */
+/** Today's date as "YYYY-MM-DD" in the user's local timezone. */
+export const todayKey = () => localDateKey(new Date());
+
+/** Add N days to a "YYYY-MM-DD" string, return new "YYYY-MM-DD" (local). */
 export const addDays = (date, n) => {
   const d = new Date(date + "T12:00:00");
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return localDateKey(d);
 };
 
 /** Build 12-month body-fat projections under conservative / on-track / aggressive scenarios.

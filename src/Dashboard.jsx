@@ -20,7 +20,7 @@ import {
   PG_SLUG_FOR_PEPTIDE, PG_BASE, PG_DIRECTORY, pgUrlFor,
   reorderOptionsFor, RECONSTITUTION, recommendedReconFor,
 } from "./data.js";
-import {todayKey, addDays, buildProj, calcMonthly, compressImage} from "./helpers.js";
+import {todayKey, localDateKey, addDays, buildProj, calcMonthly, compressImage} from "./helpers.js";
 import {computeInsights} from "./insights.js";
 import {Icon} from "./Icon.jsx";
 import {FONT_URL, STYLE} from "./styles.js";
@@ -815,7 +815,7 @@ function DashboardInner(){
               const days=[];
               for(let i=6;i>=0;i--){
                 const dt=new Date(today);dt.setDate(today.getDate()-i);
-                const key=dt.toISOString().slice(0,10);
+                const key=localDateKey(dt);
                 const dow=dt.getDay();
                 const dayName=dt.toLocaleDateString("en-US",{weekday:"narrow"});
                 const dateNum=dt.getDate();

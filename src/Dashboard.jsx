@@ -13,6 +13,10 @@ const makeDb=(uid,onErr=()=>{})=>({
   async delById(table,id){try{const r=await fetch(`${SB}/${table}?user_id=eq.${uid}&id=eq.${id}`,{method:"DELETE",headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return true;}catch(e){onErr(`Couldn't delete`);return false;}},
   async storageUpload(bucket,path,blob,contentType="image/jpeg"){try{const r=await fetch(`${SB.replace("/rest/v1","")}/storage/v1/object/${bucket}/${path}`,{method:"POST",headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,"Content-Type":contentType,"x-upsert":"true"},body:blob});if(!r.ok)throw new Error(`upload: ${r.status}`);return `${SB.replace("/rest/v1","")}/storage/v1/object/public/${bucket}/${path}`;}catch(e){onErr(`Upload failed`);return null;}},
   async storageDelete(bucket,path){try{const r=await fetch(`${SB.replace("/rest/v1","")}/storage/v1/object/${bucket}/${path}`,{method:"DELETE",headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`}});return r.ok;}catch{return false;}},
+  /* ─── Household-shared methods — do NOT filter by user_id ─── */
+  async listShared(table,limit=100,orderCol="date_recon"){try{const r=await fetch(`${SB}/${table}?select=*&order=${orderCol}.desc&limit=${limit}`,{headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return await r.json();}catch(e){onErr(`Couldn't load shared ${table}`);return[];}},
+  async delByIdShared(table,id){try{const r=await fetch(`${SB}/${table}?id=eq.${id}`,{method:"DELETE",headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return true;}catch(e){onErr(`Couldn't delete`);return false;}},
+  async listSharedSince(table,sinceDate,orderCol="date"){try{const r=await fetch(`${SB}/${table}?${orderCol}=gte.${sinceDate}&select=*&order=${orderCol}.desc&limit=500`,{headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return await r.json();}catch(e){return[];}},
   async getConfig(key){try{const r=await fetch(`${SB}/config?user_id=eq.${uid}&key=eq.${key}&select=*`,{headers:hdr});if(!r.ok)throw new Error(`config: ${r.status}`);const d=await r.json();return d[0]?.value||null;}catch(e){return null;}},
   async setConfig(key,value){try{const r=await fetch(`${SB}/config`,{method:"POST",headers:{...hdr,Prefer:"resolution=merge-duplicates"},body:JSON.stringify({user_id:uid,key,value,updated_at:new Date().toISOString()})});if(!r.ok)throw new Error(`config: ${r.status}`);return true;}catch(e){onErr(`Couldn't save settings`);return false;}},
 });
@@ -781,6 +785,7 @@ const Icon = ({n,s=20,c="currentColor",sw=1.5}) => {
     case "compare": return <svg {...p}><rect x="3" y="5" width="8" height="14" rx="1"/><rect x="13" y="5" width="8" height="14" rx="1"/><path d="M12 3v18"/></svg>;
     case "trash": return <svg {...p}><path d="M4 7h16M9 7V4h6v3M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6M14 11v6"/></svg>;
     case "vial": return <svg {...p}><path d="M8 2h8M10 2v8l-3 6a3 3 0 0 0 3 4h4a3 3 0 0 0 3-4l-3-6V2M7 14h10"/></svg>;
+    case "users": return <svg {...p}><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c.5-3.5 3-5 6-5s5.5 1.5 6 5M16 14c2.5 0 4.5 1.2 5 4"/></svg>;
     default: return null;
   }
 };
@@ -1480,8 +1485,9 @@ function DashboardInner(){
       const tables=["inbody_scans","daily_macros","daily_peptides","daily_whoop","body_measurements","progress_photos"];
       const result={user:userId,exported_at:new Date().toISOString(),tables:{}};
       for(const t of tables){const rows=await db.list(t,5000);result.tables[t]=rows||[];}
-      const bRes=await fetch(`${SB}/peptide_batches?user_id=eq.${userId}&select=*&order=date_recon.desc&limit=5000`,{headers:hdr}).then(r=>r.ok?r.json():[]).catch(()=>[]);
+      const bRes=await db.listShared("peptide_batches",5000,"date_recon");
       result.tables.peptide_batches=bRes||[];
+      result.tables.peptide_batches_note="Shared household resource — both profiles see this set";
       const cfgRows=await fetch(`${SB}/config?user_id=eq.${userId}&select=*`,{headers:hdr}).then(r=>r.ok?r.json():[]).catch(()=>[]);
       result.config=cfgRows||[];
       const blob=new Blob([JSON.stringify(result,null,2)],{type:"application/json"});
@@ -1555,13 +1561,37 @@ function DashboardInner(){
   const [addingBatch,setAddingBatch]=useState(false);
   const [newBatch,setNewBatch]=useState({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:""});
   const [editingBatch,setEditingBatch]=useState(null);
-  useEffect(()=>{if(tab!=="peptides")return;(async()=>{setBatchesLoading(true);const rows=await fetch(`${SB}/peptide_batches?user_id=eq.${userId}&select=*&order=date_recon.desc&limit=100`,{headers:hdr}).then(r=>r.ok?r.json():[]).catch(()=>[]);setBatches(rows||[]);setBatchesLoading(false);})();},[tab,userId]);
+  useEffect(()=>{if(tab!=="peptides")return;(async()=>{setBatchesLoading(true);const rows=await db.listShared("peptide_batches",100,"date_recon");setBatches(rows||[]);setBatchesLoading(false);})();},[tab,db]);
   const concentration=b=>b.mg_total&&b.ml_bac?+(b.mg_total/b.ml_bac).toFixed(2):null;
   const batchStatus=b=>{if(b.exhausted)return{label:"Exhausted",color:"var(--t-4)",rank:3};if(b.expiry_date){const days=Math.round((new Date(b.expiry_date+"T23:59:59")-new Date())/(1000*60*60*24));if(days<0)return{label:"Expired",color:"var(--c-danger)",rank:2,days};if(days<=7)return{label:`${days}d to expiry`,color:"var(--c-warn)",rank:1,days};return{label:`${days}d to expiry`,color:"var(--c-success)",rank:0,days};}return{label:"Active",color:"var(--c-success)",rank:0};};
   const currentBatchFor=(pepId)=>{const active=batches.filter(b=>b.peptide_id===pepId&&!b.exhausted&&(!b.expiry_date||new Date(b.expiry_date+"T23:59:59")>=new Date()));return active.sort((a,b)=>b.date_recon.localeCompare(a.date_recon))[0]||null;};
-  const saveBatch=async()=>{if(!newBatch.peptide_id||!newBatch.mg_total||!newBatch.ml_bac)return;const row={peptide_id:newBatch.peptide_id,date_recon:newBatch.date_recon,mg_total:+newBatch.mg_total,ml_bac:+newBatch.ml_bac,storage:newBatch.storage||null,expiry_date:newBatch.expiry_date||addDays(newBatch.date_recon,30),notes:newBatch.notes||null,exhausted:false};const ok=await db.upsert("peptide_batches",row);if(ok){const rows=await fetch(`${SB}/peptide_batches?user_id=eq.${userId}&select=*&order=date_recon.desc&limit=100`,{headers:hdr}).then(r=>r.ok?r.json():[]).catch(()=>[]);setBatches(rows||[]);setNewBatch({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:""});setAddingBatch(false);showToast("Batch logged","success");}};
-  const updateBatch=async(b,patch)=>{const updated={...b,...patch};const res=await fetch(`${SB}/peptide_batches?id=eq.${b.id}&user_id=eq.${userId}`,{method:"PATCH",headers:{...hdr,Prefer:"return=minimal"},body:JSON.stringify(patch)}).catch(()=>null);if(res&&res.ok){setBatches(batches.map(x=>x.id===b.id?updated:x));}else{showToast("Couldn't update batch","error");}};
-  const deleteBatch=async(b)=>{if(!window.confirm("Delete this batch entry?"))return;const ok=await db.delById("peptide_batches",b.id);if(ok){setBatches(batches.filter(x=>x.id!==b.id));setEditingBatch(null);showToast("Batch deleted","success");}};
+  const saveBatch=async()=>{if(!newBatch.peptide_id||!newBatch.mg_total||!newBatch.ml_bac)return;const row={peptide_id:newBatch.peptide_id,date_recon:newBatch.date_recon,mg_total:+newBatch.mg_total,ml_bac:+newBatch.ml_bac,storage:newBatch.storage||null,expiry_date:newBatch.expiry_date||addDays(newBatch.date_recon,30),notes:newBatch.notes||null,exhausted:false};const ok=await db.upsert("peptide_batches",row);if(ok){const rows=await db.listShared("peptide_batches",100,"date_recon");setBatches(rows||[]);setNewBatch({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:""});setAddingBatch(false);showToast("Batch logged · shared with household","success");}};
+  const updateBatch=async(b,patch)=>{const updated={...b,...patch};const res=await fetch(`${SB}/peptide_batches?id=eq.${b.id}`,{method:"PATCH",headers:{...hdr,Prefer:"return=minimal"},body:JSON.stringify(patch)}).catch(()=>null);if(res&&res.ok){setBatches(batches.map(x=>x.id===b.id?updated:x));}else{showToast("Couldn't update batch","error");}};
+  const deleteBatch=async(b)=>{if(!window.confirm("Delete this shared batch entry? It will disappear from both profiles."))return;const ok=await db.delByIdShared("peptide_batches",b.id);if(ok){setBatches(batches.filter(x=>x.id!==b.id));setEditingBatch(null);showToast("Batch deleted","success");}};
+
+  /* ═══ CROSS-USER DOSE LOG — for shared-inventory math
+       When ANY user (Kim or Bea) logs a peptide dose, it counts against the shared
+       vial's running total. Privacy stays intact for the dose log itself: each user
+       sees only their own checklist. We just aggregate the counts for inventory. */
+  const [sharedDoseLog,setSharedDoseLog]=useState([]);
+  useEffect(()=>{if(tab!=="peptides"&&tab!=="overview")return;const oldestBatch=batches.length?batches.reduce((a,b)=>a.date_recon<b.date_recon?a:b):null;if(!oldestBatch)return;(async()=>{const rows=await db.listSharedSince("daily_peptides",oldestBatch.date_recon,"date");setSharedDoseLog(rows||[]);})();},[tab,batches,db]);
+  /* Parse a peptide.dose string like "2.5mg (25u)" or "40u (10.7mg)" → mg number. */
+  const mgFromDoseStr=useCallback(str=>{if(!str)return null;const m=String(str).match(/(\d+\.?\d*)\s*mg/i);return m?+m[1]:null;},[]);
+  /* Compute live inventory for a peptide based on current batch + cross-user dose log. */
+  const inventoryFor=useCallback(peptide=>{
+    if(!peptide)return null;
+    const batch=currentBatchFor(peptide.id);
+    if(!batch||!batch.mg_total)return null;
+    const mgPerDose=mgFromDoseStr(peptide.dose);
+    if(!mgPerDose||mgPerDose<=0)return null;
+    const totalDosesInVial=Math.floor(batch.mg_total/mgPerDose);
+    const batchStart=batch.date_recon;
+    const dosesUsed=sharedDoseLog.filter(d=>d.date>=batchStart&&d.checks&&d.checks[peptide.id]).length;
+    const dosesRemaining=Math.max(0,totalDosesInVial-dosesUsed);
+    const dosesPerWeek=(peptide.schedule||[]).length||1;
+    const daysSupply=dosesPerWeek>0?Math.round(dosesRemaining/dosesPerWeek*7):null;
+    return{totalDosesInVial,dosesUsed,dosesRemaining,daysSupply,mgPerDose,source:"batch"};
+  },[batches,sharedDoseLog,currentBatchFor,mgFromDoseStr]);
 
   const todayLabel=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
 
@@ -1886,21 +1916,21 @@ function DashboardInner(){
         <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{[["today","Today"],["all","Stack"],["batches","Batches"],["history","History"]].map(([k,l])=>(<TabBtn key={k} active={pepSub===k} onClick={()=>setPepSub(k)}>{l}</TabBtn>))}</div>
 
         {pepSub==="today"&&(<>
-          {/* Supply alerts */}
-          {userPeps.filter(p=>p.daysSupply<=14&&p.status==="active").length>0&&(
-            <div style={{marginBottom:16}}>
-              {userPeps.filter(p=>p.daysSupply<=14&&p.status==="active").sort((a,b)=>a.daysSupply-b.daysSupply).map(p=>{const urgent=p.daysSupply<=7;return(<div key={p.id} className="rise" style={{background:urgent?"color-mix(in oklch, var(--c-danger) 10%, var(--elev-1))":"color-mix(in oklch, var(--c-warn) 8%, var(--elev-1))",borderLeft:`3px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:urgent?"var(--c-danger)":"var(--c-warn)"}}><Icon n="warn" s={15} c={urgent?"var(--c-danger)":"var(--c-warn)"} sw={2}/> {p.name}</span>
-                  <span className="mono" style={{fontSize:11.5,fontWeight:600,color:urgent?"var(--c-danger)":"var(--c-warn)"}}>{p.daysSupply}d left</span>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,gap:10}}>
-                  <div style={{fontSize:11,color:"var(--t-3)",flex:1,minWidth:0}}>{p.supplyNote}</div>
-                  <button onClick={()=>setReorderModal(p)} className="touch" style={{padding:"5px 11px",borderRadius:999,border:`1px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,background:`color-mix(in oklch, ${urgent?"var(--c-danger)":"var(--c-warn)"} 14%, transparent)`,color:urgent?"var(--c-danger)":"var(--c-warn)",fontSize:11,fontWeight:600,cursor:"pointer",flexShrink:0,display:"inline-flex",alignItems:"center",gap:4}}>Reorder →</button>
-                </div>
-              </div>);})}
-            </div>
-          )}
+          {/* Supply alerts — use live inventory from shared batches when available, else hardcoded supplyNote */}
+          {(()=>{
+            const enriched=userPeps.filter(p=>p.status==="active").map(p=>{const inv=inventoryFor(p);return{peptide:p,daysSupply:inv?.daysSupply??p.daysSupply,dosesRemaining:inv?.dosesRemaining,liveNote:inv?`${inv.dosesRemaining}/${inv.totalDosesInVial} doses left in current vial`:p.supplyNote,isLive:!!inv};}).filter(x=>x.daysSupply<=14).sort((a,b)=>a.daysSupply-b.daysSupply);
+            if(enriched.length===0)return null;
+            return(<div style={{marginBottom:16}}>{enriched.map(({peptide:p,daysSupply,liveNote,isLive})=>{const urgent=daysSupply<=7;return(<div key={p.id} className="rise" style={{background:urgent?"color-mix(in oklch, var(--c-danger) 10%, var(--elev-1))":"color-mix(in oklch, var(--c-warn) 8%, var(--elev-1))",borderLeft:`3px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:urgent?"var(--c-danger)":"var(--c-warn)"}}><Icon n="warn" s={15} c={urgent?"var(--c-danger)":"var(--c-warn)"} sw={2}/> {p.name}{isLive&&<span className="mono" style={{fontSize:9,color:"var(--accent)",background:"var(--accent-soft)",padding:"1px 6px",borderRadius:999,letterSpacing:".06em",fontWeight:600,marginLeft:4}}>LIVE</span>}</span>
+                <span className="mono" style={{fontSize:11.5,fontWeight:600,color:urgent?"var(--c-danger)":"var(--c-warn)"}}>{daysSupply}d left</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,gap:10}}>
+                <div style={{fontSize:11,color:"var(--t-3)",flex:1,minWidth:0}}>{liveNote}</div>
+                <button onClick={()=>setReorderModal(p)} className="touch" style={{padding:"5px 11px",borderRadius:999,border:`1px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,background:`color-mix(in oklch, ${urgent?"var(--c-danger)":"var(--c-warn)"} 14%, transparent)`,color:urgent?"var(--c-danger)":"var(--c-warn)",fontSize:11,fontWeight:600,cursor:"pointer",flexShrink:0,display:"inline-flex",alignItems:"center",gap:4}}>Reorder →</button>
+              </div>
+            </div>);})}</div>);
+          })()}
 
           {/* Streak + progress */}
           <div className="rise" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -1925,9 +1955,12 @@ function DashboardInner(){
                   <div className="mono" style={{fontSize:11.5,color:"var(--t-3)",marginTop:3,letterSpacing:".01em"}}>
                     {checked?(<span>✓ {time}{dose?` · ${dose}`:` · ${p.dose}`}</span>):p.dose}
                   </div>
-                  {curBatch&&<div className="mono" style={{fontSize:10.5,color:batchStat.color,marginTop:4,letterSpacing:".01em",display:"inline-flex",alignItems:"center",gap:5}}>
+                  {curBatch&&<div className="mono" style={{fontSize:10.5,color:batchStat.color,marginTop:4,letterSpacing:".01em",display:"inline-flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
                     <Icon n="vial" s={11} c={batchStat.color} sw={1.6}/> {concentration(curBatch)}mg/mL · {batchStat.label}{curBatch.storage?` · ${curBatch.storage}`:""}
                   </div>}
+                  {(()=>{const inv=inventoryFor(p);if(!inv)return null;const low=inv.dosesRemaining<=2;return(<div className="mono" style={{fontSize:10,color:low?"var(--c-warn)":"var(--t-3)",marginTop:3,letterSpacing:".02em",display:"inline-flex",alignItems:"center",gap:4}}>
+                    <Icon n="users" s={10} c={low?"var(--c-warn)":"var(--t-3)"} sw={1.6}/> Shared · {inv.dosesRemaining}/{inv.totalDosesInVial} doses left{inv.daysSupply!=null?` · ~${inv.daysSupply}d`:""}
+                  </div>);})()}
                   {curBatch&&isPastPGStability(curBatch)&&(()=>{const r=RECONSTITUTION[p.id];return(<div className="mono" style={{fontSize:9.5,color:"var(--c-warn)",marginTop:3,letterSpacing:".02em"}}>⚠ Batch past PG's {r.stabilityDays}-day stability window</div>);})()}
                   <div style={{fontSize:11,color:"var(--t-4)",marginTop:5,lineHeight:1.45,fontStyle:"italic"}}>{p.purpose}</div>
                 </div>
@@ -2087,7 +2120,7 @@ function DashboardInner(){
 
         {pepSub==="batches"&&(<>
           <div className="rise" style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14}}>
-            <div><h2 className="serif" style={{fontSize:24,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>Reconstitution log</h2><p className="mono" style={{fontSize:11,color:"var(--t-3)",margin:"2px 0 0"}}>{batches.length} vial{batches.length!==1?"s":""} tracked</p></div>
+            <div><h2 className="serif" style={{fontSize:24,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>Reconstitution log</h2><p className="mono" style={{fontSize:11,color:"var(--t-3)",margin:"2px 0 0"}}>{batches.length} vial{batches.length!==1?"s":""} · shared with household</p></div>
             {!addingBatch&&<button onClick={()=>setAddingBatch(true)} className="touch" style={{padding:"9px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12.5,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={14}/> New batch</button>}
           </div>
 
@@ -2156,15 +2189,25 @@ function DashboardInner(){
               <span style={{fontSize:13.5,fontWeight:600,color:p.color}}>{p.name}</span>
               <span className="mono" style={{fontSize:10,color:"var(--t-4)",letterSpacing:".04em"}}>{peptideBatches.length} batch{peptideBatches.length!==1?"es":""}</span>
             </div>
-            {peptideBatches.map(b=>{const stat=batchStatus(b);const conc=concentration(b);const isEdit=editingBatch===b.id;return(<div key={b.id} style={{background:"var(--elev-1)",borderLeft:`3px solid ${stat.color}`,borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:6,opacity:b.exhausted?0.55:1}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,gap:8}}>
-                <span className="mono" style={{fontSize:11,color:"var(--t-2)",letterSpacing:".02em"}}>{new Date(b.date_recon+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"})}</span>
+            {peptideBatches.map(b=>{const stat=batchStatus(b);const conc=concentration(b);const isEdit=editingBatch===b.id;const creatorName=PROFILES[b.user_id]?.name||b.user_id;const isCreator=b.user_id===userId;const liveInv=(()=>{const mgPerDose=mgFromDoseStr(p.dose);if(!mgPerDose||!b.mg_total)return null;const totalDoses=Math.floor(b.mg_total/mgPerDose);const used=sharedDoseLog.filter(d=>d.date>=b.date_recon&&(!b.exhausted||d.date<=(b.exhausted_date||"9999"))&&d.checks&&d.checks[p.id]).length;return{total:totalDoses,used,remaining:Math.max(0,totalDoses-used)};})();return(<div key={b.id} style={{background:"var(--elev-1)",borderLeft:`3px solid ${stat.color}`,borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:6,opacity:b.exhausted?0.55:1}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,gap:8,flexWrap:"wrap"}}>
+                <div style={{display:"flex",gap:7,alignItems:"baseline",flexWrap:"wrap"}}>
+                  <span className="mono" style={{fontSize:11,color:"var(--t-2)",letterSpacing:".02em"}}>{new Date(b.date_recon+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"})}</span>
+                  <span className="mono" style={{fontSize:9,color:isCreator?"var(--accent)":"var(--t-4)",background:isCreator?"var(--accent-soft)":"var(--elev-2)",padding:"1px 6px",borderRadius:999,letterSpacing:".06em",fontWeight:600}}>{isCreator?"YOU":creatorName.toUpperCase()}</span>
+                </div>
                 <span className="mono" style={{fontSize:10.5,color:stat.color,fontWeight:600,letterSpacing:".04em"}}>{stat.label}</span>
               </div>
               <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:6}}>
                 <span className="serif tabular" style={{fontSize:26,color:"var(--t-1)",fontStyle:"italic",lineHeight:1}}>{conc}</span>
                 <span className="mono" style={{fontSize:11,color:"var(--t-3)"}}>mg/mL · {b.mg_total}mg in {b.ml_bac}mL · 1u = {(conc/100).toFixed(3)}mg</span>
               </div>
+              {liveInv&&!b.exhausted&&(<div style={{marginBottom:6,padding:"6px 9px",background:"var(--elev-2)",borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span className="mono" style={{fontSize:10,color:"var(--t-3)",letterSpacing:".06em",textTransform:"uppercase",fontWeight:600}}>Shared inventory</span>
+                <span style={{display:"flex",alignItems:"baseline",gap:5}}>
+                  <span className="serif tabular" style={{fontSize:18,color:liveInv.remaining<=2?"var(--c-warn)":"var(--t-1)",fontStyle:"italic",lineHeight:1}}>{liveInv.remaining}</span>
+                  <span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>of {liveInv.total} doses left · {liveInv.used} taken</span>
+                </span>
+              </div>)}
               {b.storage&&<div style={{fontSize:11,color:"var(--t-3)",marginBottom:4}}>📍 {b.storage}</div>}
               {b.notes&&<div style={{fontSize:11,color:"var(--t-4)",fontStyle:"italic",marginBottom:4}}>{b.notes}</div>}
               {!b.exhausted&&isPastPGStability(b)&&(()=>{const r=RECONSTITUTION[b.peptide_id];const days=daysSinceRecon(b);return(<div style={{marginTop:6,padding:"7px 10px",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",borderLeft:"2px solid var(--c-warn)",borderRadius:6,fontSize:10.5,color:"var(--c-warn)",lineHeight:1.45}}>
@@ -2580,7 +2623,11 @@ function DashboardInner(){
               <button onClick={()=>setReorderModal(null)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={18}/></button>
             </div>
             <div className="mono" style={{fontSize:11,color:"var(--t-3)",letterSpacing:".04em",marginBottom:4}}>{ro?.productLabel||"Product not catalogued"}</div>
-            <div style={{fontSize:12,color:"var(--t-3)",marginBottom:14,fontStyle:"italic"}}>{reorderModal.supplyNote} · {reorderModal.daysSupply} day{reorderModal.daysSupply!==1?"s":""} of supply</div>
+            <div style={{fontSize:12,color:"var(--t-3)",marginBottom:10,fontStyle:"italic"}}>{reorderModal.supplyNote} · {reorderModal.daysSupply} day{reorderModal.daysSupply!==1?"s":""} of supply</div>
+            {(()=>{const partnerName=Object.entries(PROFILES).filter(([id])=>id!==userId).map(([,p])=>p.name)[0];return(<div style={{display:"flex",alignItems:"center",gap:7,padding:"7px 11px",background:"var(--accent-soft)",borderRadius:"var(--r-sm)",marginBottom:14}}>
+              <Icon n="users" s={13} c="var(--accent)"/>
+              <span className="mono" style={{fontSize:10.5,color:"var(--accent)",letterSpacing:".04em",fontWeight:600}}>Shared inventory{partnerName?` with ${partnerName}`:""} — reordered vials show up for both profiles</span>
+            </div>);})()}
 
             {ro&&ro.savings>0&&(<div style={{background:"color-mix(in oklch, var(--c-success) 10%, transparent)",border:"1px solid color-mix(in oklch, var(--c-success) 30%, transparent)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:14}}>
               <div className="mono" style={{fontSize:10,color:"var(--c-success)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:3}}>Cheapest saves</div>

@@ -101,6 +101,7 @@ const Icon = ({n,s=20,c="currentColor",sw=1.5}) => {
     case "heart": return <svg {...p}><path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/></svg>;
     case "sleep": return <svg {...p}><path d="M14 4a8 8 0 1 0 6 14 8 8 0 0 1-6-14z"/><path d="M16 5h4l-4 4h4"/></svg>;
     case "strain": return <svg {...p}><path d="M3 12h3l3-7 4 14 3-9 2 5h3"/></svg>;
+    case "gear": return <svg {...p}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h0a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v0a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>;
     default: return null;
   }
 };
@@ -391,6 +392,146 @@ class ErrorBoundary extends Component {
   }
 }
 
+/* ═══ SETTINGS SHEET — editable profile, goals, macros, whey, peptides ═══ */
+function Settings({db,userId,userConfig,defaultProfile,onClose,onSave}){
+  // Initialize form state from existing userConfig, falling back to PROFILES defaults
+  const init = {
+    name: userConfig?.name || defaultProfile?.name || "",
+    age: userConfig?.age || "",
+    gender: userConfig?.gender || "female",
+    height: userConfig?.height || "",
+    weight: userConfig?.weight || "",
+    activity: userConfig?.activity || "light",
+    goalBf: userConfig?.goalBf || 30,
+    targetCal: userConfig?.targets?.cal ?? defaultProfile?.targets?.cal ?? "",
+    targetProtein: userConfig?.targets?.protein ?? defaultProfile?.targets?.protein ?? "",
+    targetFat: userConfig?.targets?.fat ?? defaultProfile?.targets?.fat ?? "",
+    targetCarbs: userConfig?.targets?.carbs ?? defaultProfile?.targets?.carbs ?? "",
+    wheyProtein: userConfig?.wheyProtein || "",
+    wheyScoops: userConfig?.wheyScoops || "",
+    peptides: Array.isArray(userConfig?.peptides) ? userConfig.peptides : [],
+  };
+  const [d,setD]=useState(init);
+  const [saving,setSaving]=useState(false);
+  const up=(k,v)=>setD(prev=>({...prev,[k]:v}));
+  const togglePep=(id)=>{const p=[...d.peptides];const i=p.indexOf(id);if(i>=0)p.splice(i,1);else p.push(id);setD({...d,peptides:p});};
+  // Only show peptides this user is allowed to track (matches PEPTIDES.users filter)
+  const availablePeps = AVAILABLE_PEPS.filter(p=>{
+    const meta = PEPTIDES.find(x=>x.id===p.id);
+    return !meta?.users || meta.users.includes(userId);
+  });
+  const save = async () => {
+    setSaving(true);
+    const payload = {
+      name: d.name||defaultProfile?.name||"",
+      age: +(d.age||0),
+      gender: d.gender,
+      height: +(d.height||0),
+      weight: +(d.weight||0),
+      activity: d.activity,
+      goalBf: +(d.goalBf||30),
+      targets: {
+        cal: +(d.targetCal||defaultProfile?.targets?.cal||1600),
+        protein: +(d.targetProtein||defaultProfile?.targets?.protein||120),
+        fat: +(d.targetFat||defaultProfile?.targets?.fat||50),
+        carbs: +(d.targetCarbs||defaultProfile?.targets?.carbs||150),
+      },
+      wheyProtein: +(d.wheyProtein||0),
+      wheyScoops: +(d.wheyScoops||0),
+      peptides: d.peptides,
+    };
+    try{await db.setConfig("profile",payload);onSave(payload);}finally{setSaving(false);}
+  };
+  const lbl={fontSize:10.5,color:"var(--t-3)",marginBottom:5,display:"block",fontWeight:600,letterSpacing:".08em",textTransform:"uppercase"};
+  const section={background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"16px 18px",marginBottom:14};
+  const showPep = defaultProfile?.showPeptides;
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:120,background:"var(--bg)",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+      <style>{STYLE}</style>
+      <div style={{maxWidth:520,margin:"0 auto",padding:"22px 22px calc(48px + env(safe-area-inset-bottom,0px))"}}>
+        {/* Header */}
+        <div className="rise" style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+          <h1 className="serif" style={{fontSize:34,margin:0,fontStyle:"italic",letterSpacing:"-0.025em",color:"var(--t-1)",fontWeight:400}}>Settings</h1>
+          <button onClick={onClose} className="touch" style={{width:40,height:40,borderRadius:12,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-2)",cursor:"pointer"}}><Icon n="x" s={18}/></button>
+        </div>
+
+        {/* Profile */}
+        <div className="rise r1" style={section}>
+          <h2 className="serif" style={{fontSize:20,margin:"0 0 14px",fontStyle:"italic",color:"var(--t-1)",fontWeight:400,letterSpacing:"-0.015em"}}>Profile</h2>
+          <label style={lbl}>Name</label>
+          <input value={d.name} onChange={e=>up("name",e.target.value)} className="bcq-input" style={{marginBottom:12}}/>
+          <div style={{display:"flex",gap:10,marginBottom:12}}>
+            <div style={{flex:1}}><label style={lbl}>Age</label><input type="number" value={d.age} onChange={e=>up("age",e.target.value)} className="bcq-input mono" style={{textAlign:"center"}}/></div>
+            <div style={{flex:1.4}}><label style={lbl}>Gender</label><div style={{display:"flex",gap:6}}>{[["female","Female"],["male","Male"]].map(([v,l])=>(<button key={v} onClick={()=>up("gender",v)} className="touch" style={{flex:1,padding:"10px 8px",borderRadius:"var(--r-sm)",border:`1px solid ${d.gender===v?"var(--accent-line)":"var(--line-soft)"}`,background:d.gender===v?"var(--accent-soft)":"transparent",color:d.gender===v?"var(--accent)":"var(--t-3)",fontSize:13,fontWeight:600,cursor:"pointer"}}>{l}</button>))}</div></div>
+          </div>
+          <div style={{display:"flex",gap:10,marginBottom:14}}>
+            <div style={{flex:1}}><label style={lbl}>Height · cm</label><input type="number" value={d.height} onChange={e=>up("height",e.target.value)} className="bcq-input mono" style={{textAlign:"center"}}/></div>
+            <div style={{flex:1}}><label style={lbl}>Weight · kg</label><input type="number" value={d.weight} onChange={e=>up("weight",e.target.value)} className="bcq-input mono" style={{textAlign:"center"}}/></div>
+          </div>
+          <label style={lbl}>Activity level</label>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {[["sedentary","Sedentary","Little or no exercise"],["light","Lightly Active","Light exercise 1–3 days"],["moderate","Moderately Active","Moderate exercise 3–5 days"],["active","Very Active","Hard exercise 6–7 days"]].map(([v,l,desc])=>(<button key={v} onClick={()=>up("activity",v)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",borderRadius:"var(--r-sm)",border:`1px solid ${d.activity===v?"var(--accent-line)":"var(--line-soft)"}`,background:d.activity===v?"var(--accent-soft)":"transparent",cursor:"pointer",textAlign:"left",minHeight:46}}>
+              <div><div style={{fontSize:13,color:d.activity===v?"var(--t-1)":"var(--t-2)",fontWeight:600}}>{l}</div><div style={{fontSize:11,color:"var(--t-4)",marginTop:1}}>{desc}</div></div>
+              {d.activity===v&&<Icon n="check" s={16} c="var(--accent)" sw={2}/>}
+            </button>))}
+          </div>
+        </div>
+
+        {/* Goal */}
+        <div className="rise r2" style={section}>
+          <h2 className="serif" style={{fontSize:20,margin:"0 0 14px",fontStyle:"italic",color:"var(--t-1)",fontWeight:400,letterSpacing:"-0.015em"}}>Body fat goal</h2>
+          <div style={{display:"flex",alignItems:"baseline",justifyContent:"center",gap:6}}>
+            <input type="number" value={d.goalBf} onChange={e=>up("goalBf",e.target.value)} className="serif" style={{background:"transparent",border:"none",outline:"none",fontSize:58,fontStyle:"italic",color:"var(--t-1)",textAlign:"right",width:120,letterSpacing:"-0.04em",fontWeight:400}}/>
+            <span className="serif" style={{fontSize:32,fontStyle:"italic",color:"var(--t-3)"}}>%</span>
+          </div>
+        </div>
+
+        {/* Macro plan */}
+        <div className="rise r3" style={section}>
+          <h2 className="serif" style={{fontSize:20,margin:"0 0 4px",fontStyle:"italic",color:"var(--t-1)",fontWeight:400,letterSpacing:"-0.015em"}}>Daily plan</h2>
+          <p style={{fontSize:11.5,color:"var(--t-3)",margin:"0 0 14px"}}>From your nutritionist or meal-plan app.</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {[["targetCal","Calories","var(--c-cal)","kcal"],["targetProtein","Protein","var(--c-protein)","g"],["targetFat","Fat","var(--c-fat)","g"],["targetCarbs","Carbs","var(--c-carbs)","g"]].map(([k,l,c,u])=>(<div key={k}><label style={{fontSize:10,color:c,fontWeight:600,letterSpacing:".06em",display:"block",marginBottom:4,textTransform:"uppercase"}}>{l} · {u}</label><input type="number" value={d[k]} onChange={e=>up(k,e.target.value)} className="bcq-input mono" style={{textAlign:"center",fontWeight:600}}/></div>))}
+          </div>
+        </div>
+
+        {/* Whey */}
+        <div className="rise r4" style={section}>
+          <h2 className="serif" style={{fontSize:20,margin:"0 0 4px",fontStyle:"italic",color:"var(--t-1)",fontWeight:400,letterSpacing:"-0.015em"}}>Whey protein</h2>
+          <p style={{fontSize:11.5,color:"var(--t-3)",margin:"0 0 14px"}}>Leave blank if you don't take whey.</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div><label style={{fontSize:10,color:"var(--c-protein)",fontWeight:600,letterSpacing:".06em",display:"block",marginBottom:4,textTransform:"uppercase"}}>Protein / scoop</label><input type="number" value={d.wheyProtein} onChange={e=>up("wheyProtein",e.target.value)} className="bcq-input mono" style={{textAlign:"center",fontWeight:600}}/></div>
+            <div><label style={{fontSize:10,color:"var(--t-3)",fontWeight:600,letterSpacing:".06em",display:"block",marginBottom:4,textTransform:"uppercase"}}>Scoops / day</label><input type="number" value={d.wheyScoops} onChange={e=>up("wheyScoops",e.target.value)} className="bcq-input mono" style={{textAlign:"center",fontWeight:600}}/></div>
+          </div>
+        </div>
+
+        {/* Peptides */}
+        {showPep && <div className="rise r5" style={section}>
+          <h2 className="serif" style={{fontSize:20,margin:"0 0 4px",fontStyle:"italic",color:"var(--t-1)",fontWeight:400,letterSpacing:"-0.015em"}}>Peptide stack</h2>
+          <p style={{fontSize:11.5,color:"var(--t-3)",margin:"0 0 14px"}}>Toggle which peptides you're currently running. Leave all unchecked to show every available peptide.</p>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {availablePeps.map(p=>{const on=d.peptides.includes(p.id);return(
+              <button key={p.id} onClick={()=>togglePep(p.id)} style={{display:"flex",alignItems:"center",gap:11,padding:"11px 13px",borderRadius:"var(--r-sm)",border:`1px solid ${on?p.color:"var(--line-soft)"}`,background:on?`color-mix(in oklch, ${p.color} 8%, transparent)`:"transparent",cursor:"pointer",textAlign:"left",minHeight:50,transition:"all .2s var(--ease-out)"}}>
+                <div style={{width:20,height:20,borderRadius:5,border:`1.5px solid ${on?p.color:"var(--t-4)"}`,background:on?p.color:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{on&&<Icon n="check" s={13} c="var(--bg)" sw={2.5}/>}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13.5,color:on?"var(--t-1)":"var(--t-2)",fontWeight:600}}>{p.name}</div>
+                  <div style={{fontSize:11,color:"var(--t-4)",marginTop:1}}>{p.sub}</div>
+                </div>
+              </button>
+            );})}
+          </div>
+        </div>}
+
+        {/* Actions */}
+        <div className="rise r6" style={{display:"flex",gap:10,marginTop:6}}>
+          <button onClick={onClose} className="touch" style={{flex:1,padding:"14px",borderRadius:"var(--r-md)",border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-2)",fontSize:14,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+          <button onClick={save} disabled={saving} className="touch" style={{flex:2,padding:"14px",borderRadius:"var(--r-md)",border:"none",background:"var(--t-1)",color:"var(--bg)",fontSize:14,fontWeight:600,cursor:saving?"default":"pointer",opacity:saving?0.6:1}}>{saving?"Saving…":"Save changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══ MAIN ═══ */
 function DashboardInner(){
   const [tab,setTab]=useState("macros");
@@ -497,7 +638,12 @@ function DashboardInner(){
   })();},[tab]);
 
   const todayDow=new Date().getDay();
-  const userPeps=PEPTIDES.filter(p=>!p.users||p.users.includes(userId));
+  const userPeps=PEPTIDES.filter(p=>{
+    if(p.users&&!p.users.includes(userId))return false;
+    const userPepIds=userConfig?.peptides;
+    if(Array.isArray(userPepIds)&&userPepIds.length>0)return userPepIds.includes(p.id);
+    return true;
+  });
   const duePeptides=userPeps.filter(p=>(p.status==="active"||p.status==="prn")&&p.schedule.includes(todayDow));
   const notDue=userPeps.filter(p=>!duePeptides.includes(p));
   const checkedCount=duePeptides.filter(p=>pepData.checks[p.id]).length;
@@ -517,6 +663,7 @@ function DashboardInner(){
 
   const navItems=[{id:"macros",icon:"macros",label:"Macros"},profile.showPeptides&&{id:"peptides",icon:"peps",label:"Peps"},{id:"overview",icon:"body",label:"Body"},{id:"whoop",icon:"whoop",label:"Whoop"},{id:"more",icon:"more",label:"More"}].filter(Boolean);
   const [showMore,setShowMore]=useState(false);
+  const [showSettings,setShowSettings]=useState(false);
 
   const todayLabel=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
 
@@ -542,6 +689,9 @@ function DashboardInner(){
           ))}
           <button onClick={toggleTheme} className="touch" style={{width:38,height:38,borderRadius:12,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-3)",cursor:"pointer"}}>
             <Icon n={dark?"moon":"sun"} s={16}/>
+          </button>
+          <button onClick={()=>setShowSettings(true)} className="touch" style={{width:38,height:38,borderRadius:12,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-3)",cursor:"pointer"}}>
+            <Icon n="gear" s={16}/>
           </button>
         </div>
       </header>
@@ -569,6 +719,9 @@ function DashboardInner(){
           ))}
         </div>
       </div>)}
+
+      {/* Settings sheet */}
+      {showSettings&&<Settings db={db} userId={userId} userConfig={userConfig} defaultProfile={defaultProfile} onClose={()=>setShowSettings(false)} onSave={(cfg)=>{setUserConfig(cfg);setShowSettings(false);}}/>}
 
       {/* ═══ OVERVIEW (BODY) ═══ */}
       {tab==="overview"&&(<>

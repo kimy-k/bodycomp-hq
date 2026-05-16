@@ -1123,7 +1123,7 @@ class ErrorBoundary extends Component {
 }
 
 /* ═══ SETTINGS SHEET — editable profile, goals, macros, whey, peptides ═══ */
-function Settings({db,userId,userConfig,defaultProfile,onClose,onSave,notifEnabled,notifPerm,requestNotifPermission,disableNotifs,exportData,exporting}){
+function Settings({db,userId,userConfig,defaultProfile,onClose,onSave,notifEnabled,notifPerm,requestNotifPermission,disableNotifs,exportData,exporting,switchUser}){
   // Initialize form state from existing userConfig, falling back to PROFILES defaults
   const init = {
     name: userConfig?.name || defaultProfile?.name || "",
@@ -1283,6 +1283,17 @@ function Settings({db,userId,userConfig,defaultProfile,onClose,onSave,notifEnabl
           </div>
         </div>
 
+        {/* Switch user — lets the device be handed over briefly without exposing data */}
+        {switchUser&&<div className="rise" style={{animationDelay:".38s",marginTop:18,padding:"14px 18px",background:"var(--elev-1)",borderRadius:"var(--r-md)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13.5,fontWeight:600,color:"var(--t-1)"}}>Switch user</div>
+              <div style={{fontSize:11.5,color:"var(--t-3)",marginTop:4,lineHeight:1.5}}>This device is locked to <strong style={{color:"var(--t-2)"}}>{defaultProfile?.name||userId}</strong>. Tap to hand the phone to the other user — they'll be returned to the picker.</div>
+            </div>
+            <button onClick={switchUser} className="touch" style={{padding:"10px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-2)",fontSize:12,fontWeight:600,cursor:"pointer",flexShrink:0}}>Switch</button>
+          </div>
+        </div>}
+
         {/* Danger zone */}
         <div className="rise" style={{animationDelay:".40s",marginTop:32,padding:"16px 18px",border:"1px dashed var(--line-soft)",borderRadius:"var(--r-md)"}}>
           <div style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:6}}>Reset</div>
@@ -1297,15 +1308,26 @@ function Settings({db,userId,userConfig,defaultProfile,onClose,onSave,notifEnabl
 /* ═══ MAIN ═══ */
 function DashboardInner(){
   const [tab,setTab]=useState("macros");
+  /* Resolve userId in priority order:
+     1. ?user= URL parameter — locks device immediately (deep-linking still works)
+     2. localStorage bcq-user — chosen previously, persists forever until "Switch user"
+     3. null → show "Who are you?" picker, no data loads
+     Once a user is chosen via either path, we persist to localStorage AND drop the
+     URL parameter so the address bar reads the same on every visit. */
   const urlUser=useMemo(()=>{try{const p=new URLSearchParams(window.location.search);return p.get("user");}catch{return null;}},[]);
-  const [userId,setUserId]=useState(urlUser||"kim");
-  const locked=!!urlUser;
+  const storedUser=useMemo(()=>{try{return localStorage.getItem("bcq-user");}catch{return null;}},[]);
+  const initialUser=urlUser||storedUser||null;
+  const [userId,setUserIdRaw]=useState(initialUser);
+  const setUserId=useCallback(uid=>{try{localStorage.setItem("bcq-user",uid);if(window.history?.replaceState){const u=new URL(window.location.href);u.searchParams.delete("user");window.history.replaceState({},"",u.toString());}}catch{}setUserIdRaw(uid);},[]);
+  useEffect(()=>{if(initialUser&&!storedUser){try{localStorage.setItem("bcq-user",initialUser);}catch{}}},[initialUser,storedUser]);
+  const switchUser=useCallback(()=>{if(!window.confirm("Switch to the other user? This is for when you're lending the phone briefly. Your data won't sync to them — they'll see their own."))return;try{localStorage.removeItem("bcq-user");}catch{}window.location.replace(window.location.pathname);},[]);
+  const locked=true;  // always locked now — no in-app profile switching
   const [userConfig,setUserConfig]=useState(null);
   const [toast,setToast]=useState(null);
   const showToast=useCallback((msg,type="error")=>{const id=Date.now()+Math.random();setToast({msg,type,id});setTimeout(()=>setToast(t=>t&&t.id===id?null:t),3800);},[]);
-  const defaultProfile=PROFILES[userId]||PROFILES.kim;
+  const defaultProfile=userId?(PROFILES[userId]||PROFILES.kim):PROFILES.kim;
   const profile=userConfig?{...defaultProfile,name:userConfig.name||defaultProfile.name,targets:userConfig.targets||defaultProfile.targets}:defaultProfile;
-  const db=useMemo(()=>makeDb(userId,msg=>showToast(msg,"error")),[userId,showToast]);
+  const db=useMemo(()=>makeDb(userId||"_none_",msg=>showToast(msg,"error")),[userId,showToast]);
   const TARGETS=profile.targets;
 
   const [onboarded,setOnboarded]=useState(null);
@@ -1544,6 +1566,24 @@ function DashboardInner(){
   const todayLabel=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
 
   /* All hooks above — early returns safe below */
+  if(!userId)return(<div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 20px"}}>
+    <style>{STYLE}</style>
+    <div className="fade" style={{maxWidth:380,width:"100%",textAlign:"center"}}>
+      <div className="serif" style={{fontSize:40,color:"var(--t-1)",fontStyle:"italic",letterSpacing:"-0.02em",marginBottom:6,lineHeight:1.05}}>Body Comp HQ</div>
+      <div className="mono" style={{fontSize:11,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",marginBottom:36}}>Who's using this device?</div>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {Object.entries(PROFILES).map(([id,p])=>(<button key={id} onClick={()=>setUserId(id)} className="touch" style={{padding:"18px 22px",borderRadius:"var(--r-md)",border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-1)",fontSize:15,fontWeight:500,cursor:"pointer",display:"flex",alignItems:"center",gap:14,textAlign:"left",transition:"all .18s var(--ease-out)"}} onMouseEnter={e=>{e.currentTarget.style.background="var(--elev-2)";e.currentTarget.style.borderColor="var(--accent-line)";}} onMouseLeave={e=>{e.currentTarget.style.background="var(--elev-1)";e.currentTarget.style.borderColor="var(--line-soft)";}}>
+          <div style={{width:42,height:42,borderRadius:"50%",background:"var(--accent-soft)",color:"var(--accent)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0,fontWeight:600}}>{p.name.charAt(0)}</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:16,fontWeight:600,color:"var(--t-1)"}}>{p.name}</div>
+            <div className="mono" style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".06em",textTransform:"uppercase",marginTop:2}}>Tap to use this profile</div>
+          </div>
+          <div style={{color:"var(--t-4)",fontSize:18}}>→</div>
+        </button>))}
+      </div>
+      <div style={{fontSize:11,color:"var(--t-4)",marginTop:24,lineHeight:1.5,fontStyle:"italic"}}>Once you pick, this device stays locked to that profile. You can switch later from Settings.</div>
+    </div>
+  </div>);
   if(onboarded===null)return(<div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center"}}><style>{STYLE}</style><div className="fade" style={{color:"var(--t-3)",fontSize:13,letterSpacing:".06em"}}>Loading…</div></div>);
   if(!onboarded)return <Onboarding db={db} onComplete={handleOnboardComplete}/>;
 
@@ -1560,9 +1600,6 @@ function DashboardInner(){
           </h1>
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          {!locked&&Object.entries(PROFILES).map(([id])=>(
-            <button key={id} onClick={()=>setUserId(id)} className="touch" style={{width:38,height:38,borderRadius:12,border:`1px solid ${userId===id?"var(--accent-line)":"var(--line-soft)"}`,background:userId===id?"var(--accent-soft)":"var(--elev-1)",color:userId===id?"var(--accent)":"var(--t-3)",fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .2s var(--ease-out)"}}>{PROFILES[id].name.charAt(0)}</button>
-          ))}
           <button onClick={toggleTheme} className="touch" style={{width:38,height:38,borderRadius:12,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-3)",cursor:"pointer"}}>
             <Icon n={dark?"moon":"sun"} s={16}/>
           </button>
@@ -1595,7 +1632,7 @@ function DashboardInner(){
           ))}
         </div>
       </div></>)}
-      {showSettings&&<Settings db={db} userId={userId} userConfig={userConfig} defaultProfile={defaultProfile} onClose={()=>setShowSettings(false)} onSave={(cfg)=>{setUserConfig(cfg);setShowSettings(false);}} notifEnabled={notifEnabled} notifPerm={notifPerm} requestNotifPermission={requestNotifPermission} disableNotifs={disableNotifs} exportData={exportData} exporting={exporting}/>}
+      {showSettings&&<Settings db={db} userId={userId} userConfig={userConfig} defaultProfile={defaultProfile} onClose={()=>setShowSettings(false)} onSave={(cfg)=>{setUserConfig(cfg);setShowSettings(false);}} notifEnabled={notifEnabled} notifPerm={notifPerm} requestNotifPermission={requestNotifPermission} disableNotifs={disableNotifs} exportData={exportData} exporting={exporting} switchUser={switchUser}/>}
 
       {/* ═══ OVERVIEW (BODY) ═══ */}
       {tab==="overview"&&(<>

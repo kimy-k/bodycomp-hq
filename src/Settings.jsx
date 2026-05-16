@@ -4,6 +4,7 @@
 
 import {useState} from "react";
 import {Icon} from "./Icon.jsx";
+import {STYLE} from "./styles.js";
 import {PROFILES, PEPTIDES, AVAILABLE_PEPS} from "./data.js";
 
 export function Settings({db,userId,userConfig,defaultProfile,onClose,onSave,notifEnabled,notifPerm,requestNotifPermission,disableNotifs,exportData,exporting,switchUser}){

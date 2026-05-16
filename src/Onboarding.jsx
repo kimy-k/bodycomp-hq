@@ -4,6 +4,7 @@
 
 import {useState} from "react";
 import {Icon} from "./Icon.jsx";
+import {STYLE} from "./styles.js";
 import {AVAILABLE_PEPS} from "./data.js";
 
 export function Onboarding({db,onComplete}){

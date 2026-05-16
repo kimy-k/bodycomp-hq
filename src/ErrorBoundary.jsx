@@ -3,6 +3,7 @@
 
 import {Component} from "react";
 import {Icon} from "./Icon.jsx";
+import {STYLE} from "./styles.js";
 
 export class ErrorBoundary extends Component {
   constructor(p){super(p);this.state={err:null,info:null};}

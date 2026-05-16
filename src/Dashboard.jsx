@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, Component } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ReferenceLine, Legend, Cell } from "recharts";
 
 /* ═══ SUPABASE ═══ */
@@ -343,17 +343,56 @@ function Onboarding({db,onComplete}){
   ];
 
   return(
-    <div style={{minHeight:"100vh",background:"radial-gradient(120% 60% at 50% -10%,var(--bg-rad-1) 0%,transparent 55%),var(--bg)",padding:"24px 22px 40px",maxWidth:520,margin:"0 auto",color:"var(--t-1)"}}>
+    <div style={{minHeight:"100vh",background:"radial-gradient(120% 60% at 50% -10%,var(--bg-rad-1) 0%,transparent 55%),var(--bg)",color:"var(--t-1)",display:"flex",flexDirection:"column"}}>
       <style>{STYLE}</style>
-      {step>0&&<div style={{display:"flex",gap:5,marginBottom:24}}>{[1,2,3,4].map(i=>(<div key={i} style={{flex:1,height:3,borderRadius:2,background:i<=step?"var(--accent)":"var(--elev-2)",transition:"background .3s var(--ease-out)"}}/>))}</div>}
-      {step>0&&<button onClick={()=>setStep(step-1)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",fontSize:13,cursor:"pointer",padding:"4px 0",marginBottom:8,display:"inline-flex",alignItems:"center",gap:6}}><Icon n="back" s={16}/> Back</button>}
-      {steps[step]}
+      <div style={{flex:1,display:"flex",flexDirection:"column",justifyContent:step===0?"center":"flex-start",padding:"28px 22px 40px",maxWidth:520,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
+        {step>0&&<div style={{display:"flex",gap:5,marginBottom:24}}>{[1,2,3,4].map(i=>(<div key={i} style={{flex:1,height:3,borderRadius:2,background:i<=step?"var(--accent)":"var(--elev-2)",transition:"background .3s var(--ease-out)"}}/>))}</div>}
+        {step>0&&<button onClick={()=>setStep(step-1)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",fontSize:13,cursor:"pointer",padding:"4px 0",marginBottom:8,display:"inline-flex",alignItems:"center",gap:6,alignSelf:"flex-start"}}><Icon n="back" s={16}/> Back</button>}
+        {steps[step]}
+      </div>
     </div>
   );
 }
 
+/* ═══ ERROR BOUNDARY — surfaces real crashes instead of black screen ═══ */
+class ErrorBoundary extends Component {
+  constructor(p){super(p);this.state={err:null,info:null};}
+  static getDerivedStateFromError(err){return{err};}
+  componentDidCatch(err,info){this.setState({err,info});try{console.error("[BCQ ErrorBoundary]",err,info);}catch{}}
+  render(){
+    if(this.state.err){
+      const msg=this.state.err?.message||String(this.state.err);
+      const stack=this.state.err?.stack||"";
+      const comp=this.state.info?.componentStack||"";
+      return(<div style={{minHeight:"100vh",background:"var(--bg)",color:"var(--t-1)",padding:"40px 22px",maxWidth:680,margin:"0 auto",fontFamily:"'Geist',sans-serif"}}>
+        <style>{STYLE}</style>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,color:"var(--c-danger)"}}>
+          <Icon n="warn" s={24} c="var(--c-danger)" sw={2}/>
+          <h1 className="serif" style={{fontSize:32,margin:0,fontStyle:"italic",letterSpacing:"-0.02em"}}>Something broke</h1>
+        </div>
+        <p style={{fontSize:14,color:"var(--t-2)",lineHeight:1.55,marginBottom:18}}>The dashboard hit a runtime error. Send Claude the message and stack below — it'll patch it.</p>
+        <div style={{background:"var(--elev-1)",borderLeft:"3px solid var(--c-danger)",borderRadius:"var(--r-sm)",padding:"14px 16px",marginBottom:14}}>
+          <div style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:6}}>Error</div>
+          <div className="mono" style={{fontSize:13,color:"var(--c-danger)",wordBreak:"break-word"}}>{msg}</div>
+        </div>
+        {stack&&<details style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"14px 16px",marginBottom:14}}>
+          <summary style={{fontSize:11,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,cursor:"pointer"}}>Stack trace</summary>
+          <pre className="mono" style={{fontSize:11,color:"var(--t-2)",whiteSpace:"pre-wrap",wordBreak:"break-word",marginTop:10}}>{stack}</pre>
+        </details>}
+        {comp&&<details style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"14px 16px",marginBottom:14}}>
+          <summary style={{fontSize:11,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,cursor:"pointer"}}>Component stack</summary>
+          <pre className="mono" style={{fontSize:11,color:"var(--t-2)",whiteSpace:"pre-wrap",wordBreak:"break-word",marginTop:10}}>{comp}</pre>
+        </details>}
+        <button onClick={()=>{try{window.location.reload();}catch{}}} className="touch" style={{padding:"12px 18px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-1)",fontSize:13,fontWeight:600,cursor:"pointer",marginRight:8}}>Reload</button>
+        <a href="?user=bernadette" style={{display:"inline-block",padding:"12px 18px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:13,fontWeight:600,textDecoration:"none"}}>Open Bernadette profile</a>
+      </div>);
+    }
+    return this.props.children;
+  }
+}
+
 /* ═══ MAIN ═══ */
-export default function Dashboard(){
+function DashboardInner(){
   const [tab,setTab]=useState("macros");
   const urlUser=useMemo(()=>{try{const p=new URLSearchParams(window.location.search);return p.get("user");}catch{return null;}},[]);
   const [userId,setUserId]=useState(urlUser||"kim");
@@ -367,9 +406,6 @@ export default function Dashboard(){
   const [onboarded,setOnboarded]=useState(null);
   useEffect(()=>{(async()=>{const ob=await db.getConfig("onboarded");const cfg=await db.getConfig("profile");if(cfg)setUserConfig(cfg);setOnboarded(!!ob);})();},[db]);
   const handleOnboardComplete=(cfg)=>{setUserConfig(cfg);setOnboarded(true);};
-
-  if(onboarded===null)return(<div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center"}}><style>{STYLE}</style><div className="fade" style={{color:"var(--t-3)",fontSize:13,letterSpacing:".06em"}}>Loading…</div></div>);
-  if(!onboarded)return <Onboarding db={db} onComplete={handleOnboardComplete}/>;
 
   const [dark,setDark]=useState(true);
   useEffect(()=>{(async()=>{const t=await db.getConfig("theme");if(t==="light")setDark(false);})();},[db]);
@@ -392,7 +428,7 @@ export default function Dashboard(){
   const best=data.length>0?data.reduce((a,b)=>b.fatPct<a.fatPct?b:a):first;
   const goalPct=userConfig?.goalBf||30;
   const fatToLose=data.length>0?+(last.fatMass-(last.leanMass/(1-goalPct/100))*goalPct/100).toFixed(1):0;
-  const pctDone=data.length>0?Math.min(100,+(((first.fatPct-last.fatPct)/(first.fatPct-goalPct))*100).toFixed(0)):0;
+  const pctDone=(()=>{if(data.length===0)return 0;const denom=first.fatPct-goalPct;if(!denom||denom<=0)return 100;const v=+(((first.fatPct-last.fatPct)/denom)*100).toFixed(0);return Math.max(0,Math.min(100,isFinite(v)?v:0));})();
   const {scenarios,projections}=useMemo(()=>buildProj(last),[last]);
   const etaMonths=scenarios.map(s=>{const h=projections.find(p=>p[s.name]<=30);return{...s,months:h?h.month:">12"};});
 
@@ -483,6 +519,10 @@ export default function Dashboard(){
   const [showMore,setShowMore]=useState(false);
 
   const todayLabel=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+
+  /* All hooks above — early returns safe below */
+  if(onboarded===null)return(<div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center"}}><style>{STYLE}</style><div className="fade" style={{color:"var(--t-3)",fontSize:13,letterSpacing:".06em"}}>Loading…</div></div>);
+  if(!onboarded)return <Onboarding db={db} onComplete={handleOnboardComplete}/>;
 
   return(
     <div className="bcq-app" style={{filter:dark?"none":"invert(0.94) hue-rotate(180deg)"}}>
@@ -1167,4 +1207,10 @@ export default function Dashboard(){
       </nav>
     </div>
   );
+}
+
+/* Default export wraps the dashboard in an ErrorBoundary so runtime errors
+   render a useful diagnostic instead of a black screen. */
+export default function Dashboard(){
+  return <ErrorBoundary><DashboardInner/></ErrorBoundary>;
 }

@@ -82,8 +82,10 @@ const inp={width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid rgba
 /* ═══ MAIN ═══ */
 export default function Dashboard(){
   const [tab,setTab]=useState("macros");
-  const [userId,setUserId]=useState("kim");
-  const profile=PROFILES[userId];
+  const urlUser=useMemo(()=>{try{const p=new URLSearchParams(window.location.search);return p.get("user");}catch{return null;}},[]);
+  const [userId,setUserId]=useState(urlUser||"kim");
+  const locked=!!urlUser;
+  const profile=PROFILES[userId]||PROFILES.kim;
   const db=useMemo(()=>makeDb(userId),[userId]);
   const TARGETS=profile.targets;
 
@@ -208,9 +210,9 @@ export default function Dashboard(){
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
         <div style={{width:32,height:32,borderRadius:10,background:"linear-gradient(135deg,#a78bfa,#6d28d9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>📊</div>
         <div style={{flex:1}}><h1 style={{fontSize:19,fontWeight:800,margin:0,background:"linear-gradient(90deg,#e0e0e0,#a78bfa)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Body Comp HQ</h1><p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:0}}>{profile.emoji} {profile.name} · Goal: 30% BF{data.length>0?` · ${pctDone}% there`:""}</p></div>
-        <div style={{display:"flex",gap:4,marginRight:6}}>
+        {!locked&&<div style={{display:"flex",gap:4,marginRight:6}}>
           {Object.entries(PROFILES).map(([id,p])=>(<button key={id} onClick={()=>setUserId(id)} style={{width:30,height:30,borderRadius:8,border:userId===id?"2px solid #a78bfa":"1px solid rgba(255,255,255,0.08)",background:userId===id?"rgba(167,139,250,0.15)":"transparent",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{p.emoji}</button>))}
-        </div>
+        </div>}
         <button onClick={toggleTheme} style={{width:36,height:36,borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.05)",color:"#fff",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{dark?"☀️":"🌙"}</button>
       </div>
       <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"10px 14px",marginBottom:16}}>

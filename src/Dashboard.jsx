@@ -58,6 +58,74 @@ const PEPTIDES = [
   {id:"glow",users:["kim","bernadette"],name:"Glow",dose:"30u (7mg)",schedule:[],time:"—",status:"break",startDate:"2026-03-12",week:0,totalWeeks:8,cycleEnd:null,note:"Break until ~May 21",color:"oklch(0.66 0.02 285)",dosesLeft:10,daysSupply:21,supplyNote:"Vials available",purpose:"3-in-1 blend: BPC-157 + TB-500 + GHK-Cu. Same as Klow minus KPV. Healing, recovery, skin/collagen. Original version before switching to Klow."},
 ];
 
+/* ═══ PEPTIDE SUPPLIERS — PH reseller catalog ═══
+   Edit prices & links below as you re-survey the market.
+   Prices in PHP per single vial/unit. Null = no data yet for that seller × product. */
+const SELLERS = {
+  avo:       {name:"AVO Supply",   shopee:"https://shopee.ph/avosupplyph",          instagram:"https://instagram.com/avo.supply",          whatsapp:null, notes:"Bac water + 8 swabs + recon syringe + 6 insulin syringes"},
+  pepticore: {name:"PeptiCorePH",  shopee:"https://shopee.ph/pepticoreph",          instagram:"https://instagram.com/pepticoreph",         whatsapp:null, notes:"Bac water + 7 syringes + 7 swabs + cap"},
+  synthe:    {name:"Synthe",       shopee:null,                                      instagram:"https://instagram.com/synthe.ph",          whatsapp:null, notes:"Verified store"},
+  pepmuse:   {name:"Pepmuse",      shopee:"https://shopee.ph/pepmuse",              instagram:"https://instagram.com/pepmuse",             whatsapp:null, notes:"Anti-aging specialist · MOTS-c winner"},
+  peptora:   {name:"Peptora",      shopee:"https://shopee.ph/peptora",              instagram:null,                                        whatsapp:null, notes:"Branded packaging · 5pc bundle pricing"},
+  purepept:  {name:"PurePept",     shopee:"https://shopee.ph/purepept",             instagram:null,                                        whatsapp:null, notes:"Competitive pricing"},
+  rowan:     {name:"Rowan/LUMI+",  shopee:"https://shopee.ph/rowan.dermaceuticals", instagram:"https://instagram.com/lumiplus.peptides",   whatsapp:null, notes:"Aggressive Shopee discounts · LUMI+ branding"},
+};
+
+/* Map peptide IDs → product key in PRICES. Adjust if you reorder different sizes. */
+const PRODUCT_FOR_PEPTIDE = {
+  reta:   "reta30",        // 30mg vial = 12 doses at 2.5mg, best value
+  klow:   "klow",          // PeptiCore exclusive blend
+  nad:    "nad500",
+  ta1:    "ta1_10mg",
+  amino:  "amino_1mq",
+  snap8:  "snap8",
+  cjcipa: "cjcipa",
+  semax:  "semax_selank",
+  motsc:  "motsc10",
+  glow:   "glow",
+};
+
+/* PHP per vial/unit. Add a key for each seller that stocks the product. */
+const PRICES = {
+  reta30:        {label:"Retatrutide 30mg",      avo:4500, pepticore:3000, synthe:6499, peptora:5899},
+  reta15:        {label:"Retatrutide 15mg",                pepticore:2000, synthe:4199, peptora:4899},
+  klow:          {label:"KLOW Blend",                      pepticore:null, notes:"PeptiCore exclusive — confirm current pricing"},
+  nad500:        {label:"NAD+ 500mg",            avo:2000, pepticore:2000, synthe:2499, pepmuse:1500, peptora:3899},
+  ta1_10mg:      {label:"Thymosin Alpha-1 10mg"},
+  amino_1mq:     {label:"5-Amino-1MQ"},
+  snap8:         {label:"Snap-8 (topical)"},
+  cjcipa:        {label:"CJC+Ipamorelin Blend"},
+  semax_selank:  {label:"Semax + Selank Sprays"},
+  motsc10:       {label:"MOTS-c 10mg",                                                  pepmuse:null,   notes:"Pepmuse historically cheapest"},
+  glow:          {label:"GLOW Blend"},
+};
+
+/* Returns ordered reorder options for a given peptide id.
+   Sellers with prices come first (cheapest → most expensive), then sellers without confirmed prices. */
+const reorderOptionsFor = pepId => {
+  const productKey = PRODUCT_FOR_PEPTIDE[pepId];
+  if (!productKey) return null;
+  const product = PRICES[productKey];
+  if (!product) return null;
+  const allSellers = Object.keys(SELLERS);
+  const priced = [], unpriced = [];
+  allSellers.forEach(sid => {
+    const v = product[sid];
+    if (typeof v === "number") priced.push({sellerId: sid, seller: SELLERS[sid], price: v});
+    else if (v === null) unpriced.push({sellerId: sid, seller: SELLERS[sid], price: null, knownStockist: true});
+  });
+  priced.sort((a,b) => a.price - b.price);
+  const cheapest = priced[0]?.price;
+  const dearest = priced[priced.length-1]?.price;
+  const savings = (cheapest != null && dearest != null && dearest > cheapest) ? dearest - cheapest : 0;
+  return {
+    productLabel: product.label,
+    productNotes: product.notes || null,
+    cheapest, dearest, savings,
+    options: [...priced.map(o => ({...o, isBest: o.price === cheapest})), ...unpriced],
+  };
+};
+
 /* ═══ HELPERS ═══ */
 const enrich = d => {const fm=+(d.weight*d.fatPct/100).toFixed(1);return{...d,fatMass:fm,leanMass:+(d.weight-fm).toFixed(1),label:new Date(d.date).toLocaleDateString("en-US",{month:"short",day:"numeric"}),labelYr:new Date(d.date).toLocaleDateString("en-US",{month:"short",year:"2-digit"})};};
 
@@ -1089,6 +1157,9 @@ function DashboardInner(){
   const notDue=userPeps.filter(p=>!duePeptides.includes(p));
   const checkedCount=duePeptides.filter(p=>pepData.checks[p.id]).length;
 
+  /* ═══ REORDER SHEET — opens when user taps "Reorder" on a low-supply peptide ═══ */
+  const [reorderModal,setReorderModal]=useState(null);
+
   /* ═══ NOTIFICATIONS — foreground reminders for overdue peptides ═══ */
   const [notifEnabled,setNotifEnabled]=useState(false);
   const [notifPerm,setNotifPerm]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
@@ -1519,15 +1590,18 @@ function DashboardInner(){
 
         {pepSub==="today"&&(<>
           {/* Supply alerts */}
-          {userPeps.filter(p=>p.daysSupply<=7&&p.status==="active").length>0&&(
+          {userPeps.filter(p=>p.daysSupply<=14&&p.status==="active").length>0&&(
             <div style={{marginBottom:16}}>
-              {userPeps.filter(p=>p.daysSupply<=7&&p.status==="active").map(p=>(<div key={p.id} className="rise" style={{background:"color-mix(in oklch, var(--c-danger) 10%, var(--elev-1))",borderLeft:"3px solid var(--c-danger)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
+              {userPeps.filter(p=>p.daysSupply<=14&&p.status==="active").sort((a,b)=>a.daysSupply-b.daysSupply).map(p=>{const urgent=p.daysSupply<=7;return(<div key={p.id} className="rise" style={{background:urgent?"color-mix(in oklch, var(--c-danger) 10%, var(--elev-1))":"color-mix(in oklch, var(--c-warn) 8%, var(--elev-1))",borderLeft:`3px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:"var(--c-danger)"}}><Icon n="warn" s={15} c="var(--c-danger)" sw={2}/> {p.name}</span>
-                  <span className="mono" style={{fontSize:11.5,fontWeight:600,color:"var(--c-danger)"}}>{p.daysSupply}d left</span>
+                  <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:urgent?"var(--c-danger)":"var(--c-warn)"}}><Icon n="warn" s={15} c={urgent?"var(--c-danger)":"var(--c-warn)"} sw={2}/> {p.name}</span>
+                  <span className="mono" style={{fontSize:11.5,fontWeight:600,color:urgent?"var(--c-danger)":"var(--c-warn)"}}>{p.daysSupply}d left</span>
                 </div>
-                <div style={{fontSize:11,color:"var(--t-3)",marginTop:4}}>{p.supplyNote}</div>
-              </div>))}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,gap:10}}>
+                  <div style={{fontSize:11,color:"var(--t-3)",flex:1,minWidth:0}}>{p.supplyNote}</div>
+                  <button onClick={()=>setReorderModal(p)} className="touch" style={{padding:"5px 11px",borderRadius:999,border:`1px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,background:`color-mix(in oklch, ${urgent?"var(--c-danger)":"var(--c-warn)"} 14%, transparent)`,color:urgent?"var(--c-danger)":"var(--c-warn)",fontSize:11,fontWeight:600,cursor:"pointer",flexShrink:0,display:"inline-flex",alignItems:"center",gap:4}}>Reorder →</button>
+                </div>
+              </div>);})}
             </div>
           )}
 
@@ -1680,6 +1754,7 @@ function DashboardInner(){
                 <div className="hbar" style={{height:3}}><i style={{width:`${Math.min(100,p.daysSupply/30*100)}%`,background:supplyColor,opacity:.55}}/></div>
               </div>
               <div style={{fontSize:10.5,color:"var(--t-4)",marginTop:5,fontStyle:"italic"}}>{p.supplyNote}</div>
+              {p.daysSupply<=21&&<button onClick={()=>setReorderModal(p)} className="touch" style={{marginTop:9,padding:"6px 12px",borderRadius:999,border:`1px solid ${supplyColor}`,background:`color-mix(in oklch, ${supplyColor} 12%, transparent)`,color:supplyColor,fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={11} c={supplyColor} sw={1.7}/> Reorder · find best price</button>}
             </div>);
           })}
 
@@ -2123,6 +2198,60 @@ function DashboardInner(){
           );})}
         </div>
       </nav>
+
+      {/* Reorder sheet — best-price options for a low-supply peptide */}
+      {reorderModal&&(()=>{const ro=reorderOptionsFor(reorderModal.id);return(
+        <div onClick={()=>setReorderModal(null)} style={{position:"fixed",inset:0,zIndex:145,background:"oklch(0.05 0 0 / 0.78)",backdropFilter:"blur(10px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"20px"}}>
+          <div onClick={e=>e.stopPropagation()} className="sheet" style={{background:"var(--bg)",border:"1px solid var(--line)",borderRadius:"var(--r-lg)",padding:18,maxWidth:480,width:"100%",maxHeight:"92vh",overflowY:"auto"}}>
+            <div style={{width:34,height:4,background:"var(--elev-3)",borderRadius:2,margin:"0 auto 14px"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}>
+              <h3 className="serif" style={{fontSize:26,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>Reorder {reorderModal.name}</h3>
+              <button onClick={()=>setReorderModal(null)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={18}/></button>
+            </div>
+            <div className="mono" style={{fontSize:11,color:"var(--t-3)",letterSpacing:".04em",marginBottom:4}}>{ro?.productLabel||"Product not catalogued"}</div>
+            <div style={{fontSize:12,color:"var(--t-3)",marginBottom:14,fontStyle:"italic"}}>{reorderModal.supplyNote} · {reorderModal.daysSupply} day{reorderModal.daysSupply!==1?"s":""} of supply</div>
+
+            {ro&&ro.savings>0&&(<div style={{background:"color-mix(in oklch, var(--c-success) 10%, transparent)",border:"1px solid color-mix(in oklch, var(--c-success) 30%, transparent)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:14}}>
+              <div className="mono" style={{fontSize:10,color:"var(--c-success)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:3}}>Cheapest saves</div>
+              <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+                <span className="serif tabular" style={{fontSize:30,color:"var(--c-success)",fontStyle:"italic",lineHeight:1}}>₱{ro.savings.toLocaleString()}</span>
+                <span className="mono" style={{fontSize:11,color:"var(--t-3)"}}>vs most expensive seller</span>
+              </div>
+            </div>)}
+
+            {!ro&&(<div style={{padding:"24px 18px",background:"var(--elev-1)",borderRadius:"var(--r-md)",textAlign:"center",fontSize:12.5,color:"var(--t-3)",fontStyle:"italic",marginBottom:14}}>No price data catalogued for this peptide yet. Tap any seller below to browse their store.</div>)}
+
+            {ro?.productNotes&&<div style={{fontSize:11.5,color:"var(--t-3)",marginBottom:14,padding:"8px 12px",background:"var(--elev-1)",borderLeft:"2px solid var(--t-4)",borderRadius:"4px",fontStyle:"italic"}}>{ro.productNotes}</div>}
+
+            {/* Seller list */}
+            <div>{(ro?.options||Object.keys(SELLERS).map(sid=>({sellerId:sid,seller:SELLERS[sid],price:null}))).map((o,i)=>(<div key={o.sellerId} className="rise" style={{animationDelay:`${i*0.04}s`,background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:8,border:o.isBest?"1px solid var(--c-success)":"1px solid transparent"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:8}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                    <span style={{fontSize:14,fontWeight:600,color:"var(--t-1)"}}>{o.seller.name}</span>
+                    {o.isBest&&<span style={{fontSize:9.5,fontWeight:700,color:"var(--c-success)",background:"color-mix(in oklch, var(--c-success) 14%, transparent)",padding:"2px 7px",borderRadius:999,letterSpacing:".08em",textTransform:"uppercase"}}>Best price</span>}
+                    {o.knownStockist&&!o.isBest&&<span style={{fontSize:9.5,fontWeight:600,color:"var(--t-3)",background:"var(--elev-2)",padding:"2px 7px",borderRadius:999,letterSpacing:".06em",textTransform:"uppercase"}}>Stockist</span>}
+                  </div>
+                  <div style={{fontSize:11,color:"var(--t-4)",marginTop:3,lineHeight:1.4}}>{o.seller.notes}</div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  {o.price!=null?(<>
+                    <div className="serif tabular" style={{fontSize:22,color:o.isBest?"var(--c-success)":"var(--t-2)",fontStyle:"italic",lineHeight:1}}>₱{o.price.toLocaleString()}</div>
+                    <div className="mono" style={{fontSize:9.5,color:"var(--t-4)",marginTop:2,letterSpacing:".04em"}}>per vial</div>
+                  </>):(<div className="mono" style={{fontSize:10.5,color:"var(--t-4)",letterSpacing:".04em"}}>price n/a</div>)}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {o.seller.shopee&&<a href={o.seller.shopee} target="_blank" rel="noopener noreferrer" className="touch" style={{padding:"7px 12px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:11.5,fontWeight:600,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5}}>Shopee →</a>}
+                {o.seller.instagram&&<a href={o.seller.instagram} target="_blank" rel="noopener noreferrer" className="touch" style={{padding:"7px 12px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-2)",fontSize:11.5,fontWeight:600,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5}}>Instagram →</a>}
+                {o.seller.whatsapp&&<a href={`https://wa.me/${o.seller.whatsapp.replace(/[^0-9]/g,"")}`} target="_blank" rel="noopener noreferrer" className="touch" style={{padding:"7px 12px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-2)",fontSize:11.5,fontWeight:600,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5}}>WhatsApp →</a>}
+              </div>
+            </div>))}</div>
+
+            <div className="mono" style={{fontSize:9.5,color:"var(--t-5)",letterSpacing:".08em",textTransform:"uppercase",marginTop:14,textAlign:"center"}}>Always verify before paying · prices change weekly</div>
+          </div>
+        </div>
+      );})()}
 
       {/* Photo upload preview sheet — confirm metadata before upload */}
       {photoUploadPreview&&<div style={{position:"fixed",inset:0,zIndex:140,background:"oklch(0.08 0 0 / 0.75)",backdropFilter:"blur(8px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"20px"}} onClick={()=>{if(!photoUploading){URL.revokeObjectURL(photoUploadPreview.previewUrl);setPhotoUploadPreview(null);}}}>

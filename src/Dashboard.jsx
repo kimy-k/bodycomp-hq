@@ -10,6 +10,9 @@ const makeDb=(uid,onErr=()=>{})=>({
   async upsert(table,row){try{const r=await fetch(`${SB}/${table}`,{method:"POST",headers:{...hdr,Prefer:"resolution=merge-duplicates"},body:JSON.stringify({...row,user_id:uid})});if(!r.ok)throw new Error(`${table}: ${r.status}`);return true;}catch(e){console.error("db upsert:",e);onErr(`Couldn't save ${table}`);return false;}},
   async list(table,limit=14){try{const r=await fetch(`${SB}/${table}?user_id=eq.${uid}&select=*&order=date.desc&limit=${limit}`,{headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return await r.json();}catch(e){onErr(`Couldn't load ${table}`);return[];}},
   async del(table,dateVal){try{const r=await fetch(`${SB}/${table}?user_id=eq.${uid}&date=eq.${dateVal}`,{method:"DELETE",headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return true;}catch(e){onErr(`Couldn't delete ${table}`);return false;}},
+  async delById(table,id){try{const r=await fetch(`${SB}/${table}?user_id=eq.${uid}&id=eq.${id}`,{method:"DELETE",headers:hdr});if(!r.ok)throw new Error(`${table}: ${r.status}`);return true;}catch(e){onErr(`Couldn't delete`);return false;}},
+  async storageUpload(bucket,path,blob,contentType="image/jpeg"){try{const r=await fetch(`${SB.replace("/rest/v1","")}/storage/v1/object/${bucket}/${path}`,{method:"POST",headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,"Content-Type":contentType,"x-upsert":"true"},body:blob});if(!r.ok)throw new Error(`upload: ${r.status}`);return `${SB.replace("/rest/v1","")}/storage/v1/object/public/${bucket}/${path}`;}catch(e){onErr(`Upload failed`);return null;}},
+  async storageDelete(bucket,path){try{const r=await fetch(`${SB.replace("/rest/v1","")}/storage/v1/object/${bucket}/${path}`,{method:"DELETE",headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`}});return r.ok;}catch{return false;}},
   async getConfig(key){try{const r=await fetch(`${SB}/config?user_id=eq.${uid}&key=eq.${key}&select=*`,{headers:hdr});if(!r.ok)throw new Error(`config: ${r.status}`);const d=await r.json();return d[0]?.value||null;}catch(e){return null;}},
   async setConfig(key,value){try{const r=await fetch(`${SB}/config`,{method:"POST",headers:{...hdr,Prefer:"resolution=merge-duplicates"},body:JSON.stringify({user_id:uid,key,value,updated_at:new Date().toISOString()})});if(!r.ok)throw new Error(`config: ${r.status}`);return true;}catch(e){onErr(`Couldn't save settings`);return false;}},
 });
@@ -57,6 +60,29 @@ const PEPTIDES = [
 
 /* ═══ HELPERS ═══ */
 const enrich = d => {const fm=+(d.weight*d.fatPct/100).toFixed(1);return{...d,fatMass:fm,leanMass:+(d.weight-fm).toFixed(1),label:new Date(d.date).toLocaleDateString("en-US",{month:"short",day:"numeric"}),labelYr:new Date(d.date).toLocaleDateString("en-US",{month:"short",year:"2-digit"})};};
+
+/* Compress an image file to a JPEG blob, max 1080px wide, ~75% quality.
+   Typical 3-5MB iPhone shot → ~200-400KB. */
+const compressImage = (file, maxWidth = 1080, quality = 0.78) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error("compression failed")), "image/jpeg", quality);
+    };
+    img.onerror = () => reject(new Error("invalid image"));
+    img.src = e.target.result;
+  };
+  reader.onerror = () => reject(new Error("read failed"));
+  reader.readAsDataURL(file);
+});
 const todayKey = () => new Date().toISOString().slice(0,10);
 const buildProj = last => {
   const sc=[{name:"Conservative",rate:0.6,color:"oklch(0.80 0.15 75)"},{name:"On Track",rate:1.0,color:"oklch(0.76 0.16 295)"},{name:"Aggressive",rate:1.4,color:"oklch(0.76 0.18 155)"}];
@@ -102,6 +128,11 @@ const Icon = ({n,s=20,c="currentColor",sw=1.5}) => {
     case "sleep": return <svg {...p}><path d="M14 4a8 8 0 1 0 6 14 8 8 0 0 1-6-14z"/><path d="M16 5h4l-4 4h4"/></svg>;
     case "strain": return <svg {...p}><path d="M3 12h3l3-7 4 14 3-9 2 5h3"/></svg>;
     case "gear": return <svg {...p}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h0a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v0a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>;
+    case "camera": return <svg {...p}><path d="M3 8h3l2-3h8l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="4"/></svg>;
+    case "ruler": return <svg {...p}><path d="M3 17l4-4 14-14a1 1 0 0 1 1.4 0l1.5 1.5a1 1 0 0 1 0 1.4l-14 14-4 4z"/><path d="M11 5l2 2M8 8l2 2M5 11l2 2M14 8l2 2M17 5l2 2"/></svg>;
+    case "image": return <svg {...p}><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5L7 20"/></svg>;
+    case "compare": return <svg {...p}><rect x="3" y="5" width="8" height="14" rx="1"/><rect x="13" y="5" width="8" height="14" rx="1"/><path d="M12 3v18"/></svg>;
+    case "trash": return <svg {...p}><path d="M4 7h16M9 7V4h6v3M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6M14 11v6"/></svg>;
     default: return null;
   }
 };
@@ -692,6 +723,35 @@ function DashboardInner(){
   const navItems=[{id:"macros",icon:"macros",label:"Macros"},profile.showPeptides&&{id:"peptides",icon:"peps",label:"Peps"},{id:"overview",icon:"body",label:"Body"},{id:"whoop",icon:"whoop",label:"Whoop"},{id:"more",icon:"more",label:"More"}].filter(Boolean);
   const [showMore,setShowMore]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
+
+  /* ═══ DATA TAB SUBTABS — scans / measurements / photos ═══ */
+  const [dataSub,setDataSub]=useState("scans");
+
+  /* ═══ MEASUREMENTS STATE ═══ */
+  const M_FIELDS=[{k:"waist",l:"Waist",c:"var(--c-bodyfat)"},{k:"hips",l:"Hips",c:"var(--c-cal)"},{k:"chest",l:"Chest",c:"var(--c-muscle)"},{k:"neck",l:"Neck",c:"var(--c-fat)"},{k:"arms",l:"Arms",c:"var(--c-protein)"},{k:"thighs",l:"Thighs",c:"var(--c-carbs)"}];
+  const [measurements,setMeasurements]=useState([]);
+  const [measLoading,setMeasLoading]=useState(false);
+  const [addingMeas,setAddingMeas]=useState(false);
+  const [newMeas,setNewMeas]=useState({date:todayKey(),waist:"",hips:"",chest:"",neck:"",arms:"",thighs:"",notes:""});
+  const [trendField,setTrendField]=useState("waist");
+  useEffect(()=>{if(tab!=="data"||dataSub!=="measurements")return;(async()=>{setMeasLoading(true);const rows=await db.list("body_measurements",60);setMeasurements(rows||[]);setMeasLoading(false);})();},[tab,dataSub,db]);
+  const saveMeas=async()=>{const hasAny=M_FIELDS.some(f=>newMeas[f.k]);if(!hasAny)return;const row={date:newMeas.date,notes:newMeas.notes||null};M_FIELDS.forEach(f=>{row[f.k]=newMeas[f.k]?+newMeas[f.k]:null;});const ok=await db.upsert("body_measurements",row);if(ok){const rows=await db.list("body_measurements",60);setMeasurements(rows||[]);setNewMeas({date:todayKey(),waist:"",hips:"",chest:"",neck:"",arms:"",thighs:"",notes:""});setAddingMeas(false);showToast("Measurements saved","success");}};
+  const deleteMeas=async(date)=>{if(!window.confirm("Delete this measurement entry?"))return;const ok=await db.del("body_measurements",date);if(ok){setMeasurements(measurements.filter(m=>m.date!==date));showToast("Deleted","success");}};
+
+  /* ═══ PHOTOS STATE ═══ */
+  const [photos,setPhotos]=useState([]);
+  const [photosLoading,setPhotosLoading]=useState(false);
+  const [photoUploading,setPhotoUploading]=useState(false);
+  const [photoUploadPreview,setPhotoUploadPreview]=useState(null);
+  const [photoUploadMeta,setPhotoUploadMeta]=useState({date:todayKey(),pose:"front",notes:""});
+  const [photoModal,setPhotoModal]=useState(null);
+  const [compareMode,setCompareMode]=useState(false);
+  const [compareSel,setCompareSel]=useState([]);
+  useEffect(()=>{if(tab!=="data"||dataSub!=="photos")return;(async()=>{setPhotosLoading(true);const rows=await db.list("progress_photos",60);setPhotos(rows||[]);setPhotosLoading(false);})();},[tab,dataSub,db]);
+  const handlePhotoFile=async(e)=>{const f=e.target.files?.[0];if(!f)return;try{const blob=await compressImage(f);const url=URL.createObjectURL(blob);setPhotoUploadPreview({blob,previewUrl:url,name:f.name});}catch(err){showToast("Couldn't read photo","error");}e.target.value="";};
+  const uploadPhoto=async()=>{if(!photoUploadPreview)return;setPhotoUploading(true);try{const rand=Math.random().toString(36).slice(2,10);const path=`${userId}/${photoUploadMeta.date}-${photoUploadMeta.pose}-${rand}.jpg`;const url=await db.storageUpload("progress-photos",path,photoUploadPreview.blob,"image/jpeg");if(!url){setPhotoUploading(false);return;}const ok=await db.upsert("progress_photos",{date:photoUploadMeta.date,pose:photoUploadMeta.pose,url,storage_path:path,notes:photoUploadMeta.notes||null});if(ok){URL.revokeObjectURL(photoUploadPreview.previewUrl);setPhotoUploadPreview(null);setPhotoUploadMeta({date:todayKey(),pose:"front",notes:""});const rows=await db.list("progress_photos",60);setPhotos(rows||[]);showToast("Photo saved","success");}}finally{setPhotoUploading(false);}};
+  const deletePhoto=async(p)=>{if(!window.confirm("Delete this photo?"))return;await db.delById("progress_photos",p.id);if(p.storage_path)await db.storageDelete("progress-photos",p.storage_path);setPhotos(photos.filter(x=>x.id!==p.id));setPhotoModal(null);showToast("Photo deleted","success");};
+  const toggleCompareSel=(p)=>{const ids=compareSel.map(x=>x.id);if(ids.includes(p.id))setCompareSel(compareSel.filter(x=>x.id!==p.id));else if(compareSel.length<2)setCompareSel([...compareSel,p]);else setCompareSel([compareSel[1],p]);};
 
   const todayLabel=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
 
@@ -1328,49 +1388,163 @@ function DashboardInner(){
         {whoopHist.length===0&&!whoopData&&<div style={{textAlign:"center",padding:"32px 0",color:"var(--t-4)",fontSize:13}}><Icon n="whoop" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>Log to see trends</div></div>}
       </>)}
 
-      {/* ═══ DATA ═══ */}
+      {/* ═══ DATA — subtabs: scans / measurements / photos ═══ */}
       {tab==="data"&&(<>
-        <div className="rise" style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14,marginTop:24}}>
-          <div><h2 className="serif" style={{fontSize:26,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>All scans</h2><p className="mono" style={{fontSize:11,color:"var(--t-3)",margin:"2px 0 0"}}>{data.length} entries</p></div>
-          {!showAddScan&&<button onClick={()=>setShowAddScan(true)} className="touch" style={{padding:"9px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12.5,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="plus" s={14}/> Add scan</button>}
+        <div className="rise" style={{display:"flex",gap:6,marginTop:18,marginBottom:14,flexWrap:"wrap"}}>
+          {[["scans","Scans"],["measurements","Measurements"],["photos","Photos"]].map(([k,l])=>(<TabBtn key={k} active={dataSub===k} onClick={()=>setDataSub(k)}>{l}</TabBtn>))}
         </div>
 
-        {showAddScan&&(<div className="sheet" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:18,marginBottom:16,borderLeft:"3px solid var(--accent)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:14,alignItems:"baseline"}}>
-            <h3 className="serif" style={{fontSize:20,fontWeight:400,color:"var(--accent)",margin:0,fontStyle:"italic"}}>New scan</h3>
-            <button onClick={()=>setShowAddScan(false)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={16}/></button>
+        {/* ─── SCANS subtab ─── */}
+        {dataSub==="scans"&&(<>
+          <div className="rise" style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14}}>
+            <div><h2 className="serif" style={{fontSize:26,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>All scans</h2><p className="mono" style={{fontSize:11,color:"var(--t-3)",margin:"2px 0 0"}}>{data.length} entries</p></div>
+            {!showAddScan&&<button onClick={()=>setShowAddScan(true)} className="touch" style={{padding:"9px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12.5,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="plus" s={14}/> Add scan</button>}
           </div>
-          <div style={{marginBottom:12}}>
-            <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Date</div>
-            <input type="date" value={newScan.date} onChange={e=>setNewScan({...newScan,date:e.target.value})} className="bcq-input" style={{colorScheme:"dark"}}/>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
-            {[{k:"weight",l:"Weight",c:"var(--c-weight)",ph:"54.1"},{k:"muscle",l:"Muscle",c:"var(--c-muscle)",ph:"18.0"},{k:"fatPct",l:"Fat %",c:"var(--c-bodyfat)",ph:"37.6"}].map(f=>(<div key={f.k}>
-              <div style={{fontSize:10,color:f.c,marginBottom:5,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase"}}>{f.l}</div>
-              <input type="number" step="0.1" value={newScan[f.k]} onChange={e=>setNewScan({...newScan,[f.k]:e.target.value})} placeholder={f.ph} className="bcq-input serif" style={{textAlign:"center",fontSize:22,padding:"12px 6px",fontStyle:"italic"}}/>
-            </div>))}
-          </div>
-          {newScan.weight&&newScan.fatPct&&(<div className="fade" style={{textAlign:"center",padding:"10px",background:"var(--elev-2)",borderRadius:"var(--r-sm)",marginBottom:14}}>
-            <span className="mono" style={{fontSize:11,color:"var(--t-3)"}}>Fat </span><span className="serif" style={{fontSize:18,color:"var(--c-bodyfat)",fontStyle:"italic"}}>{(+newScan.weight * +newScan.fatPct/100).toFixed(1)}</span><span className="mono" style={{fontSize:11,color:"var(--t-3)"}}>kg · Lean </span><span className="serif" style={{fontSize:18,color:"var(--c-muscle)",fontStyle:"italic"}}>{(+newScan.weight - +newScan.weight * +newScan.fatPct/100).toFixed(1)}</span><span className="mono" style={{fontSize:11,color:"var(--t-3)"}}>kg</span>
+
+          {showAddScan&&(<div className="sheet" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:18,marginBottom:16,borderLeft:"3px solid var(--accent)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:14,alignItems:"baseline"}}>
+              <h3 className="serif" style={{fontSize:20,fontWeight:400,color:"var(--accent)",margin:0,fontStyle:"italic"}}>New scan</h3>
+              <button onClick={()=>setShowAddScan(false)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={16}/></button>
+            </div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Date</div>
+              <input type="date" value={newScan.date} onChange={e=>setNewScan({...newScan,date:e.target.value})} className="bcq-input" style={{colorScheme:"dark"}}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+              {[{k:"weight",l:"Weight",c:"var(--c-weight)",ph:"54.1"},{k:"muscle",l:"Muscle",c:"var(--c-muscle)",ph:"18.0"},{k:"fatPct",l:"Fat %",c:"var(--c-bodyfat)",ph:"37.6"}].map(f=>(<div key={f.k}>
+                <div style={{fontSize:10,color:f.c,marginBottom:5,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase"}}>{f.l}</div>
+                <input type="number" step="0.1" value={newScan[f.k]} onChange={e=>setNewScan({...newScan,[f.k]:e.target.value})} placeholder={f.ph} className="bcq-input serif" style={{textAlign:"center",fontSize:22,padding:"12px 6px",fontStyle:"italic"}}/>
+              </div>))}
+            </div>
+            {newScan.weight&&newScan.fatPct&&(<div className="fade" style={{textAlign:"center",padding:"10px",background:"var(--elev-2)",borderRadius:"var(--r-sm)",marginBottom:14}}>
+              <span className="mono" style={{fontSize:11,color:"var(--t-3)"}}>Fat </span><span className="serif" style={{fontSize:18,color:"var(--c-bodyfat)",fontStyle:"italic"}}>{(+newScan.weight * +newScan.fatPct/100).toFixed(1)}</span><span className="mono" style={{fontSize:11,color:"var(--t-3)"}}>kg · Lean </span><span className="serif" style={{fontSize:18,color:"var(--c-muscle)",fontStyle:"italic"}}>{(+newScan.weight - +newScan.weight * +newScan.fatPct/100).toFixed(1)}</span><span className="mono" style={{fontSize:11,color:"var(--t-3)"}}>kg</span>
+            </div>)}
+            <button onClick={addScan} disabled={!newScan.weight||!newScan.fatPct} className="touch" style={{width:"100%",padding:"14px",borderRadius:"var(--r-md)",border:"none",background:newScan.weight&&newScan.fatPct?"var(--t-1)":"var(--elev-2)",color:newScan.weight&&newScan.fatPct?"var(--bg)":"var(--t-4)",fontSize:14,fontWeight:600,cursor:newScan.weight&&newScan.fatPct?"pointer":"default"}}>Save scan</button>
           </div>)}
-          <button onClick={addScan} disabled={!newScan.weight||!newScan.fatPct} className="touch" style={{width:"100%",padding:"14px",borderRadius:"var(--r-md)",border:"none",background:newScan.weight&&newScan.fatPct?"var(--t-1)":"var(--elev-2)",color:newScan.weight&&newScan.fatPct?"var(--bg)":"var(--t-4)",fontSize:14,fontWeight:600,cursor:newScan.weight&&newScan.fatPct?"pointer":"default"}}>Save scan</button>
-        </div>)}
 
-        <div className="rise r2" style={{overflowX:"auto",borderRadius:"var(--r-md)",background:"var(--elev-1)"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
-            <thead><tr style={{background:"var(--elev-2)"}}>{["Date","Wt","Musc","Fat %","Fat kg","M:F",""].map(h=>(<th key={h} className="mono" style={{padding:"10px 6px",textAlign:"right",color:"var(--t-3)",fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",fontSize:9.5,whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
-            <tbody>{data.map((d,i)=>{const isB=d.fatPct===best.fatPct;const isL=i===data.length-1;const isUser=userScans.some(s=>s.date===d.date);return(<tr key={i} style={{background:isB?"color-mix(in oklch, var(--c-success) 10%, transparent)":isL?"color-mix(in oklch, var(--accent) 8%, transparent)":i%2===0?"transparent":"oklch(1 0 0 / 0.012)"}}>
-              <td className="mono" style={{padding:"8px 6px",textAlign:"right",color:"var(--t-2)",fontSize:10.5,whiteSpace:"nowrap"}}>{d.label}{isB?" ★":isL?" •":""}</td>
-              <td className="mono tabular" style={{padding:"8px 6px",textAlign:"right",color:"var(--c-weight)",fontWeight:600}}>{d.weight}</td>
-              <td className="mono tabular" style={{padding:"8px 6px",textAlign:"right",color:"var(--c-muscle)",fontWeight:600}}>{d.muscle}</td>
-              <td className="mono tabular" style={{padding:"8px 6px",textAlign:"right",color:"var(--c-bodyfat)",fontWeight:600}}>{d.fatPct}</td>
-              <td className="mono tabular" style={{padding:"8px 6px",textAlign:"right",color:"var(--t-3)"}}>{d.fatMass}</td>
-              <td className="mono tabular" style={{padding:"8px 6px",textAlign:"right",color:(d.muscle/d.fatMass)>=0.9?"var(--c-success)":"var(--c-warn)"}}>{(d.muscle/d.fatMass).toFixed(2)}</td>
-              <td style={{padding:"8px 4px",textAlign:"right"}}>{isUser&&<button onClick={()=>removeUserScan(d.date)} className="touch" style={{background:"none",border:"none",color:"var(--t-4)",cursor:"pointer",padding:4}}><Icon n="x" s={11}/></button>}</td>
-            </tr>);})}</tbody>
-          </table>
-        </div>
-        <div className="mono" style={{marginTop:8,fontSize:9.5,color:"var(--t-4)",letterSpacing:".04em"}}>★ best · • latest · × removable</div>
+          <div className="rise r2" style={{overflowX:"auto",borderRadius:"var(--r-md)",background:"var(--elev-1)"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
+              <thead><tr style={{background:"var(--elev-2)"}}>{["Date","Wt","Musc","Fat %","Fat kg","M:F",""].map(h=>(<th key={h} className="mono" style={{padding:"10px 6px",textAlign:"right",color:"var(--t-3)",fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",fontSize:9.5,whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+              <tbody>{data.map((d,i)=>{const isB=d.fatPct===best.fatPct;const isL=i===data.length-1;const isUser=userScans.some(s=>s.date===d.date);return(<tr key={i} style={{background:isB?"color-mix(in oklch, var(--c-success) 10%, transparent)":isL?"color-mix(in oklch, var(--accent) 8%, transparent)":i%2===0?"transparent":"oklch(1 0 0 / 0.012)"}}>
+                <td className="mono" style={{padding:"8px 6px",textAlign:"right",color:"var(--t-2)",fontSize:10.5,whiteSpace:"nowrap"}}>{d.label}{isB?" ★":isL?" •":""}</td>
+                <td className="mono tabular" style={{padding:"8px 6px",textAlign:"right",color:"var(--c-weight)",fontWeight:600}}>{d.weight}</td>
+                <td className="mono tabular" style={{padding:"8px 6px",textAlign:"right",color:"var(--c-muscle)",fontWeight:600}}>{d.muscle}</td>
+                <td className="mono tabular" style={{padding:"8px 6px",textAlign:"right",color:"var(--c-bodyfat)",fontWeight:600}}>{d.fatPct}</td>
+                <td className="mono tabular" style={{padding:"8px 6px",textAlign:"right",color:"var(--t-3)"}}>{d.fatMass}</td>
+                <td className="mono tabular" style={{padding:"8px 6px",textAlign:"right",color:(d.muscle/d.fatMass)>=0.9?"var(--c-success)":"var(--c-warn)"}}>{(d.muscle/d.fatMass).toFixed(2)}</td>
+                <td style={{padding:"8px 4px",textAlign:"right"}}>{isUser&&<button onClick={()=>removeUserScan(d.date)} className="touch" style={{background:"none",border:"none",color:"var(--t-4)",cursor:"pointer",padding:4}}><Icon n="x" s={11}/></button>}</td>
+              </tr>);})}</tbody>
+            </table>
+          </div>
+          <div className="mono" style={{marginTop:8,fontSize:9.5,color:"var(--t-4)",letterSpacing:".04em"}}>★ best · • latest · × removable</div>
+        </>)}
+
+        {/* ─── MEASUREMENTS subtab ─── */}
+        {dataSub==="measurements"&&(<>
+          <div className="rise" style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14}}>
+            <div><h2 className="serif" style={{fontSize:26,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>Measurements</h2><p className="mono" style={{fontSize:11,color:"var(--t-3)",margin:"2px 0 0"}}>{measurements.length} entries · cm</p></div>
+            {!addingMeas&&<button onClick={()=>setAddingMeas(true)} className="touch" style={{padding:"9px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12.5,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="ruler" s={14}/> Log entry</button>}
+          </div>
+
+          {measLoading&&<SkelTab/>}
+
+          {addingMeas&&(<div className="sheet" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:18,marginBottom:16,borderLeft:"3px solid var(--accent)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:14,alignItems:"baseline"}}>
+              <h3 className="serif" style={{fontSize:20,fontWeight:400,color:"var(--accent)",margin:0,fontStyle:"italic"}}>New entry</h3>
+              <button onClick={()=>setAddingMeas(false)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={16}/></button>
+            </div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Date</div>
+              <input type="date" value={newMeas.date} onChange={e=>setNewMeas({...newMeas,date:e.target.value})} className="bcq-input" style={{colorScheme:"dark"}}/>
+            </div>
+            <p style={{fontSize:11,color:"var(--t-4)",margin:"0 0 12px",fontStyle:"italic"}}>All measurements in centimeters. Leave any field blank to skip it.</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+              {M_FIELDS.map(f=>(<div key={f.k}>
+                <div style={{fontSize:10,color:f.c,marginBottom:5,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase"}}>{f.l} · cm</div>
+                <input type="number" step="0.1" value={newMeas[f.k]} onChange={e=>setNewMeas({...newMeas,[f.k]:e.target.value})} placeholder="—" className="bcq-input serif" style={{textAlign:"center",fontSize:20,padding:"11px 6px",fontStyle:"italic"}}/>
+              </div>))}
+            </div>
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Notes</div>
+              <input value={newMeas.notes} onChange={e=>setNewMeas({...newMeas,notes:e.target.value})} placeholder="Optional context" className="bcq-input"/>
+            </div>
+            <button onClick={saveMeas} disabled={!M_FIELDS.some(f=>newMeas[f.k])} className="touch" style={{width:"100%",padding:"14px",borderRadius:"var(--r-md)",border:"none",background:M_FIELDS.some(f=>newMeas[f.k])?"var(--t-1)":"var(--elev-2)",color:M_FIELDS.some(f=>newMeas[f.k])?"var(--bg)":"var(--t-4)",fontSize:14,fontWeight:600,cursor:"pointer"}}>Save</button>
+          </div>)}
+
+          {/* Trend chart — at least 2 entries needed */}
+          {!measLoading&&measurements.length>=2&&(<>
+            <div className="rise r2" style={{display:"flex",gap:5,marginBottom:10,flexWrap:"wrap"}}>{M_FIELDS.map(f=>(<button key={f.k} onClick={()=>setTrendField(f.k)} style={{padding:"5px 11px",borderRadius:999,border:trendField===f.k?`1px solid ${f.c}`:"1px solid var(--line-soft)",background:trendField===f.k?`color-mix(in oklch, ${f.c} 14%, transparent)`:"transparent",color:trendField===f.k?f.c:"var(--t-3)",fontSize:11,cursor:"pointer",fontWeight:500}}>{f.l}</button>))}</div>
+            <div className="rise r3" style={cBox}>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={[...measurements].reverse().filter(m=>m[trendField]!=null)} margin={{top:10,right:14,left:-6,bottom:0}}>
+                  <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
+                  <XAxis dataKey="date" tickFormatter={d=>new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})} tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false}/>
+                  <YAxis tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28} domain={["dataMin - 1","dataMax + 1"]}/>
+                  <Tooltip content={<Tip/>}/>
+                  <Line type="monotone" dataKey={trendField} stroke={M_FIELDS.find(f=>f.k===trendField).c} strokeWidth={2.2} name={M_FIELDS.find(f=>f.k===trendField).l} dot={{r:3,fill:M_FIELDS.find(f=>f.k===trendField).c,stroke:"var(--bg)",strokeWidth:1.5}} activeDot={{r:5}}/>
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </>)}
+
+          {/* Entries list */}
+          {!measLoading&&measurements.length===0&&!addingMeas&&<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="ruler" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No measurements yet</div><div style={{fontSize:11,color:"var(--t-5)",marginTop:3}}>Log waist weekly for the cleanest fat-loss signal</div></div>}
+
+          {!measLoading&&measurements.length>0&&(<div style={{marginTop:18}}>
+            <div style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:10}}>Entries</div>
+            {measurements.map((m,i)=>{const lb=new Date(m.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});const prevM=measurements[i+1];return(<div key={m.date} className="rise" style={{animationDelay:`${i*0.03}s`,background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <span style={{fontSize:13,fontWeight:600,color:"var(--t-1)"}}>{lb}</span>
+                <button onClick={()=>deleteMeas(m.date)} className="touch" style={{background:"none",border:"none",color:"var(--t-4)",cursor:"pointer",padding:4}}><Icon n="trash" s={13}/></button>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:14}}>{M_FIELDS.map(f=>m[f.k]!=null?(<div key={f.k}>
+                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".06em",textTransform:"uppercase",fontWeight:600}}>{f.l}</div>
+                <div className="serif tabular" style={{fontSize:18,color:f.c,fontStyle:"italic",lineHeight:1.1}}>{m[f.k]}{prevM&&prevM[f.k]!=null&&<span className="mono" style={{fontSize:10,color:m[f.k]<prevM[f.k]?"var(--c-success)":m[f.k]>prevM[f.k]?"var(--c-warn)":"var(--t-4)",marginLeft:4,fontStyle:"normal"}}>{m[f.k]<prevM[f.k]?"▼":m[f.k]>prevM[f.k]?"▲":"="}{Math.abs(+(m[f.k]-prevM[f.k]).toFixed(1))}</span>}</div>
+              </div>):null)}</div>
+              {m.notes&&<div style={{fontSize:11,color:"var(--t-3)",marginTop:8,fontStyle:"italic"}}>{m.notes}</div>}
+            </div>);})}
+          </div>)}
+        </>)}
+
+        {/* ─── PHOTOS subtab ─── */}
+        {dataSub==="photos"&&(<>
+          <div className="rise" style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14}}>
+            <div><h2 className="serif" style={{fontSize:26,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>Progress photos</h2><p className="mono" style={{fontSize:11,color:"var(--t-3)",margin:"2px 0 0"}}>{photos.length} · same pose, same light, weekly</p></div>
+            <div style={{display:"flex",gap:6}}>
+              {photos.length>=2&&<button onClick={()=>{setCompareMode(!compareMode);setCompareSel([]);}} className="touch" style={{padding:"9px 12px",borderRadius:"var(--r-sm)",border:`1px solid ${compareMode?"var(--accent)":"var(--line-soft)"}`,background:compareMode?"var(--accent-soft)":"var(--elev-1)",color:compareMode?"var(--accent)":"var(--t-3)",cursor:"pointer"}}><Icon n="compare" s={14}/></button>}
+              <label className="touch" style={{padding:"9px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12.5,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}>
+                <Icon n="camera" s={14}/> Add
+                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoFile} style={{display:"none"}}/>
+              </label>
+            </div>
+          </div>
+
+          {photosLoading&&<SkelTab/>}
+
+          {/* Compare bar */}
+          {compareMode&&!compareSel.length&&<div className="rise" style={{background:"color-mix(in oklch, var(--accent) 8%, var(--elev-1))",borderLeft:"3px solid var(--accent)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:12,fontSize:12,color:"var(--t-2)"}}>Tap two photos to compare</div>}
+          {compareMode&&compareSel.length===2&&(<div className="rise" style={{marginBottom:14}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+              {compareSel.map((p,i)=>(<div key={p.id} style={{position:"relative"}}>
+                <img src={p.url} alt={p.date} style={{width:"100%",aspectRatio:"3/4",objectFit:"cover",borderRadius:"var(--r-sm)",display:"block"}}/>
+                <div className="mono" style={{position:"absolute",bottom:6,left:6,right:6,background:"oklch(0.1 0 0 / 0.6)",backdropFilter:"blur(8px)",borderRadius:6,padding:"4px 7px",fontSize:10,color:"var(--t-1)",letterSpacing:".04em"}}>{new Date(p.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"})}{p.pose?` · ${p.pose}`:""}</div>
+              </div>))}
+            </div>
+            <div style={{textAlign:"center",fontSize:12,color:"var(--t-3)",marginTop:8,fontStyle:"italic"}}>{(()=>{const a=new Date(compareSel[0].date),b=new Date(compareSel[1].date);const diff=Math.round(Math.abs(b-a)/(1000*60*60*24));return `${diff} day${diff!==1?"s":""} apart`;})()}</div>
+          </div>)}
+
+          {/* Empty state */}
+          {!photosLoading&&photos.length===0&&!photoUploadPreview&&<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="image" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No photos yet</div><div style={{fontSize:11,color:"var(--t-5)",marginTop:3}}>Weekly photos in the same pose are the highest-signal progress metric</div></div>}
+
+          {/* Photo grid */}
+          {!photosLoading&&photos.length>0&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:14}}>
+            {photos.map((p,i)=>{const isSel=compareMode&&compareSel.some(x=>x.id===p.id);return(<div key={p.id} onClick={()=>compareMode?toggleCompareSel(p):setPhotoModal(p)} className="rise" style={{animationDelay:`${i*0.02}s`,position:"relative",cursor:"pointer",borderRadius:"var(--r-sm)",overflow:"hidden",aspectRatio:"3/4",border:isSel?"2px solid var(--accent)":"none"}}>
+              <img src={p.url} alt={p.date} loading="lazy" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+              <div className="mono" style={{position:"absolute",bottom:4,left:4,right:4,background:"oklch(0.1 0 0 / 0.6)",backdropFilter:"blur(6px)",borderRadius:5,padding:"2px 5px",fontSize:9,color:"var(--t-1)",letterSpacing:".04em",textAlign:"center"}}>{new Date(p.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
+              {isSel&&<div style={{position:"absolute",top:6,right:6,width:22,height:22,borderRadius:11,background:"var(--accent)",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon n="check" s={14} c="var(--bg)" sw={2.5}/></div>}
+            </div>);})}
+          </div>)}
+        </>)}
       </>)}
 
       <div className="mono" style={{marginTop:36,textAlign:"center",fontSize:9.5,color:"var(--t-5)",letterSpacing:".18em",textTransform:"uppercase"}}>Body Comp HQ</div>
@@ -1387,6 +1561,48 @@ function DashboardInner(){
           );})}
         </div>
       </nav>
+
+      {/* Photo upload preview sheet — confirm metadata before upload */}
+      {photoUploadPreview&&<div style={{position:"fixed",inset:0,zIndex:140,background:"oklch(0.08 0 0 / 0.75)",backdropFilter:"blur(8px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"20px"}} onClick={()=>{if(!photoUploading){URL.revokeObjectURL(photoUploadPreview.previewUrl);setPhotoUploadPreview(null);}}}>
+        <div onClick={e=>e.stopPropagation()} className="sheet" style={{background:"var(--bg)",border:"1px solid var(--line)",borderRadius:"var(--r-lg)",padding:18,maxWidth:480,width:"100%",maxHeight:"90vh",overflowY:"auto"}}>
+          <div style={{width:34,height:4,background:"var(--elev-3)",borderRadius:2,margin:"0 auto 14px"}}/>
+          <h3 className="serif" style={{fontSize:24,fontWeight:400,color:"var(--t-1)",margin:"0 0 12px",fontStyle:"italic",letterSpacing:"-0.015em",textAlign:"center"}}>New photo</h3>
+          <div style={{borderRadius:"var(--r-md)",overflow:"hidden",marginBottom:14,maxHeight:"40vh",background:"var(--elev-2)"}}>
+            <img src={photoUploadPreview.previewUrl} alt="preview" style={{width:"100%",maxHeight:"40vh",objectFit:"contain",display:"block"}}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+            <div>
+              <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Date</div>
+              <input type="date" value={photoUploadMeta.date} onChange={e=>setPhotoUploadMeta({...photoUploadMeta,date:e.target.value})} className="bcq-input" style={{colorScheme:"dark"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Pose</div>
+              <div style={{display:"flex",gap:4}}>{["front","side","back"].map(p=>(<button key={p} onClick={()=>setPhotoUploadMeta({...photoUploadMeta,pose:p})} className="touch" style={{flex:1,padding:"10px 4px",borderRadius:"var(--r-sm)",border:`1px solid ${photoUploadMeta.pose===p?"var(--accent-line)":"var(--line-soft)"}`,background:photoUploadMeta.pose===p?"var(--accent-soft)":"transparent",color:photoUploadMeta.pose===p?"var(--accent)":"var(--t-3)",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>{p}</button>))}</div>
+            </div>
+          </div>
+          <input value={photoUploadMeta.notes} onChange={e=>setPhotoUploadMeta({...photoUploadMeta,notes:e.target.value})} placeholder="Notes (optional)" className="bcq-input" style={{marginBottom:14}}/>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>{URL.revokeObjectURL(photoUploadPreview.previewUrl);setPhotoUploadPreview(null);}} disabled={photoUploading} className="touch" style={{flex:1,padding:"14px",borderRadius:"var(--r-md)",border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-2)",fontSize:14,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+            <button onClick={uploadPhoto} disabled={photoUploading} className="touch" style={{flex:2,padding:"14px",borderRadius:"var(--r-md)",border:"none",background:"var(--t-1)",color:"var(--bg)",fontSize:14,fontWeight:600,cursor:"pointer",opacity:photoUploading?0.6:1}}>{photoUploading?"Uploading…":"Save photo"}</button>
+          </div>
+        </div>
+      </div>}
+
+      {/* Photo viewer modal — full image with metadata + delete */}
+      {photoModal&&<div onClick={()=>setPhotoModal(null)} style={{position:"fixed",inset:0,zIndex:150,background:"oklch(0.05 0 0 / 0.94)",backdropFilter:"blur(12px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div onClick={e=>e.stopPropagation()} className="sheet" style={{maxWidth:520,width:"100%",maxHeight:"94vh",display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div className="serif" style={{fontSize:22,color:"var(--t-1)",fontStyle:"italic",lineHeight:1.1}}>{new Date(photoModal.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})}</div>
+              {photoModal.pose&&<div className="mono" style={{fontSize:11,color:"var(--t-3)",letterSpacing:".06em",marginTop:2,textTransform:"uppercase"}}>{photoModal.pose}</div>}
+            </div>
+            <button onClick={()=>setPhotoModal(null)} className="touch" style={{width:38,height:38,borderRadius:12,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-2)",cursor:"pointer"}}><Icon n="x" s={18}/></button>
+          </div>
+          <img src={photoModal.url} alt={photoModal.date} style={{maxWidth:"100%",maxHeight:"70vh",objectFit:"contain",borderRadius:"var(--r-md)",background:"var(--elev-2)"}}/>
+          {photoModal.notes&&<div style={{fontSize:13,color:"var(--t-2)",lineHeight:1.5,fontStyle:"italic"}}>{photoModal.notes}</div>}
+          <button onClick={()=>deletePhoto(photoModal)} className="touch" style={{padding:"11px 14px",borderRadius:"var(--r-sm)",border:"1px solid color-mix(in oklch, var(--c-danger) 30%, transparent)",background:"color-mix(in oklch, var(--c-danger) 8%, transparent)",color:"var(--c-danger)",fontSize:12.5,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,alignSelf:"flex-start"}}><Icon n="trash" s={14}/> Delete photo</button>
+        </div>
+      </div>}
 
       {/* Save error / success toast — floats above everything */}
       <Toast toast={toast}/>

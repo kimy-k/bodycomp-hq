@@ -25,6 +25,7 @@ import {computeInsights} from "./insights.js";
 import {Icon} from "./Icon.jsx";
 import {FONT_URL, STYLE} from "./styles.js";
 import {Tip, Card, H2, TabBtn, Insight, cBox, Skel, SkelTab, Toast} from "./ui.jsx";
+import {ensureServiceWorker, subscribePush, unsubscribePush, sendTestPush} from "./push-client.js";
 import {Onboarding} from "./Onboarding.jsx";
 import {ErrorBoundary} from "./ErrorBoundary.jsx";
 import {Settings} from "./Settings.jsx";
@@ -283,8 +284,39 @@ function DashboardInner(){
   const [notifEnabled,setNotifEnabled]=useState(false);
   const [notifPerm,setNotifPerm]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
   useEffect(()=>{(async()=>{const n=await db.getConfig("notifEnabled");if(n===true||n==="true")setNotifEnabled(true);})();},[db]);
-  const requestNotifPermission=useCallback(async()=>{if(typeof Notification==="undefined"){showToast("This browser doesn't support notifications","error");return;}try{const result=await Notification.requestPermission();setNotifPerm(result);if(result==="granted"){setNotifEnabled(true);db.setConfig("notifEnabled",true);showToast("Notifications enabled","success");}else{showToast("Notifications blocked — enable in browser settings","error");}}catch{showToast("Couldn't request permission","error");}},[db,showToast]);
-  const disableNotifs=useCallback(()=>{setNotifEnabled(false);db.setConfig("notifEnabled",false);showToast("Notifications off","success");},[db,showToast]);
+  /* Register service worker on app boot so push delivery can work even when the app is closed */
+  useEffect(()=>{ensureServiceWorker().catch(()=>{});},[]);
+  const requestNotifPermission=useCallback(async()=>{
+    if(typeof Notification==="undefined"){showToast("This browser doesn't support notifications","error");return;}
+    try{
+      const result=await Notification.requestPermission();
+      setNotifPerm(result);
+      if(result!=="granted"){showToast("Notifications blocked — enable in browser settings","error");return;}
+      /* Try to subscribe to push for background delivery. Falls back gracefully if not supported. */
+      try{
+        await subscribePush(userId);
+        setNotifEnabled(true);
+        db.setConfig("notifEnabled",true);
+        showToast("Reminders on · push enabled","success");
+      }catch(e){
+        /* Push failed (iOS not installed, no service worker, etc.) but in-page notifications still work */
+        setNotifEnabled(true);
+        db.setConfig("notifEnabled",true);
+        const msg=String(e?.message||e);
+        if(msg.includes("ios-requires-install")){
+          showToast("Reminders on. For background alerts, install to home screen first.","success");
+        }else{
+          showToast("Reminders on (foreground only)","success");
+        }
+      }
+    }catch{showToast("Couldn't request permission","error");}
+  },[db,showToast,userId]);
+  const disableNotifs=useCallback(async()=>{
+    setNotifEnabled(false);
+    db.setConfig("notifEnabled",false);
+    try{await unsubscribePush();}catch{}
+    showToast("Notifications off","success");
+  },[db,showToast]);
   /* Poll every 2 minutes for overdue peptides; fire one notif per peptide per day. */
   useEffect(()=>{
     if(!notifEnabled||notifPerm!=="granted")return;
@@ -489,7 +521,7 @@ function DashboardInner(){
         }
         const row=await db.upsertStackEntry(pepId,patch);
         if(row){setPeptideStack(prev=>{const i=prev.findIndex(r=>r.peptide_id===pepId);return i>=0?prev.map(r=>r.peptide_id===pepId?row:r):[...prev,row];});}
-      }} onClose={()=>setShowSettings(false)} onSave={(cfg)=>{setUserConfig(cfg);setShowSettings(false);}} notifEnabled={notifEnabled} notifPerm={notifPerm} requestNotifPermission={requestNotifPermission} disableNotifs={disableNotifs} exportData={exportData} exporting={exporting} switchUser={switchUser}/>}
+      }} onClose={()=>setShowSettings(false)} onSave={(cfg)=>{setUserConfig(cfg);setShowSettings(false);}} notifEnabled={notifEnabled} notifPerm={notifPerm} requestNotifPermission={requestNotifPermission} disableNotifs={disableNotifs} sendTestPush={async()=>{try{const r=await sendTestPush(userId);showToast(r.sent>0?`Test sent to ${r.sent} device(s)`:"No active devices","success");}catch(e){showToast("Test failed: "+String(e?.message||e).slice(0,60),"error");}}} exportData={exportData} exporting={exporting} switchUser={switchUser}/>}
 
       {/* ═══ OVERVIEW (BODY) ═══ */}
       {tab==="overview"&&(<>

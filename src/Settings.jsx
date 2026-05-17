@@ -7,7 +7,7 @@ import {Icon} from "./Icon.jsx";
 import {STYLE} from "./styles.js";
 import {PROFILES, PEPTIDES} from "./data.js";
 
-export function Settings({db,userId,userConfig,defaultProfile,peptideStack,onStackToggle,onClose,onSave,notifEnabled,notifPerm,requestNotifPermission,disableNotifs,exportData,exporting,switchUser}){
+export function Settings({db,userId,userConfig,defaultProfile,peptideStack,onStackToggle,onClose,onSave,notifEnabled,notifPerm,requestNotifPermission,disableNotifs,sendTestPush,exportData,exporting,switchUser}){
   // Initialize form state from existing userConfig, falling back to PROFILES defaults
   const init = {
     name: userConfig?.name || defaultProfile?.name || "",
@@ -146,8 +146,9 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,onSta
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,paddingBottom:14,borderBottom:"1px solid var(--line-soft)",marginBottom:14}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13.5,fontWeight:600,color:"var(--t-1)"}}>Peptide reminders</div>
-              <div style={{fontSize:11.5,color:"var(--t-3)",marginTop:4,lineHeight:1.5}}>{notifPerm==="unsupported"?"Notifications aren't supported in this browser.":notifPerm==="denied"?"Blocked — enable in your browser/system settings to use this.":notifEnabled?"On. The app will alert you when a dose goes overdue (only while open).":"Off. Tap to enable."}</div>
-              <div style={{fontSize:11,color:"var(--t-4)",marginTop:6,fontStyle:"italic",lineHeight:1.4}}>iOS: install to home screen for the most reliable delivery (Share → Add to Home Screen).</div>
+              <div style={{fontSize:11.5,color:"var(--t-3)",marginTop:4,lineHeight:1.5}}>{notifPerm==="unsupported"?"Notifications aren't supported in this browser.":notifPerm==="denied"?"Blocked — enable in your browser/system settings to use this.":notifEnabled?"On. You'll get a push when a dose goes overdue, even when the app is closed.":"Off. Tap to enable."}</div>
+              <div style={{fontSize:11,color:"var(--t-4)",marginTop:6,fontStyle:"italic",lineHeight:1.4}}>iOS: install to home screen first for background delivery (Share → Add to Home Screen → reopen from icon).</div>
+              {notifEnabled&&sendTestPush&&(<button onClick={sendTestPush} className="touch" style={{marginTop:10,padding:"7px 12px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-2)",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>Send test push</button>)}
             </div>
             {notifPerm!=="unsupported"&&(<button onClick={notifEnabled?disableNotifs:requestNotifPermission} disabled={notifPerm==="denied"} className="touch" style={{padding:"10px 14px",borderRadius:"var(--r-sm)",border:notifEnabled?"1px solid var(--accent-line)":"1px solid var(--line-soft)",background:notifEnabled?"var(--accent-soft)":"var(--elev-2)",color:notifEnabled?"var(--accent)":notifPerm==="denied"?"var(--t-4)":"var(--t-2)",fontSize:12,fontWeight:600,cursor:notifPerm==="denied"?"default":"pointer",flexShrink:0}}>{notifEnabled?"On":notifPerm==="denied"?"Blocked":"Turn on"}</button>)}
           </div>

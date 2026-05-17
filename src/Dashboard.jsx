@@ -97,18 +97,24 @@ function DashboardInner(){
   /* Whey config derived from userConfig (Settings). Sensible defaults match the original constant (25g protein/scoop × 2 scoops). */
   const whey=useMemo(()=>{const perScoop=+(userConfig?.wheyProtein||25);const scoops=+(userConfig?.wheyScoops||2);return{protein:perScoop*scoops,fat:+(scoops*0.5).toFixed(1),carbs:scoops*2,scoops,perScoop,enabled:perScoop>0&&scoops>0,label:scoops>0?`Whey · ${scoops} scoop${scoops!==1?"s":""}`:"Whey"};},[userConfig]);
 
+  /* P18: macroDate lets the user back-edit a past day's macros. Defaults to today.
+     Changing this re-runs the load effect below and reroutes saves to that date. */
+  const [macroDate,setMacroDate]=useState(todayKey());
+  /* Reset macroDate to today whenever user re-enters Macros tab — avoids confusion if they previously back-edited */
+  useEffect(()=>{if(tab==="macros")setMacroDate(todayKey());},[tab]);
+
   useEffect(()=>{setMeals([]);setWheyOn(true);setMLoading(true);(async()=>{
-    const row=await db.get("daily_macros",day);
+    const row=await db.get("daily_macros",macroDate);
     if(row){setMeals(row.meals||[]);setWheyOn(row.whey!==false);}
     const cfg=await db.getConfig("favs");
     if(cfg)setFavs(cfg);
     setMLoading(false);
-  })();},[day,db]);
+  })();},[macroDate,db]);
 
   const saveMacro=useCallback((m,w)=>{
     setMeals(m);setWheyOn(w);
-    db.upsert("daily_macros",{date:day,meals:m,whey:w});
-  },[day]);
+    db.upsert("daily_macros",{date:macroDate,meals:m,whey:w});
+  },[macroDate]);
 
   const saveFavs=async(f)=>{setFavs(f);db.setConfig("favs",f);};
 
@@ -153,6 +159,60 @@ function DashboardInner(){
     const rows=await db.list("daily_peptides",21);
     setPepHist(rows.map(r=>({date:r.date,checks:r.checks||{},sideEffects:r.side_effects||[]})));
   })();},[tab]);
+
+  /* ═══ P18: BACKDATED DOSE EDITING ═══
+     When the user taps a cell in the "Last 7 days" grid, this state opens a
+     small modal letting them log/edit/remove a dose for ANY past date. The 30-day
+     cap is enforced in the click handler. */
+  const [editPastDose,setEditPastDose]=useState(null);  // {peptideId, date} | null
+  const [editPastForm,setEditPastForm]=useState({time:"",dose:"",loading:false,exists:false});
+  /* When the modal opens, fetch existing data (if any) and preload form */
+  useEffect(()=>{
+    if(!editPastDose){setEditPastForm({time:"",dose:"",loading:false,exists:false});return;}
+    const {peptideId,date}=editPastDose;
+    /* Find the peptide's default dose from this user's stack */
+    const stackEntry=peptideStack.find(s=>s.peptide_id===peptideId&&s.enabled);
+    const fallbackDose=stackEntry?.dose||"";
+    setEditPastForm({time:new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),dose:fallbackDose,loading:true,exists:false});
+    (async()=>{
+      const row=await db.get("daily_peptides",date);
+      const existing=row?.checks?.[peptideId];
+      if(existing){
+        setEditPastForm({time:existing.time||"",dose:existing.dose||fallbackDose,loading:false,exists:true});
+      }else{
+        setEditPastForm(f=>({...f,loading:false}));
+      }
+    })();
+  },[editPastDose,db,peptideStack]);
+  const editPastDoseSave=useCallback(async(time,dose)=>{
+    if(!editPastDose)return;
+    const {peptideId,date}=editPastDose;
+    /* Fetch current row to merge, since upsert replaces the whole record */
+    const row=await db.get("daily_peptides",date);
+    const checks={...((row&&row.checks)||{})};
+    checks[peptideId]={time:time||new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),dose:dose||""};
+    const sideFx=(row&&row.side_effects)||[];
+    await db.upsert("daily_peptides",{date,checks,side_effects:sideFx});
+    /* Refresh views: pepHist (for grid/history), and if this was today, pepData */
+    const rows=await db.list("daily_peptides",21);
+    setPepHist(rows.map(r=>({date:r.date,checks:r.checks||{},sideEffects:r.side_effects||[]})));
+    if(date===day)setPepData({checks,sideEffects:sideFx});
+    setEditPastDose(null);
+    showToast(`Logged ${peptideId} for ${date===day?"today":date}`,"success");
+  },[editPastDose,db,day,showToast]);
+  const editPastDoseRemove=useCallback(async()=>{
+    if(!editPastDose)return;
+    const {peptideId,date}=editPastDose;
+    const row=await db.get("daily_peptides",date);
+    if(!row||!row.checks||!row.checks[peptideId]){setEditPastDose(null);return;}
+    const checks={...row.checks};delete checks[peptideId];
+    await db.upsert("daily_peptides",{date,checks,side_effects:row.side_effects||[]});
+    const rows=await db.list("daily_peptides",21);
+    setPepHist(rows.map(r=>({date:r.date,checks:r.checks||{},sideEffects:r.side_effects||[]})));
+    if(date===day)setPepData({checks,sideEffects:row.side_effects||[]});
+    setEditPastDose(null);
+    showToast(`Removed ${peptideId} from ${date}`,"success");
+  },[editPastDose,db,day,showToast]);
 
   const todayDow=new Date().getDay();
 
@@ -522,6 +582,45 @@ function DashboardInner(){
         if(row){setPeptideStack(prev=>{const i=prev.findIndex(r=>r.peptide_id===pepId);return i>=0?prev.map(r=>r.peptide_id===pepId?row:r):[...prev,row];});}
       }} onClose={()=>setShowSettings(false)} onSave={(cfg)=>{setUserConfig(cfg);setShowSettings(false);}} notifEnabled={notifEnabled} notifPerm={notifPerm} requestNotifPermission={requestNotifPermission} disableNotifs={disableNotifs} sendTestPush={async()=>{try{const r=await sendTestPush(userId);showToast(r.sent>0?`Test sent to ${r.sent} device(s)`:"No active devices","success");}catch(e){showToast("Test failed: "+String(e?.message||e).slice(0,60),"error");}}} exportData={exportData} exporting={exporting} switchUser={switchUser}/>}
 
+      {/* ═══ P18: EDIT PAST DOSE MODAL ═══ */}
+      {editPastDose&&(()=>{
+        const pep=userPeps.find(p=>p.id===editPastDose.peptideId)||PEPTIDES[editPastDose.peptideId]||{name:editPastDose.peptideId,color:"var(--accent)"};
+        const dateObj=new Date(editPastDose.date+"T12:00:00");
+        const isToday=editPastDose.date===day;
+        const dateLabel=isToday?"Today":dateObj.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"});
+        return(
+          <div onClick={()=>setEditPastDose(null)} style={{position:"fixed",inset:0,zIndex:150,background:"oklch(0.05 0 0 / 0.78)",backdropFilter:"blur(10px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"20px"}}>
+            <div onClick={e=>e.stopPropagation()} className="sheet" style={{background:"var(--bg)",border:"1px solid var(--line)",borderRadius:"var(--r-lg)",padding:20,maxWidth:420,width:"100%"}}>
+              <div style={{width:34,height:4,background:"var(--elev-3)",borderRadius:2,margin:"0 auto 16px"}}/>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
+                <div style={{width:10,height:10,borderRadius:5,background:pep.color,flexShrink:0}}/>
+                <h3 className="serif" style={{fontSize:24,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>{pep.name}</h3>
+              </div>
+              <div className="mono" style={{fontSize:11,color:"var(--t-3)",letterSpacing:".08em",textTransform:"uppercase",fontWeight:600,marginBottom:18}}>{dateLabel} · {editPastForm.exists?"Edit":"Log dose"}</div>
+
+              {editPastForm.loading?(<div style={{padding:"24px 0",textAlign:"center",color:"var(--t-4)",fontSize:12}}>Loading…</div>):(<>
+                <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                  <div>
+                    <label className="mono" style={{display:"block",fontSize:10,color:"var(--t-3)",letterSpacing:".08em",textTransform:"uppercase",fontWeight:600,marginBottom:5}}>Time</label>
+                    <input type="text" value={editPastForm.time} onChange={e=>setEditPastForm({...editPastForm,time:e.target.value})} placeholder="e.g. 8:00 AM" className="bcq-input" style={{width:"100%"}}/>
+                  </div>
+                  <div>
+                    <label className="mono" style={{display:"block",fontSize:10,color:"var(--t-3)",letterSpacing:".08em",textTransform:"uppercase",fontWeight:600,marginBottom:5}}>Dose</label>
+                    <input type="text" value={editPastForm.dose} onChange={e=>setEditPastForm({...editPastForm,dose:e.target.value})} placeholder="e.g. 40u (10.7mg)" className="bcq-input" style={{width:"100%"}}/>
+                  </div>
+                </div>
+
+                <div style={{display:"flex",gap:8,marginTop:20,flexWrap:"wrap"}}>
+                  <button onClick={()=>editPastDoseSave(editPastForm.time,editPastForm.dose)} className="touch" style={{flex:1,minWidth:120,padding:"11px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent)",color:"var(--bg)",fontSize:13,fontWeight:600,cursor:"pointer"}}>{editPastForm.exists?"Save changes":"Log dose"}</button>
+                  {editPastForm.exists&&(<button onClick={editPastDoseRemove} className="touch" style={{padding:"11px 14px",borderRadius:"var(--r-sm)",border:"1px solid color-mix(in oklch, var(--c-danger) 30%, var(--line))",background:"color-mix(in oklch, var(--c-danger) 8%, transparent)",color:"var(--c-danger)",fontSize:13,fontWeight:600,cursor:"pointer"}}>Remove</button>)}
+                  <button onClick={()=>setEditPastDose(null)} className="touch" style={{padding:"11px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-2)",fontSize:13,fontWeight:500,cursor:"pointer"}}>Cancel</button>
+                </div>
+              </>)}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ═══ OVERVIEW (BODY) ═══ */}
       {tab==="overview"&&(<>
         {insightsLoaded&&(<div className="rise" style={{marginBottom:22}}>
@@ -596,6 +695,22 @@ function DashboardInner(){
         <div style={{display:"flex",gap:6,marginBottom:16}}>{[["log","Today"],["history","History"]].map(([k,l])=>(<TabBtn key={k} active={macroSub===k} onClick={()=>setMacroSub(k)}>{l}</TabBtn>))}</div>
 
         {macroSub==="log"&&(<>
+          {/* P18: Date selector — lets you back-log macros for a past day */}
+          {(()=>{
+            const todayK=todayKey();
+            const isToday=macroDate===todayK;
+            const dateObj=new Date(macroDate+"T12:00:00");
+            const minDate=(()=>{const d=new Date();d.setDate(d.getDate()-30);return localDateKey(d);})();
+            const friendly=isToday?"Today":dateObj.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"});
+            return(<>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:isToday?16:10,flexWrap:"wrap"}}>
+                <span className="mono" style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600}}>Logging for</span>
+                <input type="date" value={macroDate} min={minDate} max={todayK} onChange={e=>setMacroDate(e.target.value||todayK)} className="bcq-input" style={{colorScheme:"dark",padding:"5px 8px",fontSize:12,maxWidth:170}}/>
+                {!isToday&&<button onClick={()=>setMacroDate(todayK)} className="touch" style={{padding:"5px 10px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:11,fontWeight:600,cursor:"pointer"}}>← Today</button>}
+              </div>
+              {!isToday&&<div style={{padding:"10px 14px",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",borderLeft:"3px solid var(--c-warn)",borderRadius:"var(--r-sm)",fontSize:12,color:"var(--t-2)",marginBottom:16,lineHeight:1.5,display:"flex",alignItems:"center",gap:8}}><Icon n="warn" s={14} c="var(--c-warn)"/> <span>Editing <strong>{friendly}</strong> — changes save to that day's record, not today.</span></div>}
+            </>);
+          })()}
           {/* Protein hero — the gasping moment */}
           <div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-lg)",padding:"20px 22px 22px",marginBottom:12,borderLeft:"3px solid var(--c-protein)",position:"relative",overflow:"hidden"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
@@ -873,20 +988,25 @@ function DashboardInner(){
                       const histTaken=(H[d.key]||[]).includes(p.id);
                       const taken=liveTaken||histTaken;
                       const isFuture=new Date(d.key+"T23:59:59")>today&&d.key!==day;
-                      let icon=null,bg="transparent",iconColor="var(--t-5)";
+                      /* P18: allow tapping any non-future cell to edit. 30-day cap enforced. */
+                      const daysBack=Math.round((today-new Date(d.key+"T12:00:00"))/(86400000));
+                      const editable=!isFuture&&daysBack<=30;
+                      let icon=null,bg="transparent";
                       if(isFuture){icon="";}
                       else if(!scheduled){icon=<span style={{color:"var(--t-5)"}}>–</span>;}
                       else if(taken){icon=<Icon n="check" s={12} c="var(--c-success)" sw={2.5}/>;bg="color-mix(in oklch, var(--c-success) 14%, transparent)";}
                       else{icon=<Icon n="x" s={11} c="var(--c-danger)" sw={2.5}/>;bg="color-mix(in oklch, var(--c-danger) 10%, transparent)";}
-                      return(<div key={d.key} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"7px 0",background:bg,borderBottom:"1px solid var(--line-soft)"}}>{icon}</div>);
+                      const cellProps=editable&&scheduled?{onClick:()=>setEditPastDose({peptideId:p.id,date:d.key}),style:{display:"flex",alignItems:"center",justifyContent:"center",padding:"7px 0",background:bg,borderBottom:"1px solid var(--line-soft)",cursor:"pointer",transition:"background .15s var(--ease-out)"},onMouseEnter:e=>{e.currentTarget.style.background="color-mix(in oklch, var(--accent) 12%, "+bg+")";},onMouseLeave:e=>{e.currentTarget.style.background=bg;}}:{style:{display:"flex",alignItems:"center",justifyContent:"center",padding:"7px 0",background:bg,borderBottom:"1px solid var(--line-soft)"}};
+                      return(<div key={d.key} {...cellProps}>{icon}</div>);
                     })}
                   </div>))}
                 </div>
-                <div style={{display:"flex",gap:14,justifyContent:"center",marginTop:10}}>
+                <div style={{display:"flex",gap:14,justifyContent:"center",marginTop:10,flexWrap:"wrap"}}>
                   <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,color:"var(--t-3)"}}><Icon n="check" s={11} c="var(--c-success)" sw={2.5}/> taken</span>
                   <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,color:"var(--t-3)"}}><Icon n="x" s={10} c="var(--c-danger)" sw={2.5}/> missed</span>
                   <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,color:"var(--t-3)"}}><span style={{color:"var(--t-5)"}}>–</span> not due</span>
                 </div>
+                <div style={{fontSize:10,color:"var(--t-4)",textAlign:"center",marginTop:6,fontStyle:"italic"}}>Tap any cell to log a missed dose or edit history</div>
               </div>);
             })()}
           </div>

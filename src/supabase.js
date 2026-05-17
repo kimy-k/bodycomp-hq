@@ -348,4 +348,27 @@ export const makeDb = (uid, onErr = () => {}) => ({
       return null;
     }
   },
+
+  /* ─── Daily briefing — Phase 2 smart layer.
+     Fetches today's brief from the API. The endpoint handles same-day caching
+     server-side; calling this multiple times in a day costs almost nothing. */
+  async getDailyBriefing(force = false) {
+    try {
+      const r = await fetch(`/api/ai/daily-briefing`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({user_id: uid, force}),
+      });
+      const data = await r.json().catch(() => ({}));
+      return {
+        ok: r.ok && data.ok,
+        summary_md: data.summary_md || "",
+        generated_at: data.generated_at,
+        cached: !!data.cached,
+        error: data.error || null,
+      };
+    } catch (e) {
+      return {ok: false, summary_md: "", error: String(e.message || e)};
+    }
+  },
 });

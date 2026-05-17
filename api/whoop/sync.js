@@ -168,12 +168,43 @@ export default async function handler(req, res) {
       });
     }
 
-    /* 6. Upsert all rows in one batch */
-    if (rows.length > 0) {
+    /* 6. Dedupe rows by date BEFORE upserting.
+       Two Whoop cycles can map to the same Manila date when:
+         - User has a split cycle (e.g. nap + main sleep both starting same calendar day)
+         - Timezone boundary edge case (cycle starting near midnight UTC)
+       Postgres ON CONFLICT can't update the same row twice in one statement → error 21000.
+       Strategy: keep the FIRST row encountered for each date (Whoop returns cycles
+       sorted by start DESC, so the first is the most recent), but fill in any null
+       fields from later/older rows for that same date. */
+    const byDate = new Map();
+    for (const row of rows) {
+      const existing = byDate.get(row.date);
+      if (!existing) {
+        byDate.set(row.date, row);
+      } else {
+        byDate.set(row.date, {
+          ...existing,
+          recovery:         existing.recovery         ?? row.recovery,
+          sleep:            existing.sleep            ?? row.sleep,
+          strain:           existing.strain           ?? row.strain,
+          hrv_ms:           existing.hrv_ms           ?? row.hrv_ms,
+          rhr:              existing.rhr              ?? row.rhr,
+          sleep_hours:      existing.sleep_hours      ?? row.sleep_hours,
+          sleep_efficiency: existing.sleep_efficiency ?? row.sleep_efficiency,
+        });
+      }
+    }
+    const dedupedRows = Array.from(byDate.values());
+    if (rows.length !== dedupedRows.length) {
+      console.log(`[whoop/sync] deduped ${rows.length} cycles → ${dedupedRows.length} unique dates`);
+    }
+
+    /* 7. Upsert all dedupted rows in one batch */
+    if (dedupedRows.length > 0) {
       const upsert = await fetch(`${SB_URL}/daily_whoop?on_conflict=user_id,date`, {
         method: "POST",
         headers: {...sbHdr, Prefer: "resolution=merge-duplicates"},
-        body: JSON.stringify(rows),
+        body: JSON.stringify(dedupedRows),
       });
       if (!upsert.ok) {
         const t = await upsert.text();
@@ -187,12 +218,12 @@ export default async function handler(req, res) {
       headers: sbHdr,
       body: JSON.stringify({
         last_sync_at: new Date().toISOString(),
-        last_sync_count: rows.length,
+        last_sync_count: dedupedRows.length,
         last_sync_error: null,
       }),
     });
 
-    return res.status(200).json({ok: true, synced: rows.length});
+    return res.status(200).json({ok: true, synced: dedupedRows.length});
   } catch (e) {
     console.error("[whoop/sync] error", e);
     /* Try to record the error on the token row so the UI can show it */

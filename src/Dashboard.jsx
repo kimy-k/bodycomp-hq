@@ -11,6 +11,7 @@ import {
   currentBatchFor as currentBatchFor_pure,
   mgFromDoseStr,
   inventoryFor as inventoryFor_pure,
+  costPerMg, costPerDose, costPerMonth, fmtCost,
 } from "./bcq-math.js";
 import {SB, SB_KEY, hdr, makeDb} from "./supabase.js";
 import {
@@ -568,14 +569,14 @@ function DashboardInner(){
   const [batches,setBatches]=useState([]);
   const [batchesLoading,setBatchesLoading]=useState(false);
   const [addingBatch,setAddingBatch]=useState(false);
-  const [newBatch,setNewBatch]=useState({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:""});
+  const [newBatch,setNewBatch]=useState({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:"",cost:"",currency:"USD",vendor:""});
   const [editingBatch,setEditingBatch]=useState(null);
   useEffect(()=>{if(tab!=="peptides")return;(async()=>{setBatchesLoading(true);const rows=await db.listShared("peptide_batches",100,"date_recon");setBatches(rows||[]);setBatchesLoading(false);})();},[tab,db]);
   /* Helper bridges to the pure math module — wrap to inject closure-local state */
   const batchStatus = b => batchStatus_pure(b);
   const currentBatchFor = pepId => currentBatchFor_pure(pepId, batches);
   const dueState = (p, checked) => dueState_pure(p, checked);
-  const saveBatch=async()=>{if(!newBatch.peptide_id||!newBatch.mg_total||!newBatch.ml_bac)return;const row={peptide_id:newBatch.peptide_id,date_recon:newBatch.date_recon,mg_total:+newBatch.mg_total,ml_bac:+newBatch.ml_bac,storage:newBatch.storage||null,expiry_date:newBatch.expiry_date||addDays(newBatch.date_recon,30),notes:newBatch.notes||null,exhausted:false};const ok=await db.upsert("peptide_batches",row);if(ok){const rows=await db.listShared("peptide_batches",100,"date_recon");setBatches(rows||[]);setNewBatch({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:""});setAddingBatch(false);showToast("Batch logged · shared with household","success");}};
+  const saveBatch=async()=>{if(!newBatch.peptide_id||!newBatch.mg_total||!newBatch.ml_bac)return;const row={peptide_id:newBatch.peptide_id,date_recon:newBatch.date_recon,mg_total:+newBatch.mg_total,ml_bac:+newBatch.ml_bac,storage:newBatch.storage||null,expiry_date:newBatch.expiry_date||addDays(newBatch.date_recon,30),notes:newBatch.notes||null,exhausted:false,cost:newBatch.cost?+newBatch.cost:null,currency:newBatch.currency||"USD",vendor:newBatch.vendor||null};const ok=await db.upsert("peptide_batches",row);if(ok){const rows=await db.listShared("peptide_batches",100,"date_recon");setBatches(rows||[]);setNewBatch({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:"",cost:"",currency:newBatch.currency||"USD",vendor:""});setAddingBatch(false);showToast("Batch logged · shared with household","success");}};
   const updateBatch=async(b,patch)=>{const updated={...b,...patch};const res=await fetch(`${SB}/peptide_batches?id=eq.${b.id}&user_id=eq.${b.user_id}`,{method:"PATCH",headers:{...hdr,Prefer:"return=minimal"},body:JSON.stringify(patch)}).catch(()=>null);if(res&&res.ok){setBatches(batches.map(x=>x.id===b.id?updated:x));}else{showToast("Couldn't update batch","error");}};
   const deleteBatch=async(b)=>{if(!window.confirm("Delete this shared batch entry? It will disappear from both profiles."))return;const ok=await db.delByIdShared("peptide_batches",b.id,b.user_id);if(ok){setBatches(batches.filter(x=>x.id!==b.id));setEditingBatch(null);showToast("Batch deleted","success");}};
 
@@ -1227,7 +1228,8 @@ function DashboardInner(){
                   .filter(b => b.peptide_id === p.id && !b.exhausted)
                   .sort((a,b) => b.date_recon.localeCompare(a.date_recon))[0];
                 const batchStat = activeBatch ? batchStatus_pure(activeBatch) : null;
-                if (!pk && !recon?.stabilityDays && !batchStat) return null;
+                const monthly = activeBatch ? costPerMonth(activeBatch, p) : null;
+                if (!pk && !recon?.stabilityDays && !batchStat && monthly == null) return null;
                 return (<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
                   {pk?.halfLifeNote && (
                     <span title={pk.dosingImplication} className="mono" style={{fontSize:10,color:"var(--t-3)",background:"var(--elev-2)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid var(--line-soft)"}}>
@@ -1242,6 +1244,11 @@ function DashboardInner(){
                   {batchStat && (
                     <span className="mono" style={{fontSize:10,color:batchStat.color,background:`color-mix(in oklch, ${batchStat.color} 10%, transparent)`,padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:`1px solid color-mix(in oklch, ${batchStat.color} 35%, transparent)`,fontWeight:600}}>
                       current batch · {batchStat.label}
+                    </span>
+                  )}
+                  {monthly != null && (
+                    <span className="mono" style={{fontSize:10,color:"var(--t-2)",background:"var(--elev-2)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid var(--line-soft)",fontWeight:600}}>
+                      ≈ {fmtCost(monthly, activeBatch.currency || "USD")}/mo
                     </span>
                   )}
                 </div>);
@@ -1306,7 +1313,7 @@ function DashboardInner(){
           {addingBatch&&(<div className="sheet" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:18,marginBottom:16,borderLeft:"3px solid var(--accent)"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:14,alignItems:"baseline"}}>
               <h3 className="serif" style={{fontSize:20,fontWeight:400,color:"var(--accent)",margin:0,fontStyle:"italic"}}>New batch</h3>
-              <button onClick={()=>{setAddingBatch(false);setNewBatch({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:""});}} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={16}/></button>
+              <button onClick={()=>{setAddingBatch(false);setNewBatch({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:"",cost:"",currency:newBatch.currency||"USD",vendor:""});}} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={16}/></button>
             </div>
             <div style={{marginBottom:12}}>
               <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Peptide</div>
@@ -1348,6 +1355,29 @@ function DashboardInner(){
               <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Storage</div>
               <input value={newBatch.storage} onChange={e=>setNewBatch({...newBatch,storage:e.target.value})} placeholder="Main fridge, top shelf" className="bcq-input"/>
             </div>
+            {/* Cost tracking — optional. Cost + currency on one row, vendor below. */}
+            <div style={{marginBottom:12,display:"grid",gridTemplateColumns:"2fr 1fr",gap:10}}>
+              <div>
+                <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Cost (optional)</div>
+                <input type="number" step="0.01" inputMode="decimal" value={newBatch.cost} onChange={e=>setNewBatch({...newBatch,cost:e.target.value})} placeholder="80.00" className="bcq-input serif" style={{fontStyle:"italic"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Currency</div>
+                <select value={newBatch.currency} onChange={e=>setNewBatch({...newBatch,currency:e.target.value})} className="bcq-input" style={{colorScheme:"dark"}}>
+                  <option value="USD">USD $</option>
+                  <option value="PHP">PHP ₱</option>
+                  <option value="EUR">EUR €</option>
+                  <option value="GBP">GBP £</option>
+                </select>
+              </div>
+            </div>
+            {newBatch.cost&&newBatch.mg_total&&(<div className="fade" style={{textAlign:"center",padding:"8px",background:"var(--elev-2)",borderRadius:"var(--r-sm)",marginBottom:12,fontSize:11,color:"var(--t-3)"}}>
+              <span className="mono">≈ </span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{({USD:"$",PHP:"₱",EUR:"€",GBP:"£"}[newBatch.currency]||"")}{(+newBatch.cost/+newBatch.mg_total).toFixed(2)}</span><span className="mono"> per mg</span>
+            </div>)}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Vendor (optional)</div>
+              <input value={newBatch.vendor} onChange={e=>setNewBatch({...newBatch,vendor:e.target.value})} placeholder="Source name" className="bcq-input"/>
+            </div>
             <div style={{marginBottom:14}}>
               <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Notes</div>
               <input value={newBatch.notes} onChange={e=>setNewBatch({...newBatch,notes:e.target.value})} placeholder="Lot number, vendor, etc." className="bcq-input"/>
@@ -1385,6 +1415,13 @@ function DashboardInner(){
                 </span>
               </div>)}
               {b.storage&&<div style={{fontSize:11,color:"var(--t-3)",marginBottom:4}}>📍 {b.storage}</div>}
+              {/* Cost chips — show cost, cost/mg, vendor when cost is tracked */}
+              {b.cost!=null&&(()=>{const cpm=costPerMg(b);const pep=PEPTIDES.find(x=>x.id===b.peptide_id);const cpd=pep?costPerDose(b,p):null;return(<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6,marginTop:2}}>
+                <span className="mono" style={{fontSize:10,color:"var(--t-2)",background:"var(--elev-2)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid var(--line-soft)",fontWeight:600}}>{fmtCost(b.cost,b.currency||"USD")}</span>
+                {cpm!=null&&<span className="mono" style={{fontSize:10,color:"var(--t-3)",background:"var(--elev-2)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid var(--line-soft)"}}>{fmtCost(cpm,b.currency||"USD")}/mg</span>}
+                {cpd!=null&&<span className="mono" style={{fontSize:10,color:"var(--t-3)",background:"var(--elev-2)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid var(--line-soft)"}}>{fmtCost(cpd,b.currency||"USD")}/dose</span>}
+                {b.vendor&&<span className="mono" style={{fontSize:10,color:"var(--t-4)",padding:"3px 8px",letterSpacing:".02em"}}>via {b.vendor}</span>}
+              </div>);})()}
               {b.notes&&<div style={{fontSize:11,color:"var(--t-4)",fontStyle:"italic",marginBottom:4}}>{b.notes}</div>}
               {!b.exhausted&&isPastPGStability(b)&&(()=>{const r=RECONSTITUTION[b.peptide_id];const days=daysSinceRecon(b);return(<div style={{marginTop:6,padding:"7px 10px",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",borderLeft:"2px solid var(--c-warn)",borderRadius:6,fontSize:10.5,color:"var(--c-warn)",lineHeight:1.45}}>
                 <strong>⚠ Past PG-documented stability.</strong> Reconstituted {days} days ago — recommended window for {r.label} is {r.stabilityDays} days. Consider mixing a fresh batch.

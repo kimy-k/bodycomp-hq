@@ -15,6 +15,10 @@ import {
   currentBatchFor,
   mgFromDoseStr,
   inventoryFor,
+  costPerMg,
+  costPerDose,
+  costPerMonth,
+  fmtCost,
 } from "./bcq-math.js";
 
 /* Fixed reference date for all time-dependent tests: May 17, 2026, noon UTC */
@@ -436,5 +440,64 @@ describe("integration: realistic Reta cycle", () => {
     const retaRecon = {stabilityDays: 28};
     expect(daysSinceRecon(retaBatch, NOW)).toBe(21);
     expect(isPastPGStability(retaBatch, retaRecon, NOW)).toBe(false);  // within 28-day window
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+// costPerMg / costPerDose / costPerMonth / fmtCost
+// ════════════════════════════════════════════════════════════════
+describe("cost helpers", () => {
+  it("computes cost/mg from cost + mg_total", () => {
+    expect(costPerMg({cost: 80, mg_total: 30})).toBe(2.667);
+    expect(costPerMg({cost: 100, mg_total: 10})).toBe(10);
+  });
+
+  it("returns null when cost or mg_total missing", () => {
+    expect(costPerMg({cost: 80})).toBe(null);
+    expect(costPerMg({mg_total: 30})).toBe(null);
+    expect(costPerMg(null)).toBe(null);
+    expect(costPerMg({cost: 0, mg_total: 30})).toBe(0);  // free vial → $0/mg
+  });
+
+  it("computes cost/dose from cost/mg × mg/dose", () => {
+    /* $80 vial, 30mg total → $2.667/mg. Reta dose 2.5mg → $6.67 */
+    const batch = {cost: 80, mg_total: 30};
+    const reta = {dose: "2.5mg (25u)"};
+    expect(costPerDose(batch, reta)).toBe(6.67);
+  });
+
+  it("returns null when dose has no mg parse", () => {
+    const batch = {cost: 80, mg_total: 30};
+    const semax = {dose: "200mcg"};  // no mg
+    expect(costPerDose(batch, semax)).toBe(null);
+  });
+
+  it("computes monthly cost from cost/dose × schedule frequency", () => {
+    /* $80, 30mg vial. Reta 2.5mg dose = $6.67/dose. Weekly schedule (1 day) → $6.67 × 4.33 = $28.88/mo */
+    const batch = {cost: 80, mg_total: 30};
+    const reta = {dose: "2.5mg", schedule: [0]};  // weekly
+    const m = costPerMonth(batch, reta);
+    expect(m > 28 && m < 30).toBe(true);  // approx $28.88
+  });
+
+  it("daily schedule yields ~$200/mo at $6.67/dose", () => {
+    const batch = {cost: 80, mg_total: 30};
+    const daily = {dose: "2.5mg", schedule: [0, 1, 2, 3, 4, 5, 6]};
+    const m = costPerMonth(batch, daily);
+    expect(m > 200 && m < 205).toBe(true);  // 6.67 × 30.31
+  });
+
+  it("returns null for PRN peptides", () => {
+    const batch = {cost: 80, mg_total: 30};
+    const prn = {dose: "2.5mg", schedule: [0], status: "prn"};
+    expect(costPerMonth(batch, prn)).toBe(null);
+  });
+
+  it("fmtCost picks the right currency symbol", () => {
+    expect(fmtCost(80, "USD")).toBe("$80");
+    expect(fmtCost(4500, "PHP")).toBe("₱4,500");
+    expect(fmtCost(75, "EUR")).toBe("€75");
+    expect(fmtCost(2.667, "USD")).toBe("$2.67");
+    expect(fmtCost(null, "USD")).toBe(null);
   });
 });

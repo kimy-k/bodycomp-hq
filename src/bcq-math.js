@@ -154,3 +154,50 @@ export const inventoryFor = (peptide, batches, sharedDoseLog, now = new Date()) 
   const daysSupply = dosesPerWeek > 0 ? Math.round(dosesRemaining / dosesPerWeek * 7) : null;
   return {totalDosesInVial, dosesUsed, dosesRemaining, daysSupply, mgPerDose, source: "batch"};
 };
+
+/* ═══ COST DERIVATIONS ═══
+   All values returned in the batch's own currency (no FX conversion done here).
+   Caller is responsible for currency awareness when aggregating. */
+
+/* Cost per mg = batch.cost / batch.mg_total. Returns null if either is missing. */
+export const costPerMg = batch => {
+  if (!batch || batch.cost == null || !batch.mg_total) return null;
+  return +(batch.cost / batch.mg_total).toFixed(3);
+};
+
+/* Cost per dose = costPerMg × mgPerDose.
+   peptide.dose is the free-text dose string (e.g. "2.5mg" or "40u (10.7mg)").
+   Returns null if cost/mg can't be computed OR no mg parsed from dose. */
+export const costPerDose = (batch, peptide) => {
+  const cpm = costPerMg(batch);
+  if (cpm == null || !peptide) return null;
+  const mg = mgFromDoseStr(peptide.dose);
+  if (!mg || mg <= 0) return null;
+  return +(cpm * mg).toFixed(2);
+};
+
+/* Monthly cost = cost/dose × doses-per-month.
+   doses-per-month derived from peptide.schedule (array of day indices used in stack).
+   - schedule.length=7 (daily) → 30/mo
+   - schedule.length=4 → 17/mo (4 days × 4.33 weeks)
+   - schedule.length=2 → 9/mo
+   - schedule.length=1 (weekly) → 4.33/mo
+   Returns null if cost/dose can't be computed.
+   PRN peptides (status='prn') return null since usage is unpredictable. */
+export const costPerMonth = (batch, peptide) => {
+  const cpd = costPerDose(batch, peptide);
+  if (cpd == null || !peptide) return null;
+  if (peptide.status === "prn") return null;
+  const dosesPerWeek = Array.isArray(peptide.schedule) ? peptide.schedule.length : 0;
+  if (!dosesPerWeek) return null;
+  const dosesPerMonth = dosesPerWeek * 4.33;
+  return +(cpd * dosesPerMonth).toFixed(2);
+};
+
+/* Format a cost with the right currency symbol/code. Defaults to USD. */
+export const fmtCost = (amount, currency = "USD") => {
+  if (amount == null) return null;
+  const sym = {USD: "$", PHP: "₱", EUR: "€", GBP: "£"}[currency] || "";
+  if (sym) return `${sym}${amount.toLocaleString("en-US", {minimumFractionDigits: 0, maximumFractionDigits: 2})}`;
+  return `${amount.toLocaleString("en-US", {minimumFractionDigits: 0, maximumFractionDigits: 2})} ${currency}`;
+};

@@ -63,10 +63,9 @@ function DashboardInner(){
   useEffect(()=>{(async()=>{const ob=await db.getConfig("onboarded");const cfg=await db.getConfig("profile");if(cfg)setUserConfig(cfg);setOnboarded(!!ob);})();},[db]);
   const handleOnboardComplete=(cfg)=>{setUserConfig(cfg);setOnboarded(true);};
 
-  const [dark,setDark]=useState(true);
-  useEffect(()=>{(async()=>{const t=await db.getConfig("theme");if(t==="light")setDark(false);})();},[db]);
-  useEffect(()=>{document.documentElement.setAttribute("data-theme",dark?"dark":"light");},[dark]);
-  const toggleTheme=()=>{const next=!dark;setDark(next);db.setConfig("theme",next?"dark":"light");};
+  /* Theme: dark-only (Whoop aesthetic). Light mode was removed in Phase 1.
+     If a legacy "light" preference is in db, ignore it. Always force dark. */
+  useEffect(()=>{document.documentElement.setAttribute("data-theme","dark");},[]);
 
   const [userScans,setUserScans]=useState([]);const [scansLoaded,setScansLoaded]=useState(false);
   const [showAddScan,setShowAddScan]=useState(false);
@@ -648,9 +647,6 @@ function DashboardInner(){
           </h1>
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          <button onClick={toggleTheme} className="touch" style={{width:38,height:38,borderRadius:10,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-3)",cursor:"pointer"}}>
-            <Icon n={dark?"moon":"sun"} s={16}/>
-          </button>
           <button onClick={()=>setShowSettings(true)} className="touch" style={{width:38,height:38,borderRadius:10,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-3)",cursor:"pointer"}}>
             <Icon n="gear" s={16}/>
           </button>

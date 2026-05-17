@@ -45,38 +45,8 @@ export const STYLE=`@import url('${FONT_URL}');
   --ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
 }
-:root[data-theme="light"]{
-  --bg: oklch(0.97 0.004 285);
-  --bg-rad-1: oklch(0.95 0.03 295);
-  --bg-rad-2: oklch(0.96 0.025 30);
-  --elev-1: oklch(0.995 0.002 285);
-  --elev-2: oklch(0.94 0.006 285);
-  --elev-3: oklch(0.90 0.008 285);
-  --line: oklch(0.55 0.012 285 / 0.22);
-  --line-soft: oklch(0.55 0.012 285 / 0.10);
-  --t-1: oklch(0.18 0.014 285);
-  --t-2: oklch(0.34 0.016 285);
-  --t-3: oklch(0.48 0.018 285);
-  --t-4: oklch(0.62 0.016 285);
-  --t-5: oklch(0.75 0.012 285);
-  --accent: oklch(0.52 0.16 158);
-  --accent-soft: oklch(0.52 0.16 158 / 0.10);
-  --accent-line: oklch(0.52 0.16 158 / 0.32);
-  --c-protein: oklch(0.55 0.20 25);
-  --c-fat: oklch(0.62 0.16 80);
-  --c-carbs: oklch(0.52 0.16 215);
-  --c-cal: oklch(0.52 0.19 295);
-  --c-muscle: oklch(0.52 0.18 150);
-  --c-bodyfat: oklch(0.54 0.20 10);
-  --c-weight: oklch(0.52 0.18 295);
-  --c-warn: oklch(0.55 0.16 65);
-  --c-danger: oklch(0.55 0.22 25);
-  --c-success: oklch(0.52 0.18 158);
-  --c-streak: oklch(0.58 0.19 55);
-  --nav-bg: oklch(0.995 0.002 285 / 0.82);
-  --tip-bg: oklch(0.995 0.002 285 / 0.96);
-  --shadow-1: 0 1px 2px oklch(0.20 0 0 / 0.06), 0 8px 24px oklch(0.20 0 0 / 0.08);
-}
+/* Phase 1: light theme removed — Whoop aesthetic is dark-only.
+   data-theme attribute is set to "dark" on root unconditionally by Dashboard.jsx. */
 @keyframes riseIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes sheetUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}

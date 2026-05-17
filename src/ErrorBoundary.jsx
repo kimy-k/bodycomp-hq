@@ -14,7 +14,7 @@ export class ErrorBoundary extends Component {
       const msg=this.state.err?.message||String(this.state.err);
       const stack=this.state.err?.stack||"";
       const comp=this.state.info?.componentStack||"";
-      return(<div style={{minHeight:"100vh",background:"var(--bg)",color:"var(--t-1)",padding:"40px 22px",maxWidth:680,margin:"0 auto",fontFamily:"'Geist',sans-serif"}}>
+      return(<div style={{minHeight:"100vh",background:"var(--bg)",color:"var(--t-1)",padding:"40px 22px",maxWidth:680,margin:"0 auto",fontFamily:"'Inter',sans-serif"}}>
         <style>{STYLE}</style>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,color:"var(--c-danger)"}}>
           <Icon n="warn" s={24} c="var(--c-danger)" sw={2}/>

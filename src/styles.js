@@ -2,7 +2,7 @@
    Single CSS template literal injected via <style>{STYLE}</style> at app root.
    All design system values live here: OKLCH palette, type scale, motion tokens. */
 
-export const FONT_URL="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap";
+export const FONT_URL="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap";
 export const STYLE=`@import url('${FONT_URL}');
 :root{
   /* ═══ PHASE 1 — WHOOP-STYLE PALETTE ═══
@@ -90,7 +90,7 @@ export const STYLE=`@import url('${FONT_URL}');
 .sheet{animation:sheetUp 0.45s var(--ease-ios) both}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--t-1)}
-body{font-family:"Geist",-apple-system,BlinkMacSystemFont,sans-serif;font-feature-settings:"ss01","cv11";-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{font-family:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;font-feature-settings:"ss01","ss03";-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 input,button,select,textarea{font-family:inherit;font-feature-settings:inherit}
 input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 input[type=number]{-moz-appearance:textfield}
@@ -102,9 +102,9 @@ input[type=number]{-moz-appearance:textfield}
 .mono{font-family:"Geist Mono",ui-monospace,monospace;font-feature-settings:"tnum"}
 .tabular{font-variant-numeric:tabular-nums}
 ::selection{background:var(--accent-soft);color:var(--t-1)}
-.bcq-app{min-height:100vh;background:radial-gradient(120% 60% at 50% -10%,var(--bg-rad-1) 0%,transparent 55%),radial-gradient(80% 40% at 80% 0%,var(--bg-rad-2) 0%,transparent 60%),var(--bg);padding:18px 16px calc(96px + env(safe-area-inset-bottom,0px));max-width:520px;margin:0 auto;font-family:"Geist",sans-serif}
+.bcq-app{min-height:100vh;background:radial-gradient(120% 60% at 50% -10%,var(--bg-rad-1) 0%,transparent 55%),radial-gradient(80% 40% at 80% 0%,var(--bg-rad-2) 0%,transparent 60%),var(--bg);padding:18px 16px calc(96px + env(safe-area-inset-bottom,0px));max-width:520px;margin:0 auto;font-family:"Inter",sans-serif}
 .bcq-nav{position:fixed;bottom:0;left:0;right:0;z-index:99;background:var(--nav-bg);backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);border-top:1px solid var(--line);padding:8px 0 calc(8px + env(safe-area-inset-bottom,0px));max-width:520px;margin:0 auto}
-.bcq-input{width:100%;padding:12px 14px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--elev-2);color:var(--t-1);font-size:15px;font-family:"Geist",sans-serif;outline:none;transition:border-color .2s var(--ease-out),background .2s var(--ease-out)}
+.bcq-input{width:100%;padding:12px 14px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--elev-2);color:var(--t-1);font-size:15px;font-family:"Inter",sans-serif;outline:none;transition:border-color .2s var(--ease-out),background .2s var(--ease-out)}
 .bcq-input:focus{border-color:var(--accent-line);background:var(--elev-3)}
 .bcq-input::placeholder{color:var(--t-4)}
 .touch{min-height:44px;min-width:44px;display:flex;align-items:center;justify-content:center}

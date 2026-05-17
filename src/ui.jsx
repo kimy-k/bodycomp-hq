@@ -4,27 +4,26 @@
 
 import {Icon} from "./Icon.jsx";
 
-/* Body Comp HQ wordmark — Instrument Serif italic. Used in the loading screen,
-   user picker, and onboarding. Pass `size` (font size in px) and optional `sub`
-   for a tiny subtitle below. */
+/* Body Comp HQ wordmark — Inter sans bold (matches Concept C system). Used in the
+   loading screen, user picker, and onboarding. */
 export const Logo = ({size = 40, sub, color = "var(--t-1)", accent = "var(--accent)"}) => (
   <div style={{display: "flex", flexDirection: "column", alignItems: "center", gap: 4}}>
-    <div className="serif" style={{
+    <div style={{
+      fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
       fontSize: size,
       color,
-      fontStyle: "italic",
-      letterSpacing: "-0.025em",
+      letterSpacing: "-0.04em",
       lineHeight: 1,
-      fontWeight: 400,
+      fontWeight: 800,
     }}>
       Body Comp <span style={{color: accent}}>HQ</span>
     </div>
     {sub && <div className="mono" style={{
       fontSize: Math.max(9, size * 0.26),
       color: "var(--t-3)",
-      letterSpacing: ".12em",
+      letterSpacing: ".20em",
       textTransform: "uppercase",
-      fontWeight: 600,
+      fontWeight: 700,
     }}>{sub}</div>}
   </div>
 );

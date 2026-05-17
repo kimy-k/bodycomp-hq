@@ -2,7 +2,7 @@
    Pure function: takes all data streams + targets, returns ranked insight array.
    Each insight has a guard clause — degrades gracefully on sparse data. */
 
-export const computeInsights = ({pepHist, macroHist, whoopHist, measurements, scans, userPeps, TARGETS, whey, goalBf, userConfig}) => {
+export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, measurements, scans, userPeps, TARGETS, whey, goalBf, userConfig}) => {
   const out = [];
   const now = new Date();
   const daysAgo = (dateStr) => (now - new Date(dateStr + "T12:00:00")) / 86400000;
@@ -276,6 +276,132 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, measurements, sc
         color: "var(--c-warn)",
         severity: 1,
       });
+    }
+  }
+
+  /* 11. Sleep × next-day recovery (cross-stream)
+     Pairs each night's sleep_hours with the FOLLOWING day's recovery to
+     quantify the sleep dividend. Uses consecutive-day pairs only. */
+  if (whoopHist && whoopHist.length >= 7) {
+    const sorted = [...whoopHist].sort((a,b) => a.date.localeCompare(b.date));
+    const goodSleepNext = []; const poorSleepNext = [];
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i-1], curr = sorted[i];
+      const sh = +prev.sleep_hours;
+      if (!sh || curr.recovery == null) continue;
+      const dGap = Math.round((new Date(curr.date) - new Date(prev.date)) / 86400000);
+      if (dGap !== 1) continue;
+      if (sh >= 7) goodSleepNext.push(+curr.recovery);
+      else if (sh < 6) poorSleepNext.push(+curr.recovery);
+    }
+    if (goodSleepNext.length >= 3 && poorSleepNext.length >= 3) {
+      const aG = Math.round(goodSleepNext.reduce((a,b) => a+b, 0) / goodSleepNext.length);
+      const aP = Math.round(poorSleepNext.reduce((a,b) => a+b, 0) / poorSleepNext.length);
+      const diff = aG - aP;
+      if (Math.abs(diff) >= 5) {
+        out.push({
+          id: "sleep-recovery",
+          icon: "moon",
+          title: "Sleep × recovery",
+          body: `Nights with ≥7h sleep → next-day recovery averaged ${aG}% (n=${goodSleepNext.length}). Nights <6h → ${aP}% (n=${poorSleepNext.length}). ${diff > 0 ? "Strong sleep dividend." : "Atypical pattern — investigate."}`,
+          color: diff > 0 ? "var(--c-success)" : "var(--c-warn)",
+          severity: 1,
+        });
+      }
+    }
+  }
+
+  /* 12. Protein hit-rate × fat loss velocity (cross-stream)
+     Pairs scan-to-scan windows with the protein adherence DURING that window. */
+  if (scans && scans.length >= 2 && macroHist && macroHist.length >= 7 && TARGETS) {
+    const last = scans[scans.length - 1];
+    let baseline = null;
+    for (let i = scans.length - 2; i >= 0; i--) {
+      const d = daysAgo(scans[i].date);
+      if (d >= 14 && d <= 49) { baseline = scans[i]; break; }
+    }
+    if (baseline) {
+      const between = macroHist.filter(d => d.date > baseline.date && d.date <= last.date);
+      if (between.length >= 7) {
+        const proteins = between.map(d => {
+          let p = 0;
+          (d.meals || []).forEach(m => p += (+m.protein || 0));
+          if (d.whey !== false && whey?.enabled) p += whey.protein;
+          return p;
+        });
+        const hitDays = proteins.filter(p => p >= TARGETS.protein).length;
+        const hitRate = Math.round(hitDays / proteins.length * 100);
+        const fatDelta = +(last.fatPct - baseline.fatPct).toFixed(1);
+        const days = Math.round((new Date(last.date) - new Date(baseline.date)) / 86400000);
+        if (Math.abs(fatDelta) >= 0.3) {
+          const success = fatDelta < 0 && hitRate >= 70;
+          out.push({
+            id: "protein-fatloss",
+            icon: "muscle",
+            title: "Protein × fat loss",
+            body: `Hit protein on ${hitDays}/${proteins.length} days (${hitRate}%) → body fat ${fatDelta < 0 ? "dropped" : "rose"} ${Math.abs(fatDelta)}% over ${days} days.`,
+            color: success ? "var(--c-success)" : fatDelta > 0 ? "var(--c-warn)" : "var(--accent)",
+            severity: success ? 0 : 1,
+          });
+        }
+      }
+    }
+  }
+
+  /* 13. Training balance (recovery × strain mismatch — Whoop's own signal) */
+  if (whoopHist && whoopHist.length >= 7) {
+    const last14 = whoopHist.filter(d => inLast(d.date, 14) && d.recovery != null && d.strain != null);
+    const overtraining = last14.filter(d => +d.recovery < 50 && +d.strain > 12);
+    if (last14.length >= 7 && overtraining.length / last14.length >= 0.25) {
+      out.push({
+        id: "training-balance",
+        icon: "warn",
+        title: "Training balance",
+        body: `${overtraining.length} of last ${last14.length} days had high strain (>12) on low recovery (<50%). Consider easing strain when recovery is red — that's where overtraining starts.`,
+        color: "var(--c-warn)",
+        severity: 1,
+      });
+    }
+  }
+
+  /* 14. Body sense × Whoop recovery (cross-stream)
+     Compares subjective energy rating against objective recovery score. */
+  if (wellnessHist && wellnessHist.length >= 5 && whoopHist && whoopHist.length >= 5) {
+    const pairs = [];
+    for (const w of wellnessHist) {
+      if (w.energy == null) continue;
+      const obj = whoopHist.find(h => h.date === w.date);
+      if (!obj || obj.recovery == null) continue;
+      pairs.push({ subj: +w.energy, obj: +obj.recovery });
+    }
+    if (pairs.length >= 5) {
+      let aligned = 0, divergent = 0;
+      for (const p of pairs) {
+        const sB = p.subj <= 2 ? "L" : p.subj <= 3 ? "M" : "H";
+        const oB = p.obj < 34 ? "L" : p.obj < 67 ? "M" : "H";
+        if (sB === oB) aligned++;
+        else if ((sB === "L" && oB === "H") || (sB === "H" && oB === "L")) divergent++;
+      }
+      const alignedPct = Math.round(aligned / pairs.length * 100);
+      if (alignedPct >= 60) {
+        out.push({
+          id: "intuition-match",
+          icon: "vial",
+          title: "Body sense × data",
+          body: `Your energy ratings matched Whoop recovery ${aligned} of ${pairs.length} days (${alignedPct}%). Intuition is well-calibrated — trust it.`,
+          color: "var(--c-success)",
+          severity: 0,
+        });
+      } else if (divergent >= 2) {
+        out.push({
+          id: "intuition-gap",
+          icon: "warn",
+          title: "Body sense × data",
+          body: `${divergent} of last ${pairs.length} days you felt strong but Whoop showed low recovery (or vice versa). Body may be masking accumulated strain.`,
+          color: "var(--c-warn)",
+          severity: 1,
+        });
+      }
     }
   }
 

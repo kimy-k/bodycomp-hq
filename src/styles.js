@@ -94,8 +94,8 @@ body{font-family:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;font-featur
 input,button,select,textarea{font-family:inherit;font-feature-settings:inherit}
 input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 input[type=number]{-moz-appearance:textfield}
-/* Phase 1: `.serif` is no longer serif — redirected to Inter bold to match Concept C.
-   `!important` on font-family, weight, and font-style overrides all legacy inline italic + 400 weight
+/* Phase 1: .serif is no longer serif — redirected to Inter bold to match Concept C.
+   The !important on font-family, weight, and font-style overrides legacy inline italic + 400 weight
    so every Card, big display number, and h2/h3 across the app picks up the Whoop typography. */
 .serif{font-family:"Inter",ui-sans-serif,system-ui,sans-serif !important;font-weight:700 !important;font-style:normal !important;letter-spacing:-0.025em}
 .serif.tabular,.tabular{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}

@@ -160,60 +160,6 @@ function DashboardInner(){
     setPepHist(rows.map(r=>({date:r.date,checks:r.checks||{},sideEffects:r.side_effects||[]})));
   })();},[tab]);
 
-  /* ═══ P18: BACKDATED DOSE EDITING ═══
-     When the user taps a cell in the "Last 7 days" grid, this state opens a
-     small modal letting them log/edit/remove a dose for ANY past date. The 30-day
-     cap is enforced in the click handler. */
-  const [editPastDose,setEditPastDose]=useState(null);  // {peptideId, date} | null
-  const [editPastForm,setEditPastForm]=useState({time:"",dose:"",loading:false,exists:false});
-  /* When the modal opens, fetch existing data (if any) and preload form */
-  useEffect(()=>{
-    if(!editPastDose){setEditPastForm({time:"",dose:"",loading:false,exists:false});return;}
-    const {peptideId,date}=editPastDose;
-    /* Find the peptide's default dose from this user's stack */
-    const stackEntry=peptideStack.find(s=>s.peptide_id===peptideId&&s.enabled);
-    const fallbackDose=stackEntry?.dose||"";
-    setEditPastForm({time:new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),dose:fallbackDose,loading:true,exists:false});
-    (async()=>{
-      const row=await db.get("daily_peptides",date);
-      const existing=row?.checks?.[peptideId];
-      if(existing){
-        setEditPastForm({time:existing.time||"",dose:existing.dose||fallbackDose,loading:false,exists:true});
-      }else{
-        setEditPastForm(f=>({...f,loading:false}));
-      }
-    })();
-  },[editPastDose,db,peptideStack]);
-  const editPastDoseSave=useCallback(async(time,dose)=>{
-    if(!editPastDose)return;
-    const {peptideId,date}=editPastDose;
-    /* Fetch current row to merge, since upsert replaces the whole record */
-    const row=await db.get("daily_peptides",date);
-    const checks={...((row&&row.checks)||{})};
-    checks[peptideId]={time:time||new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),dose:dose||""};
-    const sideFx=(row&&row.side_effects)||[];
-    await db.upsert("daily_peptides",{date,checks,side_effects:sideFx});
-    /* Refresh views: pepHist (for grid/history), and if this was today, pepData */
-    const rows=await db.list("daily_peptides",21);
-    setPepHist(rows.map(r=>({date:r.date,checks:r.checks||{},sideEffects:r.side_effects||[]})));
-    if(date===day)setPepData({checks,sideEffects:sideFx});
-    setEditPastDose(null);
-    showToast(`Logged ${peptideId} for ${date===day?"today":date}`,"success");
-  },[editPastDose,db,day,showToast]);
-  const editPastDoseRemove=useCallback(async()=>{
-    if(!editPastDose)return;
-    const {peptideId,date}=editPastDose;
-    const row=await db.get("daily_peptides",date);
-    if(!row||!row.checks||!row.checks[peptideId]){setEditPastDose(null);return;}
-    const checks={...row.checks};delete checks[peptideId];
-    await db.upsert("daily_peptides",{date,checks,side_effects:row.side_effects||[]});
-    const rows=await db.list("daily_peptides",21);
-    setPepHist(rows.map(r=>({date:r.date,checks:r.checks||{},sideEffects:r.side_effects||[]})));
-    if(date===day)setPepData({checks,sideEffects:row.side_effects||[]});
-    setEditPastDose(null);
-    showToast(`Removed ${peptideId} from ${date}`,"success");
-  },[editPastDose,db,day,showToast]);
-
   const todayDow=new Date().getDay();
 
   /* ═══ PEPTIDE STACK (P10) — per-user editable peptide list, sourced from DB ═══
@@ -294,6 +240,61 @@ function DashboardInner(){
   const duePeptides=userPeps.filter(p=>(p.status==="active"||p.status==="prn")&&p.schedule.includes(todayDow));
   const notDue=userPeps.filter(p=>!duePeptides.includes(p));
   const checkedCount=duePeptides.filter(p=>pepData.checks[p.id]).length;
+
+  /* ═══ P18: BACKDATED DOSE EDITING ═══
+     When the user taps a cell in the "Last 7 days" grid, this state opens a
+     small modal letting them log/edit/remove a dose for ANY past date. The 30-day
+     cap is enforced in the click handler. Placed AFTER peptideStack is declared
+     so the load effect can reference it for default-dose lookup. */
+  const [editPastDose,setEditPastDose]=useState(null);  // {peptideId, date} | null
+  const [editPastForm,setEditPastForm]=useState({time:"",dose:"",loading:false,exists:false});
+  /* When the modal opens, fetch existing data (if any) and preload form */
+  useEffect(()=>{
+    if(!editPastDose){setEditPastForm({time:"",dose:"",loading:false,exists:false});return;}
+    const {peptideId,date}=editPastDose;
+    /* Find the peptide's default dose from this user's stack */
+    const stackEntry=peptideStack.find(s=>s.peptide_id===peptideId&&s.enabled);
+    const fallbackDose=stackEntry?.dose||"";
+    setEditPastForm({time:new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),dose:fallbackDose,loading:true,exists:false});
+    (async()=>{
+      const row=await db.get("daily_peptides",date);
+      const existing=row?.checks?.[peptideId];
+      if(existing){
+        setEditPastForm({time:existing.time||"",dose:existing.dose||fallbackDose,loading:false,exists:true});
+      }else{
+        setEditPastForm(f=>({...f,loading:false}));
+      }
+    })();
+  },[editPastDose,db,peptideStack]);
+  const editPastDoseSave=useCallback(async(time,dose)=>{
+    if(!editPastDose)return;
+    const {peptideId,date}=editPastDose;
+    /* Fetch current row to merge, since upsert replaces the whole record */
+    const row=await db.get("daily_peptides",date);
+    const checks={...((row&&row.checks)||{})};
+    checks[peptideId]={time:time||new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),dose:dose||""};
+    const sideFx=(row&&row.side_effects)||[];
+    await db.upsert("daily_peptides",{date,checks,side_effects:sideFx});
+    /* Refresh views: pepHist (for grid/history), and if this was today, pepData */
+    const rows=await db.list("daily_peptides",21);
+    setPepHist(rows.map(r=>({date:r.date,checks:r.checks||{},sideEffects:r.side_effects||[]})));
+    if(date===day)setPepData({checks,sideEffects:sideFx});
+    setEditPastDose(null);
+    showToast(`Logged ${peptideId} for ${date===day?"today":date}`,"success");
+  },[editPastDose,db,day,showToast]);
+  const editPastDoseRemove=useCallback(async()=>{
+    if(!editPastDose)return;
+    const {peptideId,date}=editPastDose;
+    const row=await db.get("daily_peptides",date);
+    if(!row||!row.checks||!row.checks[peptideId]){setEditPastDose(null);return;}
+    const checks={...row.checks};delete checks[peptideId];
+    await db.upsert("daily_peptides",{date,checks,side_effects:row.side_effects||[]});
+    const rows=await db.list("daily_peptides",21);
+    setPepHist(rows.map(r=>({date:r.date,checks:r.checks||{},sideEffects:r.side_effects||[]})));
+    if(date===day)setPepData({checks,sideEffects:row.side_effects||[]});
+    setEditPastDose(null);
+    showToast(`Removed ${peptideId} from ${date}`,"success");
+  },[editPastDose,db,day,showToast]);
 
   /* ═══ REORDER SHEET — opens when user taps "Reorder" on a low-supply peptide ═══ */
   const [reorderModal,setReorderModal]=useState(null);

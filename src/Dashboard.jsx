@@ -1350,12 +1350,17 @@ function DashboardInner(){
                 {/* Notes — collapsed by default, expands when typing */}
                 <textarea
                   value={wellness.notes||""}
-                  onChange={e=>setWellness({...wellness,notes:e.target.value})}
+                  onChange={e=>{
+                    setWellness({...wellness,notes:e.target.value});
+                    /* auto-grow textarea: reset then set to scrollHeight */
+                    e.target.style.height = "auto";
+                    e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px";
+                  }}
                   onBlur={e=>saveWellness({notes:e.target.value})}
                   placeholder="Notes (optional — sleep oddities, stressors, what you ate, etc.)"
-                  rows={wellness.notes?2:1}
+                  rows={3}
                   className="bcq-input"
-                  style={{width:"100%",resize:"vertical",fontSize:12,marginTop:6,lineHeight:1.5,fontFamily:"inherit"}}
+                  style={{width:"100%",resize:"none",fontSize:12,marginTop:6,lineHeight:1.55,fontFamily:"inherit",minHeight:72,overflow:"auto",boxSizing:"border-box"}}
                 />
                 {/* 7-day mini-trend — only shows after a few days of data */}
                 {wellnessHist.length>=2&&(<div style={{marginTop:12,padding:"10px 12px",background:"var(--elev-1)",borderRadius:"var(--r-sm)"}}>

@@ -937,66 +937,6 @@ function DashboardInner(){
           {insights.length>6&&<div className="mono" style={{fontSize:9.5,color:"var(--t-4)",marginTop:8,textAlign:"center",letterSpacing:".06em"}}>+{insights.length-6} more patterns</div>}
         </div>)}
 
-        {/* ─── Peptide 7-day adherence preview ─── */}
-        {userPeps.length>0&&(()=>{
-          const today_d = new Date();
-          const days = Array.from({length:7},(_,i)=>{
-            const d = new Date(today_d);
-            d.setDate(d.getDate()-(6-i));
-            const dateKey = d.toISOString().slice(0,10);
-            const dow = d.toLocaleDateString("en-US",{weekday:"narrow"});
-            return {dateKey, dow};
-          });
-          /* Use insightsData.pepHist (loaded on Body tab via the overview useEffect)
-             as the source of truth — same source the Patterns card uses, guarantees
-             they agree. sharedDoseLog can't be used here because it short-circuits
-             when no batches exist. */
-          const doseLog = insightsData.pepHist || [];
-          let totalTakenLast7 = 0;
-          let totalDueLast7 = 0;
-          userPeps.forEach(p=>{
-            const sch = p.schedule || [];
-            days.forEach(({dateKey})=>{
-              const wd = new Date(dateKey+"T12:00:00").getDay();
-              if (sch.includes(wd)) {
-                totalDueLast7++;
-                const log = doseLog.find(l=>l.date===dateKey);
-                if (log?.checks?.[p.id]) totalTakenLast7++;
-              }
-            });
-          });
-          const adherencePct = totalDueLast7>0 ? Math.round(totalTakenLast7/totalDueLast7*100) : 0;
-          const todayKey_ = new Date().toISOString().slice(0,10);
-          return(<div className="rise" style={{background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:14,marginBottom:12}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Adherence · 7d</span>
-              <span className="mono" style={{fontSize:11,color:"var(--accent)",fontWeight:700,letterSpacing:".10em"}}>{totalTakenLast7}/{totalDueLast7} · {adherencePct}%</span>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"auto repeat(7, 1fr)",gap:4,alignItems:"center"}}>
-              <span/>
-              {days.map(d=>(<span key={d.dateKey} className="mono" style={{fontSize:9,color:"var(--t-4)",textAlign:"center",letterSpacing:".06em",textTransform:"uppercase",fontWeight:700}}>{d.dow}</span>))}
-              {userPeps.slice(0,3).map(p=>(<Fragment key={p.id}>
-                <span style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:11,color:"var(--t-2)",paddingRight:8,fontWeight:600}}>{p.name}</span>
-                {days.map(({dateKey})=>{
-                  const wd = new Date(dateKey+"T12:00:00").getDay();
-                  const isDue = (p.schedule||[]).includes(wd);
-                  const log = doseLog.find(l=>l.date===dateKey);
-                  const taken = log?.checks?.[p.id];
-                  const isToday = dateKey === todayKey_;
-                  const isFuture = dateKey > todayKey_;
-                  let cls, content;
-                  if (taken) { cls = {background:"var(--accent)",color:"#000",boxShadow:"0 0 8px rgba(0,229,255,0.30)"}; content = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" style={{width:11,height:11}}><path d="M5 12l5 5L20 7"/></svg>; }
-                  else if (isDue && isToday) { /* due today, not yet logged — soft amber pending state, not the harsh red */ cls = {background:"rgba(255,176,32,0.18)",color:"var(--c-warn)",border:"1px solid rgba(255,176,32,0.40)"}; content = <span className="mono" style={{fontSize:9,fontWeight:700}}>·</span>; }
-                  else if (isDue && !isFuture) { cls = {background:"var(--c-danger)",color:"#000"}; content = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" style={{width:11,height:11}}><path d="M6 6l12 12M6 18L18 6"/></svg>; }
-                  else { cls = {background:"#141414",border:"1px solid var(--line-soft)"}; content = null; }
-                  return <div key={dateKey} style={{aspectRatio:1,borderRadius:3,display:"flex",alignItems:"center",justifyContent:"center",...cls}}>{content}</div>;
-                })}
-              </Fragment>))}
-            </div>
-            {userPeps.length>3&&<div className="mono" style={{fontSize:9.5,color:"var(--t-4)",marginTop:8,textAlign:"center",letterSpacing:".06em"}}>+{userPeps.length-3} more · see Peps tab</div>}
-          </div>);
-        })()}
-
         {/* ─── Cost rollup — sum of monthly cost across cost-tracked active batches ─── */}
         {(()=>{
           const active = batches.filter(b=>!b.exhausted&&b.cost!=null);
@@ -1124,7 +1064,9 @@ function DashboardInner(){
 
           {/* ─── Up Next — next scheduled peptide dose with countdown ─── */}
           {(() => {
-            /* Parse "9:00 PM" / "8 AM" / "9:26 PM" into minutes-since-midnight */
+            /* Parse "9:00 PM" / "8 AM" / "9:26 PM" into minutes-since-midnight.
+               Returns null for vague labels like bare "PM"/"AM"/"Morning"/"" — those
+               are still valid "due today" entries, just without precise countdown. */
             const parseTime12h = (s) => {
               const m = (s||"").trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
               if (!m) return null;
@@ -1138,12 +1080,17 @@ function DashboardInner(){
             const checkedToday = pepData?.checks || {};
             const candidates = duePeptides
               .filter(p => !checkedToday[p.id])
-              .map(p => ({...p, minutes: parseTime12h(p.time)}))
-              .filter(p => p.minutes !== null);
-            const upcoming = candidates.filter(p => p.minutes >= nowMin).sort((a,b) => a.minutes - b.minutes);
-            const overdue = candidates.filter(p => p.minutes < nowMin).sort((a,b) => b.minutes - a.minutes);
-            const next = upcoming[0] || overdue[0] || null;
-            const isOverdue = next && overdue[0]?.id === next?.id;
+              .map(p => ({...p, minutes: parseTime12h(p.time)}));
+            /* Three buckets: upcoming-timed, overdue-timed, untimed.
+               Priority order for "next": untimed-AM if morning + we're in AM, else upcoming-timed,
+               else overdue-timed, else untimed. Keep simple: untimed last since they're vaguer. */
+            const timed = candidates.filter(p => p.minutes !== null);
+            const untimed = candidates.filter(p => p.minutes === null);
+            const upcoming = timed.filter(p => p.minutes >= nowMin).sort((a,b) => a.minutes - b.minutes);
+            const overdue = timed.filter(p => p.minutes < nowMin).sort((a,b) => b.minutes - a.minutes);
+            const next = upcoming[0] || overdue[0] || untimed[0] || null;
+            const isOverdueNext = !!(next && overdue[0]?.id === next?.id && !upcoming.length);
+            const isUntimedNext = !!(next && next.minutes === null);
             const fmtCountdown = (m) => {
               const abs = Math.abs(m);
               const h = Math.floor(abs / 60);
@@ -1155,6 +1102,7 @@ function DashboardInner(){
             const totalDue = duePeptides.length;
             const taken = duePeptides.filter(p => checkedToday[p.id]).length;
             const allDone = totalDue > 0 && taken === totalDue;
+            const otherPending = candidates.length - 1;
 
             return(<div className="rise r3" style={{background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"14px 16px",marginBottom:14}}>
               <div className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700,marginBottom:11}}>Up next</div>
@@ -1166,13 +1114,17 @@ function DashboardInner(){
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"baseline",gap:8}}>
                       <span style={{fontSize:14,color:"var(--t-1)",fontWeight:600,letterSpacing:"-0.01em"}}>{next.name}</span>
-                      <span className="mono" style={{fontSize:11,color:"var(--t-4)",letterSpacing:".04em"}}>{next.time}</span>
+                      {next.time&&<span className="mono" style={{fontSize:11,color:"var(--t-4)",letterSpacing:".04em"}}>{next.time}</span>}
                     </div>
-                    <div className="mono" style={{fontSize:11,color:isOverdue?"var(--c-warn)":"var(--accent)",letterSpacing:".08em",marginTop:2,fontWeight:600}}>
-                      {isOverdue ? `OVERDUE · ${fmtCountdown(nowMin - next.minutes)} ago` : `IN ${fmtCountdown(next.minutes - nowMin).toUpperCase()}`}
+                    <div className="mono" style={{fontSize:11,color:isOverdueNext?"var(--c-warn)":"var(--accent)",letterSpacing:".08em",marginTop:2,fontWeight:600}}>
+                      {isUntimedNext
+                        ? `DUE TODAY`
+                        : isOverdueNext
+                        ? `OVERDUE · ${fmtCountdown(nowMin - next.minutes)} AGO`
+                        : `IN ${fmtCountdown(next.minutes - nowMin).toUpperCase()}`}
                     </div>
                   </div>
-                  {upcoming.length + overdue.length > 1 && <span className="mono" style={{fontSize:10,color:"var(--t-5)",letterSpacing:".10em",flexShrink:0}}>+{upcoming.length + overdue.length - 1}</span>}
+                  {otherPending > 0 && <span className="mono" style={{fontSize:10,color:"var(--t-5)",letterSpacing:".10em",flexShrink:0}}>+{otherPending}</span>}
                 </div>
               ) : allDone ? (
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -1205,7 +1157,9 @@ function DashboardInner(){
             const kgToGo = fatToLose;
 
             const chips = [];
-            if (daysSinceStart && daysSinceStart > 1) chips.push({label:"DAY", val:daysSinceStart});
+            /* Show DAY chip only when the number is genuinely meaningful for a journey
+               (1-365 days). Above that it's app tenure, not progress motivation. */
+            if (daysSinceStart && daysSinceStart > 1 && daysSinceStart <= 365) chips.push({label:"DAY", val:daysSinceStart});
             if (streakDays >= 3) chips.push({label:"STREAK", val:`${streakDays}d`});
             if (kgToGo > 0 && data.length > 0) chips.push({label:"TO GOAL", val:`${kgToGo}kg`});
 
@@ -1494,7 +1448,6 @@ function DashboardInner(){
           <div style={{marginTop:24}}>
             <div style={{fontSize:10.5,color:"var(--t-3)",marginBottom:12,letterSpacing:".12em",textTransform:"uppercase",fontWeight:600}}>Last 7 days</div>
             {(()=>{
-              const H={"2026-04-20":["glow","nad","motsc"],"2026-04-21":["reta"],"2026-04-22":["glow","nad","motsc","semax"],"2026-04-23":["semax"],"2026-04-24":["glow"],"2026-04-25":["motsc"],"2026-04-27":["glow","nad"],"2026-04-28":["reta","motsc"],"2026-04-29":["glow","nad"],"2026-05-01":["klow","motsc"],"2026-05-03":["klow"],"2026-05-04":["klow","nad","semax"],"2026-05-05":["klow","reta","motsc","semax"],"2026-05-06":["klow","nad","semax"],"2026-05-07":["klow","semax"],"2026-05-08":["klow","motsc","semax"],"2026-05-10":["klow"],"2026-05-11":["klow","nad"],"2026-05-12":["klow","reta","motsc"],"2026-05-13":["klow","nad"],"2026-05-14":["klow"],"2026-05-15":["klow","motsc"]};
               const today=new Date();
               const days=[];
               for(let i=6;i>=0;i--){
@@ -1522,9 +1475,7 @@ function DashboardInner(){
                     {days.map(d=>{
                       const scheduled=p.schedule.includes(d.dow)&&(!p.startDate||d.key>=p.startDate);
                       const liveHist=pepHist.find(h=>h.date===d.key);
-                      const liveTaken=liveHist?!!(liveHist.checks||{})[p.id]:false;
-                      const histTaken=(H[d.key]||[]).includes(p.id);
-                      const taken=liveTaken||histTaken;
+                      const taken=liveHist?!!(liveHist.checks||{})[p.id]:false;
                       const isFuture=new Date(d.key+"T23:59:59")>today&&d.key!==day;
                       /* P18: allow tapping any non-future cell to edit. 30-day cap enforced. */
                       const daysBack=Math.round((today-new Date(d.key+"T12:00:00"))/(86400000));

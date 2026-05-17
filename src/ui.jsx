@@ -34,25 +34,24 @@ export const Logo = ({size = 40, sub, color = "var(--t-1)", accent = "var(--acce
 export const Tip=({active,payload,label})=>!active||!payload?.length?null:(<div style={{background:"var(--tip-bg)",backdropFilter:"blur(20px)",border:"1px solid var(--line)",borderRadius:14,padding:"10px 14px",fontSize:12,color:"var(--t-1)",boxShadow:"var(--shadow-1)"}}><div className="mono" style={{fontWeight:600,marginBottom:6,fontSize:11,color:"var(--t-2)",textTransform:"uppercase",letterSpacing:".08em"}}>{label}</div>{payload.map((p,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}><span style={{width:7,height:7,borderRadius:"50%",background:p.color,display:"inline-block"}}/><span style={{color:"var(--t-3)",fontSize:11}}>{p.name}</span><span className="mono" style={{fontWeight:600,color:p.color,marginLeft:"auto",fontSize:12}}>{p.value}</span></div>))}</div>);
 
 export const Card=({title,value,unit,sub,color,icon,delay=0})=>(
-  <div className="rise" style={{animationDelay:`${delay}s`,background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"16px 16px 14px",flex:"1 1 calc(50% - 6px)",minWidth:0,position:"relative",overflow:"hidden"}}>
-    <div style={{position:"absolute",top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,${color},transparent)`,opacity:.5}}/>
+  <div className="rise" style={{animationDelay:`${delay}s`,background:"#0a0a0a",borderRadius:"var(--r-md)",padding:"14px 14px 12px",flex:"1 1 calc(50% - 6px)",minWidth:0,position:"relative",overflow:"hidden",border:"1px solid var(--line-soft)"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
       <span style={{display:"flex",alignItems:"center",gap:6,color}}>
-        <Icon n={icon} s={14} c={color} sw={1.7}/>
-        <span style={{fontSize:10,textTransform:"uppercase",letterSpacing:".10em",fontWeight:600,color:"var(--t-3)"}}>{title}</span>
+        <Icon n={icon} s={12} c={color} sw={1.7}/>
+        <span className="mono" style={{fontSize:9.5,textTransform:"uppercase",letterSpacing:".20em",fontWeight:700,color:"var(--t-3)"}}>{title}</span>
       </span>
     </div>
-    <div style={{display:"flex",alignItems:"baseline",gap:3}}>
-      <span className="serif" style={{fontSize:38,color:"var(--t-1)",lineHeight:1,fontStyle:"italic"}}>{value}</span>
-      <span style={{fontSize:13,color:"var(--t-3)"}}>{unit}</span>
+    <div style={{display:"flex",alignItems:"baseline",gap:5}}>
+      <span style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:34,color:"var(--t-1)",lineHeight:1,fontWeight:800,letterSpacing:"-0.04em"}}>{value}</span>
+      <span className="mono" style={{fontSize:11,color:"var(--t-4)",fontWeight:600,letterSpacing:".04em"}}>{unit}</span>
     </div>
-    {sub&&<div className="mono" style={{fontSize:10.5,marginTop:8,color:"var(--t-3)",letterSpacing:".01em"}}>{sub}</div>}
+    {sub&&<div className="mono" style={{fontSize:9.5,marginTop:6,color:"var(--t-4)",letterSpacing:".04em"}}>{sub}</div>}
   </div>
 );
 
 export const H2=({children,sub,delay=0})=>(<div className="rise" style={{animationDelay:`${delay}s`,marginBottom:12,marginTop:28}}>
-  <h2 className="serif" style={{fontSize:26,fontWeight:400,color:"var(--t-1)",margin:0,letterSpacing:"-0.015em",fontStyle:"italic"}}>{children}</h2>
-  {sub&&<p style={{fontSize:11.5,color:"var(--t-3)",margin:"2px 0 0",letterSpacing:".01em"}}>{sub}</p>}
+  <h2 style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:22,fontWeight:700,color:"var(--t-1)",margin:0,letterSpacing:"-0.025em"}}>{children}</h2>
+  {sub&&<p className="mono" style={{fontSize:10,color:"var(--t-4)",margin:"4px 0 0",letterSpacing:".18em",textTransform:"uppercase",fontWeight:600}}>{sub}</p>}
 </div>);
 
 export const TabBtn=({active,onClick,children})=>(<button onClick={onClick} style={{padding:"8px 14px",borderRadius:999,border:"1px solid "+(active?"var(--accent-line)":"transparent"),cursor:"pointer",fontSize:12,fontWeight:active?600:500,background:active?"var(--accent-soft)":"transparent",color:active?"var(--accent)":"var(--t-3)",whiteSpace:"nowrap",transition:"all .2s var(--ease-out)"}}>{children}</button>);

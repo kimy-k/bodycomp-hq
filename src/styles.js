@@ -36,7 +36,7 @@ export const STYLE=`@import url('${FONT_URL}');
   --c-warn: oklch(0.80 0.16 75);
   --c-danger: #FF3D3D;
   --c-success: #00E5FF;
-  --c-streak: oklch(0.78 0.18 55);
+  --c-streak: #00E5FF;
   --nav-bg: rgba(10, 10, 10, 0.92);
   --tip-bg: rgba(10, 10, 10, 0.96);
   --r-xs: 6px; --r-sm: 10px; --r-md: 14px; --r-lg: 18px; --r-xl: 24px;
@@ -94,7 +94,11 @@ body{font-family:"Geist",-apple-system,BlinkMacSystemFont,sans-serif;font-featur
 input,button,select,textarea{font-family:inherit;font-feature-settings:inherit}
 input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 input[type=number]{-moz-appearance:textfield}
-.serif{font-family:"Instrument Serif",serif;font-weight:400;letter-spacing:-0.02em}
+/* Phase 1: `.serif` is no longer serif — redirected to Inter bold to match Concept C.
+   `!important` on font-family, weight, and font-style overrides all legacy inline italic + 400 weight
+   so every Card, big display number, and h2/h3 across the app picks up the Whoop typography. */
+.serif{font-family:"Inter",ui-sans-serif,system-ui,sans-serif !important;font-weight:700 !important;font-style:normal !important;letter-spacing:-0.025em}
+.serif.tabular,.tabular{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
 .mono{font-family:"Geist Mono",ui-monospace,monospace;font-feature-settings:"tnum"}
 .tabular{font-variant-numeric:tabular-nums}
 ::selection{background:var(--accent-soft);color:var(--t-1)}

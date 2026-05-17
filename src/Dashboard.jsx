@@ -657,21 +657,21 @@ function DashboardInner(){
         </div>
       </header>
 
-      {/* Goal strip — only when scans exist */}
-      {data.length>0&&<div className="rise r1" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"14px 16px",marginBottom:18,borderLeft:"3px solid var(--accent)"}}>
+      {/* Goal strip — only when scans exist. Phase 1 styled. */}
+      {data.length>0&&<div className="rise r1" style={{background:"linear-gradient(180deg, var(--elev-1), var(--bg))",borderRadius:"var(--r-md)",padding:"14px 16px",marginBottom:18,borderLeft:"3px solid var(--accent)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
           <div>
-            <div style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:2}}>Goal · {goalPct}% body fat</div>
-            <div style={{fontSize:12,color:"var(--t-2)"}}>{fatToLose>0?`${fatToLose}kg to go`:"Goal reached"}</div>
+            <div className="mono" style={{fontSize:10,color:"var(--t-3)",letterSpacing:".20em",textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Goal · {goalPct}% body fat</div>
+            <div className="mono" style={{fontSize:11,color:"var(--t-4)",letterSpacing:".04em"}}>{fatToLose>0?`${fatToLose}kg to go`:"Goal reached"}</div>
           </div>
-          <div className="serif tabular" style={{fontSize:34,color:"var(--t-1)",lineHeight:1,fontStyle:"italic"}}>{pctDone}<span style={{fontSize:18,color:"var(--t-3)"}}>%</span></div>
+          <div style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:32,color:"var(--accent)",lineHeight:1,fontWeight:800,letterSpacing:"-0.04em"}}>{pctDone}<span className="mono" style={{fontSize:13,color:"var(--t-4)",fontWeight:600,letterSpacing:".04em"}}>%</span></div>
         </div>
-        <div className="hbar"><i style={{width:`${pctDone}%`,background:`linear-gradient(90deg, var(--accent), oklch(0.82 0.16 80))`}}/></div>
+        <div className="hbar"><i style={{width:`${pctDone}%`,background:"var(--accent)",boxShadow:"0 0 8px rgba(0,229,255,0.4)"}}/></div>
       </div>}
 
       {/* More menu sheet with outside-tap-to-close backdrop */}
       {showMore&&(<><div onClick={()=>setShowMore(false)} style={{position:"fixed",inset:0,zIndex:99,background:"transparent"}}/><div style={{position:"fixed",bottom:90,left:0,right:0,zIndex:100,padding:"0 16px",maxWidth:520,margin:"0 auto"}}>
-        <div className="sheet" style={{background:"oklch(0.18 0.018 285 / 0.96)",backdropFilter:"blur(28px) saturate(180%)",borderRadius:"var(--r-md)",border:"1px solid var(--line)",padding:6,display:"flex",flexDirection:"column",gap:2,boxShadow:"var(--shadow-1)"}}>
+        <div className="sheet" style={{background:"rgba(10,10,10,0.96)",backdropFilter:"blur(28px) saturate(180%)",borderRadius:"var(--r-md)",border:"1px solid var(--line)",padding:6,display:"flex",flexDirection:"column",gap:2,boxShadow:"var(--shadow-1)"}}>
           {[["data","scale","Data"],["projection","target","Projection"],["monthly","calendar","Monthly"]].map(([id,ic,label])=>(
             <button key={id} onClick={()=>{setTab(id);setShowMore(false);}} className="touch" style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:"var(--r-sm)",border:"none",background:tab===id?"var(--accent-soft)":"transparent",cursor:"pointer",width:"100%",textAlign:"left",color:tab===id?"var(--accent)":"var(--t-2)"}}>
               <Icon n={ic} s={18}/>

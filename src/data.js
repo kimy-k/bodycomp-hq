@@ -405,6 +405,35 @@ export const RECONSTITUTION = {
   },
 };
 
+/* ═══ PHARMACOKINETICS ═══
+   In-vivo half-life data per molecule (NOT per batch/reconstitution).
+   These inform dosing frequency and stacking timing — orthogonal to RECONSTITUTION.stabilityDays
+   which is about how long the reconstituted product stays potent in your fridge.
+
+   Values are typical adult ranges from clinical / community sources. For peptide mixes,
+   we list each component since they clear at different rates.
+
+   Schema:
+     halfLifeNote — display string (handles mixes & wide ranges)
+     halfLifeHours — single numeric value when meaningful (null for mixes / very-short / range too wide)
+     dosingImplication — short rationale for why we dose this peptide this way
+
+   Sources: PeptideGuidesPH protocols, FDA prescribing info where applicable, published PK studies.
+   These are guidelines — individual variation is real. */
+export const PHARMACOKINETICS = {
+  reta:   {halfLifeNote: "~6 days",                                halfLifeHours: 144,  dosingImplication: "Long half-life → weekly dosing maintains steady levels"},
+  klow:   {halfLifeNote: "BPC ~30m · TB ~2–3h · GHK ~1h · KPV ~1h", halfLifeHours: null, dosingImplication: "Short half-lives across all 4 components → daily dosing"},
+  glow:   {halfLifeNote: "BPC ~30m · TB ~2–3h · GHK ~1h",          halfLifeHours: null, dosingImplication: "Short half-lives → daily dosing for sustained healing/skin effects"},
+  nad:    {halfLifeNote: "~1–8h (route-dependent)",                halfLifeHours: 4,    dosingImplication: "Short half-life; effects are dose-dependent and cumulative"},
+  ta1:    {halfLifeNote: "~2h plasma",                             halfLifeHours: 2,    dosingImplication: "Short plasma half-life but immune effects last longer; daily dosing typical"},
+  amino:  {halfLifeNote: "~3–4h",                                  halfLifeHours: 3.5,  dosingImplication: "Daily dosing maintains NNMT inhibition"},
+  snap8:  {halfLifeNote: "Topical · sustained on skin",            halfLifeHours: null, dosingImplication: "Daily topical use builds cumulative effect"},
+  cjcipa: {halfLifeNote: "Mod-GRF ~30m · Ipa ~2h",                 halfLifeHours: 1,    dosingImplication: "Both short — pulses GH naturally; pre-bed timing best"},
+  tesa:   {halfLifeNote: "~26 min plasma",                         halfLifeHours: 0.4,  dosingImplication: "Very short — daily injection required for visceral-fat effect"},
+  semax:  {halfLifeNote: "~5–15 min (intranasal)",                 halfLifeHours: 0.25, dosingImplication: "BDNF effects persist much longer than plasma t½"},
+  motsc:  {halfLifeNote: "~hours (poorly characterized)",          halfLifeHours: null, dosingImplication: "Effects on mitochondria last beyond plasma t½"},
+};
+
 /* Helper: get recommended reconstitution option for a peptide */
 export const recommendedReconFor = pepId => {
   const r = RECONSTITUTION[pepId];

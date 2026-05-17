@@ -18,7 +18,7 @@ import {
   PEPTIDES, DEFAULT_STACK, AVAILABLE_PEPS, SELLERS,
   PRODUCT_FOR_PEPTIDE, PRICES,
   PG_SLUG_FOR_PEPTIDE, PG_BASE, PG_DIRECTORY, pgUrlFor,
-  reorderOptionsFor, RECONSTITUTION, recommendedReconFor,
+  reorderOptionsFor, RECONSTITUTION, PHARMACOKINETICS, recommendedReconFor,
 } from "./data.js";
 import {todayKey, localDateKey, addDays, buildProj, calcMonthly, compressImage} from "./helpers.js";
 import {computeInsights} from "./insights.js";
@@ -1214,6 +1214,38 @@ function DashboardInner(){
               <div className="mono" style={{fontSize:12,color:"var(--t-2)",letterSpacing:".01em"}}>{p.dose}</div>
               <div style={{fontSize:11.5,color:"var(--t-3)",marginTop:3}}>{p.time}{p.note?` · ${p.note}`:""}</div>
               <div style={{fontSize:11,color:"var(--t-4)",marginTop:6,lineHeight:1.5,paddingLeft:10,borderLeft:`1.5px solid color-mix(in oklch, ${p.color} 30%, transparent)`,fontStyle:"italic"}}>{p.purpose}</div>
+              {/* ═══ Pharmacokinetics + shelf life info chips ═══
+                  - Half-life: from PHARMACOKINETICS map (intrinsic to molecule)
+                  - Shelf life: from RECONSTITUTION.stabilityDays (post-recon storage window)
+                  - Active batch: most recent non-exhausted batch for this peptide; shows days-to-expiry
+                  All three are tooltip-style — small, color-muted, on one row. */}
+              {(()=>{
+                const pk = PHARMACOKINETICS[p.id];
+                const recon = RECONSTITUTION[p.id];
+                /* Find the active batch — most recently reconstituted, not exhausted */
+                const activeBatch = batches
+                  .filter(b => b.peptide_id === p.id && !b.exhausted)
+                  .sort((a,b) => b.date_recon.localeCompare(a.date_recon))[0];
+                const batchStat = activeBatch ? batchStatus_pure(activeBatch) : null;
+                if (!pk && !recon?.stabilityDays && !batchStat) return null;
+                return (<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                  {pk?.halfLifeNote && (
+                    <span title={pk.dosingImplication} className="mono" style={{fontSize:10,color:"var(--t-3)",background:"var(--elev-2)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid var(--line-soft)"}}>
+                      t½ · {pk.halfLifeNote}
+                    </span>
+                  )}
+                  {recon?.stabilityDays && (
+                    <span className="mono" style={{fontSize:10,color:"var(--t-3)",background:"var(--elev-2)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid var(--line-soft)"}}>
+                      shelf · ~{recon.stabilityDays}d post-recon
+                    </span>
+                  )}
+                  {batchStat && (
+                    <span className="mono" style={{fontSize:10,color:batchStat.color,background:`color-mix(in oklch, ${batchStat.color} 10%, transparent)`,padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:`1px solid color-mix(in oklch, ${batchStat.color} 35%, transparent)`,fontWeight:600}}>
+                      current batch · {batchStat.label}
+                    </span>
+                  )}
+                </div>);
+              })()}
               {p.totalWeeks>0&&(<div style={{marginTop:10}}>
                 <div className="mono" style={{display:"flex",justifyContent:"space-between",fontSize:9.5,color:"var(--t-3)",marginBottom:4,letterSpacing:".06em",textTransform:"uppercase"}}><span>Cycle</span><span>{daysToEnd!==null?`${daysToEnd}d left`:""}</span></div>
                 <div className="hbar" style={{height:3}}><i style={{width:`${cyclePct}%`,background:p.color,opacity:.6}}/></div>

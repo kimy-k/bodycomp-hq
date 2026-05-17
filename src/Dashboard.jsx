@@ -36,7 +36,7 @@ const isPastPGStability = batch => isPastPGStability_pure(batch, RECONSTITUTION[
 
 /* ═══ MAIN ═══ */
 function DashboardInner(){
-  const [tab,setTab]=useState("macros");
+  const [tab,setTab]=useState("today");
   /* Resolve userId in priority order:
      1. ?user= URL parameter — locks device immediately (deep-linking still works)
      2. localStorage bcq-user — chosen previously, persists forever until "Switch user"
@@ -572,16 +572,16 @@ function DashboardInner(){
       setBriefingError(result.error||"Briefing unavailable");
     }
   },[db,briefingLoading]);
-  /* Auto-fetch on first Body tab visit. Cached responses are cheap; this is gated
+  /* Auto-fetch on first Today tab visit. Cached responses are cheap; this is gated
      by the endpoint's same-day cache so it doesn't spam Gemini. */
   useEffect(()=>{
-    if(tab!=="overview")return;
+    if(tab!=="today")return;
     if(briefing)return;            /* already have it this session */
     if(briefingLoading)return;
     fetchBriefing(false);
   },[tab,briefing,briefingLoading,fetchBriefing]);
 
-  const navItems=[{id:"macros",icon:"macros",label:"Macros"},profile.showPeptides&&{id:"peptides",icon:"peps",label:"Peps"},{id:"overview",icon:"body",label:"Body"},{id:"whoop",icon:"whoop",label:"Whoop"},{id:"more",icon:"more",label:"More"}].filter(Boolean);
+  const navItems=[{id:"today",icon:"sun",label:"Today"},{id:"macros",icon:"macros",label:"Macros"},profile.showPeptides&&{id:"peptides",icon:"peps",label:"Peps"},{id:"overview",icon:"body",label:"Body"},{id:"whoop",icon:"whoop",label:"Whoop"},{id:"more",icon:"more",label:"More"}].filter(Boolean);
   const [showMore,setShowMore]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
 
@@ -848,47 +848,6 @@ function DashboardInner(){
           </ResponsiveContainer>
         </div>
 
-        {/* ─── AI Daily Briefing (Phase 2 smart layer) — sits above weekly ─── */}
-        {(briefing?.summary_md||briefingLoading||briefingError)&&(()=>{
-          /* Tiny renderer for the briefing markdown.
-             Format guaranteed by prompt: 3 paragraphs each starting with **Label** —
-             Render each as a row with the label as a mono caps tag. */
-          const renderBrief = (md) => {
-            if (!md) return null;
-            const paragraphs = md.replace(/\r\n/g,"\n").split(/\n\s*\n/).map(p=>p.trim()).filter(Boolean);
-            return paragraphs.map((p,i)=>{
-              const m = p.match(/^\*\*(.+?)\*\*\s*[—\-–:]\s*(.*)$/s);
-              if (!m) return <p key={i} style={{fontSize:13,color:"var(--t-2)",lineHeight:1.55,marginBottom:i<paragraphs.length-1?10:0}}>{p}</p>;
-              const label = m[1].trim().toUpperCase();
-              const body = m[2].trim();
-              return <div key={i} style={{display:"flex",gap:12,alignItems:"baseline",marginBottom:i<paragraphs.length-1?10:0}}>
-                <span className="mono" style={{fontSize:9.5,letterSpacing:".22em",color:"var(--accent)",fontWeight:700,flexShrink:0,minWidth:78,paddingTop:1}}>{label}</span>
-                <span style={{fontSize:13,color:"var(--t-2)",lineHeight:1.55,flex:1}}>{body}</span>
-              </div>;
-            });
-          };
-          return(<div className="rise" style={{background:"linear-gradient(180deg, #0a0a0a, #050505)",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"16px 16px 18px",marginBottom:12,position:"relative",overflow:"hidden"}}>
-            <div style={{position:"absolute",left:0,top:0,bottom:0,width:2,background:"var(--accent)",boxShadow:"0 0 8px var(--accent)"}}/>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:14,paddingLeft:8}}>
-              <div className="mono" style={{fontSize:9.5,letterSpacing:".22em",textTransform:"uppercase",color:"var(--accent)",fontWeight:700,display:"flex",alignItems:"center",gap:7}}>
-                <span style={{width:5,height:5,borderRadius:"50%",background:"var(--accent)",boxShadow:"0 0 6px var(--accent)"}}/>
-                AI · today
-              </div>
-              <button onClick={()=>fetchBriefing(true)} disabled={briefingLoading} className="touch mono" style={{padding:"6px 12px",borderRadius:"var(--r-sm)",background:"transparent",color:"var(--accent)",border:"1px solid var(--accent-line)",fontSize:10,fontWeight:700,cursor:briefingLoading?"wait":"pointer",letterSpacing:".14em",textTransform:"uppercase",opacity:briefingLoading?0.6:1}}>
-                {briefingLoading?"…":"↻ Refresh"}
-              </button>
-            </div>
-            <div style={{paddingLeft:8}}>
-              {briefingError&&<div className="mono" style={{padding:"10px 12px",background:"rgba(255,61,61,0.10)",border:"1px solid rgba(255,61,61,0.30)",borderRadius:"var(--r-sm)",fontSize:11,color:"var(--c-danger)"}}>
-                {briefingError.includes("no_api_key")?"GEMINI_API_KEY not configured.":briefingError.slice(0,200)}
-              </div>}
-              {briefingLoading&&!briefing&&<div style={{fontSize:13,color:"var(--t-4)",lineHeight:1.55,fontStyle:"italic"}}>Generating today's briefing…</div>}
-              {briefing&&renderBrief(briefing.summary_md)}
-              {briefing?.generated_at&&<div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:12,letterSpacing:".06em"}}>{new Date(briefing.generated_at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})} · {briefing.cached?"cached":"fresh"}</div>}
-            </div>
-          </div>);
-        })()}
-
         {/* ─── AI Weekly Summary — Concept C clinical card ─── */}
         {(()=>{
           /* Tiny markdown→JSX renderer reused from prior shipping turn */
@@ -1082,6 +1041,63 @@ function DashboardInner(){
           </div>)}
         </div>
       </>)}
+
+      {/* ═══ TODAY ═══ Phase 2 home: AI Daily Briefing as the centerpiece. */}
+      {tab==="today"&&(()=>{
+        /* Renderer for the briefing markdown.
+           Prompt guarantees 3 paragraphs each starting with **Label** — content.
+           Each renders as a row: mono caps label on the left, prose on the right. */
+        const renderBrief = (md) => {
+          if (!md) return null;
+          const paragraphs = md.replace(/\r\n/g,"\n").split(/\n\s*\n/).map(p=>p.trim()).filter(Boolean);
+          return paragraphs.map((p,i)=>{
+            const m = p.match(/^\*\*(.+?)\*\*\s*[—\-–:]\s*(.*)$/s);
+            if (!m) return <p key={i} style={{fontSize:14,color:"var(--t-2)",lineHeight:1.6,marginBottom:i<paragraphs.length-1?14:0}}>{p}</p>;
+            const label = m[1].trim().toUpperCase();
+            const body = m[2].trim();
+            return <div key={i} style={{display:"flex",gap:14,alignItems:"baseline",marginBottom:i<paragraphs.length-1?14:0}}>
+              <span className="mono" style={{fontSize:10,letterSpacing:".22em",color:"var(--accent)",fontWeight:700,flexShrink:0,minWidth:86,paddingTop:2}}>{label}</span>
+              <span style={{fontSize:14,color:"var(--t-2)",lineHeight:1.6,flex:1}}>{body}</span>
+            </div>;
+          });
+        };
+        const dateStr = new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+        return(<>
+          {/* Date + section header */}
+          <div className="rise" style={{marginBottom:16,paddingTop:4}}>
+            <div className="mono" style={{fontSize:10.5,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700,marginBottom:6}}>Morning briefing</div>
+            <div style={{fontSize:15.5,color:"var(--t-1)",fontWeight:500,letterSpacing:"-0.01em"}}>{dateStr}</div>
+          </div>
+
+          {/* AI Daily Briefing — the centerpiece */}
+          <div className="rise r1" style={{background:"linear-gradient(180deg, #0a0a0a, #050505)",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"20px 20px 22px",marginBottom:14,position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",left:0,top:0,bottom:0,width:2,background:"var(--accent)",boxShadow:"0 0 12px var(--accent)"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:18,paddingLeft:10}}>
+              <div className="mono" style={{fontSize:9.5,letterSpacing:".22em",textTransform:"uppercase",color:"var(--accent)",fontWeight:700,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:"var(--accent)",boxShadow:"0 0 8px var(--accent)"}}/>
+                AI · brief
+              </div>
+              <button onClick={()=>fetchBriefing(true)} disabled={briefingLoading} className="touch mono" style={{padding:"7px 13px",borderRadius:"var(--r-sm)",background:"transparent",color:"var(--accent)",border:"1px solid var(--accent-line)",fontSize:10,fontWeight:700,cursor:briefingLoading?"wait":"pointer",letterSpacing:".14em",textTransform:"uppercase",opacity:briefingLoading?0.6:1}}>
+                {briefingLoading?"…":"↻ Refresh"}
+              </button>
+            </div>
+            <div style={{paddingLeft:10}}>
+              {briefingError&&<div className="mono" style={{padding:"10px 12px",background:"rgba(255,61,61,0.10)",border:"1px solid rgba(255,61,61,0.30)",borderRadius:"var(--r-sm)",fontSize:11,color:"var(--c-danger)"}}>
+                {briefingError.includes("no_api_key")?"GEMINI_API_KEY not configured in Vercel.":briefingError.slice(0,220)}
+              </div>}
+              {briefingLoading&&!briefing&&<div style={{fontSize:14,color:"var(--t-4)",lineHeight:1.6,fontStyle:"italic"}}>Reading today's signals…</div>}
+              {!briefing&&!briefingLoading&&!briefingError&&<div style={{fontSize:14,color:"var(--t-3)",lineHeight:1.6}}>No briefing yet. Tap <strong style={{color:"var(--accent)",fontWeight:600}}>Refresh</strong> to generate.</div>}
+              {briefing&&renderBrief(briefing.summary_md)}
+              {briefing?.generated_at&&<div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:16,letterSpacing:".06em",paddingTop:14,borderTop:"1px solid var(--line-soft)"}}>{new Date(briefing.generated_at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})} · {briefing.cached?"cached":"fresh"} · gemini</div>}
+            </div>
+          </div>
+
+          {/* Wayfinding hint at bottom — soft, not visually heavy */}
+          <div className="mono" style={{textAlign:"center",padding:"20px 0 8px",color:"var(--t-5)",fontSize:9.5,letterSpacing:".18em",textTransform:"uppercase"}}>
+            Open Body, Whoop, or Peps tabs for details
+          </div>
+        </>);
+      })()}
 
       {/* ═══ MACROS ═══ */}
       {tab==="macros"&&mLoading&&<SkelTab/>}

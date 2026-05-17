@@ -285,4 +285,42 @@ export const makeDb = (uid, onErr = () => {}) => ({
       return null;
     }
   },
+  /* ─── Whoop OAuth methods (P14) — token row tracks connection state. */
+  async getWhoopConnection() {
+    /* Returns the whoop_tokens row for this user or null. Does NOT expose tokens to
+       client code — only fields needed for UI state (connected? last_sync_at, error). */
+    try {
+      const r = await fetch(`${SB}/whoop_tokens?user_id=eq.${uid}&select=whoop_email,whoop_user_id,connected_at,last_sync_at,last_sync_count,last_sync_error,scope,expires_at`, {headers: hdr});
+      if (!r.ok) throw new Error(`whoop_tokens: ${r.status}`);
+      const rows = await r.json();
+      return rows[0] || null;
+    } catch (e) {
+      onErr(`Couldn't check Whoop status`);
+      return null;
+    }
+  },
+  async disconnectWhoop() {
+    /* Delete the token row. User can also revoke via the Whoop app. */
+    try {
+      const r = await fetch(`${SB}/whoop_tokens?user_id=eq.${uid}`, {method: "DELETE", headers: hdr});
+      return r.ok;
+    } catch (e) {
+      onErr(`Couldn't disconnect Whoop`);
+      return false;
+    }
+  },
+  async syncWhoop() {
+    /* Calls our server endpoint which handles token refresh + fetch + upsert. */
+    try {
+      const r = await fetch(`/api/whoop/sync`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({user_id: uid}),
+      });
+      const data = await r.json().catch(() => ({}));
+      return {ok: r.ok && data.ok, synced: data.synced || 0, error: data.error || null};
+    } catch (e) {
+      return {ok: false, synced: 0, error: String(e.message || e)};
+    }
+  },
 });

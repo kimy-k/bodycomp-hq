@@ -468,9 +468,68 @@ function DashboardInner(){
 
   const [whoopData,setWhoopData]=useState(null);const [whoopLoading,setWhoopLoading]=useState(true);const [whoopHist,setWhoopHist]=useState([]);
   const [showPlan,setShowPlan]=useState(false);
-  useEffect(()=>{setWhoopData(null);setWhoopLoading(true);(async()=>{const row=await db.get("daily_whoop",day);if(row)setWhoopData({recovery:row.recovery,sleep:row.sleep,strain:row.strain});const hist=await db.list("daily_whoop",14);setWhoopHist(hist.map(r=>({date:r.date,recovery:r.recovery,sleep:r.sleep,strain:r.strain})));setWhoopLoading(false);})();},[day,db]);
-  const saveWhoop=async(d)=>{setWhoopData(d);db.upsert("daily_whoop",{date:day,...d});};
+  useEffect(()=>{setWhoopData(null);setWhoopLoading(true);(async()=>{const row=await db.get("daily_whoop",day);if(row)setWhoopData({recovery:row.recovery,sleep:row.sleep,strain:row.strain,hrv_ms:row.hrv_ms,rhr:row.rhr,sleep_hours:row.sleep_hours,sleep_efficiency:row.sleep_efficiency,source:row.source});const hist=await db.list("daily_whoop",14);setWhoopHist(hist.map(r=>({date:r.date,recovery:r.recovery,sleep:r.sleep,strain:r.strain,hrv_ms:r.hrv_ms,rhr:r.rhr})));setWhoopLoading(false);})();},[day,db]);
+  const saveWhoop=async(d)=>{setWhoopData(d);db.upsert("daily_whoop",{date:day,source:"manual",...d});};
   const [whoopInput,setWhoopInput]=useState({recovery:"",sleep:"",strain:""});
+
+  /* ═══ P14: WHOOP OAUTH ═══
+     whoopConn = row from whoop_tokens (null if not connected).
+     - "Connect" → builds Whoop auth URL with state="{user_id}.{nonce}", redirects.
+     - "Sync now" → POSTs to /api/whoop/sync, which refreshes tokens if needed & fills daily_whoop.
+     - "Disconnect" → deletes the whoop_tokens row.
+     After Whoop redirects back, the URL has ?whoop=connected → auto-sync once. */
+  const WHOOP_CLIENT_ID="f88aeb97-f469-43fa-9523-14bbf8fc0e6f";
+  const WHOOP_AUTH_URL="https://api.prod.whoop.com/oauth/oauth2/auth";
+  const WHOOP_REDIRECT="https://bodycomp-hq.vercel.app/api/whoop/callback";
+  const WHOOP_SCOPES="offline read:profile read:recovery read:sleep read:cycles";
+  const [whoopConn,setWhoopConn]=useState(null);
+  const [whoopConnLoading,setWhoopConnLoading]=useState(true);
+  const [whoopSyncing,setWhoopSyncing]=useState(false);
+  const [whoopSyncMsg,setWhoopSyncMsg]=useState(null);
+  const loadWhoopConn=useCallback(async()=>{setWhoopConnLoading(true);const c=await db.getWhoopConnection();setWhoopConn(c);setWhoopConnLoading(false);return c;},[db]);
+  useEffect(()=>{loadWhoopConn();},[loadWhoopConn]);
+  const connectWhoop=useCallback(()=>{
+    /* Whoop requires state ≥8 chars; pack user_id so callback knows which BCQ user. */
+    const nonce=Math.random().toString(36).slice(2,12);
+    const state=`${userId}.${nonce}`;
+    sessionStorage.setItem("bcq.whoop.state",state);
+    const url=`${WHOOP_AUTH_URL}?response_type=code&client_id=${WHOOP_CLIENT_ID}&redirect_uri=${encodeURIComponent(WHOOP_REDIRECT)}&scope=${encodeURIComponent(WHOOP_SCOPES)}&state=${state}`;
+    window.location.href=url;
+  },[userId]);
+  const syncWhoop=useCallback(async()=>{
+    if(whoopSyncing)return;
+    setWhoopSyncing(true);setWhoopSyncMsg(null);
+    const result=await db.syncWhoop();
+    setWhoopSyncing(false);
+    if(result.ok){
+      setWhoopSyncMsg(`✓ synced ${result.synced} day${result.synced!==1?"s":""}`);
+      await loadWhoopConn();
+      const row=await db.get("daily_whoop",day);if(row)setWhoopData({recovery:row.recovery,sleep:row.sleep,strain:row.strain,hrv_ms:row.hrv_ms,rhr:row.rhr,sleep_hours:row.sleep_hours,sleep_efficiency:row.sleep_efficiency,source:row.source});
+      const hist=await db.list("daily_whoop",14);setWhoopHist(hist.map(r=>({date:r.date,recovery:r.recovery,sleep:r.sleep,strain:r.strain,hrv_ms:r.hrv_ms,rhr:r.rhr})));
+    } else {
+      setWhoopSyncMsg(`✗ ${result.error||"sync failed"}`);
+    }
+    setTimeout(()=>setWhoopSyncMsg(null),5000);
+  },[db,day,whoopSyncing,loadWhoopConn]);
+  const disconnectWhoop=useCallback(async()=>{
+    if(!confirm("Disconnect Whoop? Existing data stays, but no future syncs."))return;
+    await db.disconnectWhoop();
+    await loadWhoopConn();
+  },[db,loadWhoopConn]);
+  /* On mount: check if we just returned from Whoop OAuth → auto-sync once */
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);
+    if(params.get("whoop")==="connected"){
+      const url=new URL(window.location.href);url.searchParams.delete("whoop");
+      window.history.replaceState({},"",url.toString());
+      setTimeout(()=>{loadWhoopConn().then(c=>{if(c)syncWhoop();});},500);
+    } else if(params.get("whoop")==="error"){
+      setWhoopSyncMsg(`✗ Whoop: ${params.get("msg")||"connection failed"}`);
+      const url=new URL(window.location.href);url.searchParams.delete("whoop");url.searchParams.delete("msg");
+      window.history.replaceState({},"",url.toString());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
 
   const navItems=[{id:"macros",icon:"macros",label:"Macros"},profile.showPeptides&&{id:"peptides",icon:"peps",label:"Peps"},{id:"overview",icon:"body",label:"Body"},{id:"whoop",icon:"whoop",label:"Whoop"},{id:"more",icon:"more",label:"More"}].filter(Boolean);
   const [showMore,setShowMore]=useState(false);
@@ -1393,24 +1452,56 @@ function DashboardInner(){
       {/* ═══ WHOOP ═══ */}
       {tab==="whoop"&&whoopLoading&&<SkelTab/>}
       {tab==="whoop"&&!whoopLoading&&(<>
-        <H2 sub="Log your daily Whoop metrics">Today's recovery</H2>
+        <H2 sub={whoopConn?"Auto-synced from your Whoop account":"Log your daily Whoop metrics"}>Today's recovery</H2>
+
+        {/* ═══ Connection bar ═══ */}
+        <div className="rise" style={{background:whoopConn?"var(--accent-soft)":"var(--elev-1)",borderRadius:"var(--r-md)",padding:"12px 14px",marginBottom:16,border:whoopConn?"1px solid var(--accent-line)":"1px solid var(--line-soft)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <Icon n="whoop" s={18} c={whoopConn?"var(--accent)":"var(--t-3)"} sw={1.8}/>
+            <div style={{flex:1,minWidth:0}}>
+              {whoopConnLoading?(<span style={{fontSize:12,color:"var(--t-3)"}}>Checking connection…</span>):whoopConn?(<>
+                <div style={{fontSize:12.5,color:"var(--t-1)",fontWeight:600}}>Whoop connected</div>
+                <div style={{fontSize:10.5,color:"var(--t-3)",marginTop:2,fontFamily:"Geist Mono"}}>
+                  {whoopConn.whoop_email||"account linked"}
+                  {whoopConn.last_sync_at&&<> · synced {new Date(whoopConn.last_sync_at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</>}
+                </div>
+              </>):(<>
+                <div style={{fontSize:12.5,color:"var(--t-2)",fontWeight:500}}>Connect to auto-sync</div>
+                <div style={{fontSize:10.5,color:"var(--t-4)",marginTop:2}}>or enter manually below</div>
+              </>)}
+            </div>
+            {whoopConn?(<div style={{display:"flex",gap:6}}>
+              <button onClick={syncWhoop} disabled={whoopSyncing} className="touch" style={{padding:"7px 12px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent)",background:"var(--accent)",color:"var(--bg)",fontSize:11.5,fontWeight:600,cursor:whoopSyncing?"wait":"pointer",opacity:whoopSyncing?0.6:1}}>{whoopSyncing?"Syncing…":"Sync now"}</button>
+              <button onClick={disconnectWhoop} className="touch" style={{padding:"7px 10px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"transparent",color:"var(--t-3)",fontSize:11,cursor:"pointer"}}>Disconnect</button>
+            </div>):(<button onClick={connectWhoop} className="touch" style={{padding:"7px 14px",borderRadius:"var(--r-sm)",border:"none",background:"var(--accent)",color:"var(--bg)",fontSize:12,fontWeight:600,cursor:"pointer"}}>Connect Whoop</button>)}
+          </div>
+          {whoopSyncMsg&&<div style={{marginTop:8,fontSize:11,color:whoopSyncMsg.startsWith("✓")?"var(--c-success)":"var(--c-danger)",fontFamily:"Geist Mono"}}>{whoopSyncMsg}</div>}
+          {whoopConn&&whoopConn.last_sync_error&&!whoopSyncing&&<div style={{marginTop:8,fontSize:10.5,color:"var(--c-danger)",fontFamily:"Geist Mono",lineHeight:1.4}}>last error: {whoopConn.last_sync_error}</div>}
+        </div>
 
         {whoopData?(<>
-          <div style={{display:"flex",gap:8,marginBottom:18}}>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
             {[
               {k:"recovery",l:"Recovery",v:whoopData.recovery,u:"%",color:whoopData.recovery>=67?"var(--c-success)":whoopData.recovery>=34?"var(--c-warn)":"var(--c-danger)",icon:"heart"},
               {k:"sleep",l:"Sleep",v:whoopData.sleep,u:"%",color:whoopData.sleep>=85?"var(--c-success)":whoopData.sleep>=70?"var(--c-warn)":"var(--c-danger)",icon:"sleep"},
               {k:"strain",l:"Strain",v:whoopData.strain,u:"",color:whoopData.strain>=14?"var(--c-danger)":whoopData.strain>=8?"var(--c-warn)":"var(--c-carbs)",icon:"strain"},
             ].map((m,i)=>(<div key={m.k} className="rise" style={{animationDelay:`${i*0.06}s`,flex:1,background:"var(--elev-1)",borderLeft:`3px solid ${m.color}`,borderRadius:"var(--r-sm)",padding:"14px 8px",textAlign:"center"}}>
               <Icon n={m.icon} s={18} c={m.color} sw={1.7}/>
-              <div className="serif tabular" style={{fontSize:32,color:m.color,marginTop:6,fontStyle:"italic",lineHeight:1}}>{m.v}<span style={{fontSize:13,color:"var(--t-3)"}}>{m.u}</span></div>
+              <div className="serif tabular" style={{fontSize:32,color:m.color,marginTop:6,fontStyle:"italic",lineHeight:1}}>{m.v!=null?m.v:"—"}<span style={{fontSize:13,color:"var(--t-3)"}}>{m.v!=null?m.u:""}</span></div>
               <div style={{fontSize:10,color:"var(--t-3)",marginTop:4,letterSpacing:".08em",textTransform:"uppercase",fontWeight:600}}>{m.l}</div>
             </div>))}
           </div>
-          <button onClick={()=>{setWhoopData(null);setWhoopInput({recovery:"",sleep:"",strain:""});}} className="touch" style={{width:"100%",padding:"11px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"transparent",color:"var(--t-3)",fontSize:12,cursor:"pointer"}}>Edit today's entry</button>
+          {/* Secondary metrics from Whoop sync — HRV, RHR, sleep hours */}
+          {(whoopData.hrv_ms||whoopData.rhr||whoopData.sleep_hours)&&(<div style={{display:"flex",gap:12,fontSize:11,color:"var(--t-3)",marginBottom:14,padding:"10px 14px",background:"var(--elev-1)",borderRadius:"var(--r-sm)",flexWrap:"wrap"}}>
+            {whoopData.hrv_ms!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{whoopData.hrv_ms.toFixed(0)}</span> ms HRV</span>}
+            {whoopData.rhr!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{whoopData.rhr}</span> bpm RHR</span>}
+            {whoopData.sleep_hours!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{whoopData.sleep_hours}</span> h slept</span>}
+            {whoopData.sleep_efficiency!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{whoopData.sleep_efficiency.toFixed(0)}%</span> efficient</span>}
+          </div>)}
+          {whoopData.source!=="whoop_sync"&&<button onClick={()=>{setWhoopData(null);setWhoopInput({recovery:"",sleep:"",strain:""});}} className="touch" style={{width:"100%",padding:"11px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"transparent",color:"var(--t-3)",fontSize:12,cursor:"pointer"}}>Edit today's entry</button>}
         </>):(
           <div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:18,marginBottom:18}}>
-            <div style={{fontSize:12,color:"var(--t-3)",marginBottom:14}}>From your Whoop app this morning:</div>
+            <div style={{fontSize:12,color:"var(--t-3)",marginBottom:14}}>{whoopConn?"No data for today yet. Tap Sync now above, or enter manually:":"From your Whoop app this morning:"}</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
               {[
                 {k:"recovery",l:"Recovery %",ph:"78",c:"var(--c-success)"},

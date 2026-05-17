@@ -156,7 +156,7 @@ function DashboardInner(){
   const updateDose=(id,dose)=>{const nc={...pepData.checks};if(nc[id])nc[id]={...nc[id],dose};savePep({...pepData,checks:nc});};
   const toggleSideFx=(fx)=>{const sf=[...pepData.sideEffects];const i=sf.indexOf(fx);if(i>=0)sf.splice(i,1);else sf.push(fx);savePep({...pepData,sideEffects:sf});};
 
-  useEffect(()=>{if(tab!=="peptides")return;(async()=>{
+  useEffect(()=>{if(tab!=="peptides"&&tab!=="today")return;(async()=>{
     const rows=await db.list("daily_peptides",21);
     setPepHist(rows.map(r=>({date:r.date,checks:r.checks||{},sideEffects:r.side_effects||[]})));
   })();},[tab]);
@@ -1091,6 +1091,134 @@ function DashboardInner(){
               {briefing?.generated_at&&<div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:16,letterSpacing:".06em",paddingTop:14,borderTop:"1px solid var(--line-soft)"}}>{new Date(briefing.generated_at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})} · {briefing.cached?"cached":"fresh"} · gemini</div>}
             </div>
           </div>
+
+          {/* ─── Wellness check-in — compact 3-row chip grid ─── */}
+          {(() => {
+            const rows = [
+              {key:"mood",         label:"Mood",   hint:"low → high"},
+              {key:"energy",       label:"Energy", hint:"flat → wired"},
+              {key:"sleep_quality",label:"Sleep",  hint:"poor → great"},
+            ];
+            const anyLogged = wellness.mood || wellness.energy || wellness.sleep_quality;
+            return(<div className="rise r2" style={{background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"14px 16px 16px",marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:12}}>
+                <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>How you feel</span>
+                {anyLogged?<span className="mono" style={{fontSize:9,color:"var(--accent)",letterSpacing:".10em"}}>· logged</span>:<span className="mono" style={{fontSize:9,color:"var(--t-5)",letterSpacing:".10em"}}>tap to log</span>}
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {rows.map(row => {
+                  const cur = wellness[row.key];
+                  return(<div key={row.key} style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:11.5,color:"var(--t-3)",width:54,flexShrink:0,fontWeight:500}}>{row.label}</span>
+                    <div style={{display:"flex",gap:5,flex:1}}>
+                      {[1,2,3,4,5].map(v => {
+                        const active = cur===v;
+                        return(<button key={v} onClick={()=>saveWellness({[row.key]:active?null:v})} className="touch" style={{flex:1,minWidth:0,padding:"7px 0",borderRadius:"var(--r-sm)",border:active?`1px solid var(--accent)`:`1px solid var(--line-soft)`,background:active?"color-mix(in oklch, var(--accent) 16%, transparent)":"var(--elev-2)",color:active?"var(--accent)":"var(--t-3)",fontSize:12,fontWeight:active?700:500,cursor:"pointer",transition:"all .15s var(--ease-out)",fontFamily:active?"Geist Mono, monospace":"inherit",letterSpacing:active?".05em":"0"}}>{v}</button>);
+                      })}
+                    </div>
+                  </div>);
+                })}
+              </div>
+            </div>);
+          })()}
+
+          {/* ─── Up Next — next scheduled peptide dose with countdown ─── */}
+          {(() => {
+            /* Parse "9:00 PM" / "8 AM" / "9:26 PM" into minutes-since-midnight */
+            const parseTime12h = (s) => {
+              const m = (s||"").trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+              if (!m) return null;
+              let h = +m[1]; const min = +(m[2] || 0); const ap = m[3].toUpperCase();
+              if (ap === "PM" && h !== 12) h += 12;
+              if (ap === "AM" && h === 12) h = 0;
+              return h * 60 + min;
+            };
+            const now = new Date();
+            const nowMin = now.getHours() * 60 + now.getMinutes();
+            const checkedToday = pepData?.checks || {};
+            const candidates = duePeptides
+              .filter(p => !checkedToday[p.id])
+              .map(p => ({...p, minutes: parseTime12h(p.time)}))
+              .filter(p => p.minutes !== null);
+            const upcoming = candidates.filter(p => p.minutes >= nowMin).sort((a,b) => a.minutes - b.minutes);
+            const overdue = candidates.filter(p => p.minutes < nowMin).sort((a,b) => b.minutes - a.minutes);
+            const next = upcoming[0] || overdue[0] || null;
+            const isOverdue = next && overdue[0]?.id === next?.id;
+            const fmtCountdown = (m) => {
+              const abs = Math.abs(m);
+              const h = Math.floor(abs / 60);
+              const min = abs % 60;
+              if (h === 0) return `${min}m`;
+              if (h < 24) return `${h}h ${min}m`;
+              return `${Math.floor(h/24)}d`;
+            };
+            const totalDue = duePeptides.length;
+            const taken = duePeptides.filter(p => checkedToday[p.id]).length;
+            const allDone = totalDue > 0 && taken === totalDue;
+
+            return(<div className="rise r3" style={{background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"14px 16px",marginBottom:14}}>
+              <div className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700,marginBottom:11}}>Up next</div>
+              {next ? (
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:34,height:34,borderRadius:8,background:`color-mix(in oklch, ${next.color} 18%, transparent)`,border:`1px solid color-mix(in oklch, ${next.color} 40%, transparent)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <Icon n="vial" s={16} c={next.color} sw={1.8}/>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+                      <span style={{fontSize:14,color:"var(--t-1)",fontWeight:600,letterSpacing:"-0.01em"}}>{next.name}</span>
+                      <span className="mono" style={{fontSize:11,color:"var(--t-4)",letterSpacing:".04em"}}>{next.time}</span>
+                    </div>
+                    <div className="mono" style={{fontSize:11,color:isOverdue?"var(--c-warn)":"var(--accent)",letterSpacing:".08em",marginTop:2,fontWeight:600}}>
+                      {isOverdue ? `OVERDUE · ${fmtCountdown(nowMin - next.minutes)} ago` : `IN ${fmtCountdown(next.minutes - nowMin).toUpperCase()}`}
+                    </div>
+                  </div>
+                  {upcoming.length + overdue.length > 1 && <span className="mono" style={{fontSize:10,color:"var(--t-5)",letterSpacing:".10em",flexShrink:0}}>+{upcoming.length + overdue.length - 1}</span>}
+                </div>
+              ) : allDone ? (
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:34,height:34,borderRadius:8,background:"color-mix(in oklch, var(--accent) 16%, transparent)",border:"1px solid var(--accent-line)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <Icon n="check" s={18} c="var(--accent)" sw={2.5}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:14,color:"var(--t-1)",fontWeight:600}}>All caught up</div>
+                    <div className="mono" style={{fontSize:10.5,color:"var(--t-4)",letterSpacing:".06em",marginTop:2}}>{taken} of {totalDue} doses logged today</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{fontSize:13,color:"var(--t-4)",lineHeight:1.5}}>Nothing scheduled today. Rest well.</div>
+              )}
+            </div>);
+          })()}
+
+          {/* ─── Journey strip — single line of milestone chips ─── */}
+          {(() => {
+            /* "Day N" — days since first peptide log (or oldest scan as fallback) */
+            const firstPepDate = pepHist.length ? [...pepHist].sort((a,b)=>a.date.localeCompare(b.date))[0].date : null;
+            const firstScanDate = data.length ? data[0].date : null;
+            const startDate = firstPepDate && firstScanDate ? (firstPepDate < firstScanDate ? firstPepDate : firstScanDate) : (firstPepDate || firstScanDate);
+            const daysSinceStart = startDate ? Math.floor((new Date(todayKey()+"T12:00:00") - new Date(startDate+"T12:00:00")) / 86400000) + 1 : null;
+
+            /* Streak — already computed at top of file */
+            const streakDays = streak;
+
+            /* KG to goal — already computed at top of file as fatToLose */
+            const kgToGo = fatToLose;
+
+            const chips = [];
+            if (daysSinceStart && daysSinceStart > 1) chips.push({label:"DAY", val:daysSinceStart});
+            if (streakDays >= 3) chips.push({label:"STREAK", val:`${streakDays}d`});
+            if (kgToGo > 0 && data.length > 0) chips.push({label:"TO GOAL", val:`${kgToGo}kg`});
+
+            if (chips.length === 0) return null;
+            return(<div className="rise r4" style={{display:"flex",justifyContent:"center",alignItems:"center",gap:14,padding:"10px 0 4px",flexWrap:"wrap"}}>
+              {chips.map((c,i) => (<Fragment key={c.label}>
+                {i>0 && <span style={{color:"var(--t-5)",fontSize:11}}>·</span>}
+                <span className="mono" style={{fontSize:10.5,letterSpacing:".14em",color:"var(--t-3)",fontWeight:500}}>
+                  <span style={{color:"var(--t-4)"}}>{c.label}</span> <span style={{color:"var(--accent)",fontWeight:700,letterSpacing:".05em"}}>{c.val}</span>
+                </span>
+              </Fragment>))}
+            </div>);
+          })()}
 
           {/* Wayfinding hint at bottom — soft, not visually heavy */}
           <div className="mono" style={{textAlign:"center",padding:"20px 0 8px",color:"var(--t-5)",fontSize:9.5,letterSpacing:".18em",textTransform:"uppercase"}}>

@@ -323,4 +323,29 @@ export const makeDb = (uid, onErr = () => {}) => ({
       return {ok: false, synced: 0, error: String(e.message || e)};
     }
   },
+  /* ─── AI summary methods — Gemini-powered weekly report. */
+  async generateAISummary() {
+    try {
+      const r = await fetch(`/api/ai/weekly-summary`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({user_id: uid}),
+      });
+      const data = await r.json().catch(() => ({}));
+      return {ok: r.ok && data.ok, summary_md: data.summary_md || "", generated_at: data.generated_at, error: data.error || null};
+    } catch (e) {
+      return {ok: false, summary_md: "", error: String(e.message || e)};
+    }
+  },
+  async getLatestAISummary() {
+    /* Most recent cached weekly summary for this user. Returns null if none. */
+    try {
+      const r = await fetch(`${SB}/ai_summaries?user_id=eq.${uid}&kind=eq.weekly&error=is.null&select=*&order=generated_at.desc&limit=1`, {headers: hdr});
+      if (!r.ok) throw new Error(`ai_summaries: ${r.status}`);
+      const rows = await r.json();
+      return rows[0] || null;
+    } catch (e) {
+      return null;
+    }
+  },
 });

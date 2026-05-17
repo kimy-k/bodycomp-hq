@@ -532,6 +532,29 @@ function DashboardInner(){
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
+  /* ═══ AI WEEKLY SUMMARY ═══
+     Gemini-powered narrative report. Cached in ai_summaries; user can regenerate. */
+  const [aiSummary,setAiSummary]=useState(null);   /* {summary_md, generated_at, model} */
+  const [aiLoading,setAiLoading]=useState(false);  /* generating new */
+  const [aiCacheLoaded,setAiCacheLoaded]=useState(false);
+  const [aiError,setAiError]=useState(null);
+  useEffect(()=>{(async()=>{
+    const cached=await db.getLatestAISummary();
+    if(cached)setAiSummary({summary_md:cached.summary_md,generated_at:cached.generated_at,model:cached.model});
+    setAiCacheLoaded(true);
+  })();},[db]);
+  const generateAISummary=useCallback(async()=>{
+    if(aiLoading)return;
+    setAiLoading(true);setAiError(null);
+    const result=await db.generateAISummary();
+    setAiLoading(false);
+    if(result.ok){
+      setAiSummary({summary_md:result.summary_md,generated_at:result.generated_at,model:"gemini-2.5-flash"});
+    }else{
+      setAiError(result.error||"Generation failed");
+    }
+  },[db,aiLoading]);
+
   const navItems=[{id:"macros",icon:"macros",label:"Macros"},profile.showPeptides&&{id:"peptides",icon:"peps",label:"Peps"},{id:"overview",icon:"body",label:"Body"},{id:"whoop",icon:"whoop",label:"Whoop"},{id:"more",icon:"more",label:"More"}].filter(Boolean);
   const [showMore,setShowMore]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
@@ -710,6 +733,80 @@ function DashboardInner(){
 
       {/* ═══ OVERVIEW (BODY) ═══ */}
       {tab==="overview"&&(<>
+        {/* ═══ AI Weekly Summary ═══
+            Gemini-powered narrative report. Cached + on-demand regenerate. */}
+        {(()=>{
+          /* Tiny inline markdown→JSX renderer. Handles ##/###, **bold**, - lists, paragraphs.
+             Limited by design — full markdown libs would bloat the bundle for marginal benefit. */
+          const renderMd = md => {
+            if (!md) return null;
+            const lines = md.replace(/\r\n/g, "\n").split("\n");
+            const out = [];
+            let listBuf = [];
+            const flushList = () => {
+              if (listBuf.length) {
+                out.push(<ul key={`l${out.length}`} style={{margin:"4px 0 10px",paddingLeft:18,fontSize:12.5,color:"var(--t-2)",lineHeight:1.6}}>
+                  {listBuf.map((item,j) => <li key={j} style={{marginBottom:3}}>{renderInline(item)}</li>)}
+                </ul>);
+                listBuf = [];
+              }
+            };
+            const renderInline = txt => {
+              /* Process **bold** segments */
+              const parts = [];
+              let i = 0;
+              const re = /\*\*([^*]+)\*\*/g;
+              let m;
+              while ((m = re.exec(txt))) {
+                if (m.index > i) parts.push(txt.slice(i, m.index));
+                parts.push(<strong key={parts.length} style={{color:"var(--t-1)",fontWeight:600}}>{m[1]}</strong>);
+                i = m.index + m[0].length;
+              }
+              if (i < txt.length) parts.push(txt.slice(i));
+              return parts.length === 0 ? txt : parts;
+            };
+            lines.forEach((line, idx) => {
+              const trimmed = line.trim();
+              if (!trimmed) { flushList(); return; }
+              const h3 = trimmed.match(/^###\s+(.+)$/);
+              const h2 = trimmed.match(/^##\s+(.+)$/);
+              const li = trimmed.match(/^[-*]\s+(.+)$/);
+              if (h2 || h3) {
+                flushList();
+                out.push(<h3 key={`h${idx}`} className="serif" style={{fontSize:14,fontWeight:600,color:"var(--accent)",margin:"14px 0 6px",fontStyle:"italic",letterSpacing:".01em"}}>{renderInline(h2 ? h2[1] : h3[1])}</h3>);
+              } else if (li) {
+                listBuf.push(li[1]);
+              } else {
+                flushList();
+                out.push(<p key={`p${idx}`} style={{fontSize:12.5,color:"var(--t-2)",lineHeight:1.65,margin:"0 0 8px"}}>{renderInline(trimmed)}</p>);
+              }
+            });
+            flushList();
+            return out;
+          };
+          return(<div className="rise" style={{marginBottom:22,background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"16px 18px",borderLeft:`3px solid var(--accent)`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:aiSummary?12:8,gap:10,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontSize:9.5,color:"var(--accent)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:700,marginBottom:2}}>AI weekly summary</div>
+                <div className="serif" style={{fontSize:18,fontStyle:"italic",color:"var(--t-1)",letterSpacing:"-0.01em"}}>{aiSummary?"Your week in review":"Generate this week's summary"}</div>
+                {aiSummary?.generated_at&&<div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:3,letterSpacing:".02em"}}>generated {new Date(aiSummary.generated_at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})} · {aiSummary.model||"gemini"}</div>}
+              </div>
+              <button onClick={generateAISummary} disabled={aiLoading} className="touch" style={{padding:"8px 14px",borderRadius:"var(--r-sm)",border:"none",background:aiLoading?"var(--elev-2)":"var(--accent)",color:aiLoading?"var(--t-3)":"var(--bg)",fontSize:12,fontWeight:600,cursor:aiLoading?"wait":"pointer",whiteSpace:"nowrap"}}>
+                {aiLoading?"Thinking…":aiSummary?"Regenerate":"Generate"}
+              </button>
+            </div>
+            {aiError&&<div style={{padding:"10px 12px",background:"color-mix(in oklch, var(--c-danger) 10%, transparent)",border:"1px solid color-mix(in oklch, var(--c-danger) 30%, transparent)",borderRadius:"var(--r-sm)",fontSize:11,color:"var(--c-danger)",fontFamily:"Geist Mono",marginTop:8}}>
+              {aiError.includes("no_api_key")?"GEMINI_API_KEY not configured in Vercel.":aiError.slice(0,200)}
+            </div>}
+            {aiCacheLoaded&&!aiSummary&&!aiError&&!aiLoading&&<div style={{fontSize:12,color:"var(--t-3)",lineHeight:1.5,fontStyle:"italic"}}>
+              Click <strong style={{color:"var(--accent)"}}>Generate</strong> to get a narrative summary of your week — body comp, peptide compliance, recovery patterns, and 1-2 things to watch. Uses Gemini 2.5 Flash (free tier).
+            </div>}
+            {aiSummary&&<div style={{marginTop:6}}>
+              {renderMd(aiSummary.summary_md)}
+            </div>}
+          </div>);
+        })()}
+
         {insightsLoaded&&(<div className="rise" style={{marginBottom:22}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
             <h2 className="serif" style={{fontSize:24,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>This week</h2>

@@ -2,40 +2,45 @@
    Single CSS template literal injected via <style>{STYLE}</style> at app root.
    All design system values live here: OKLCH palette, type scale, motion tokens. */
 
-export const FONT_URL="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap";
+export const FONT_URL="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap";
 export const STYLE=`@import url('${FONT_URL}');
 :root{
-  --bg: oklch(0.16 0.014 285);
-  --bg-rad-1: oklch(0.22 0.06 295);
-  --bg-rad-2: oklch(0.20 0.05 30);
-  --elev-1: oklch(0.21 0.018 285);
-  --elev-2: oklch(0.25 0.020 285);
-  --elev-3: oklch(0.29 0.022 285);
-  --line: oklch(0.30 0.020 285 / 0.55);
-  --line-soft: oklch(0.30 0.020 285 / 0.30);
-  --t-1: oklch(0.97 0.008 80);
-  --t-2: oklch(0.72 0.018 80);
-  --t-3: oklch(0.55 0.022 285);
-  --t-4: oklch(0.42 0.020 285);
-  --t-5: oklch(0.34 0.018 285);
-  --accent: oklch(0.78 0.17 158);
-  --accent-soft: oklch(0.78 0.17 158 / 0.14);
-  --accent-line: oklch(0.78 0.17 158 / 0.30);
+  /* ═══ PHASE 1 — WHOOP-STYLE PALETTE ═══
+     Background: pure black + near-black elevations.
+     Accent: cyan #00E5FF. Telemetry secondary: red for strain/danger.
+     Old sage tokens still exist via --legacy-sage if any leftover code wants it. */
+  --bg: #000000;
+  --bg-rad-1: rgba(0, 229, 255, 0.05);
+  --bg-rad-2: rgba(0, 229, 255, 0.02);
+  --elev-1: #0a0a0a;
+  --elev-2: #141414;
+  --elev-3: #1c1c1c;
+  --line: rgba(255, 255, 255, 0.10);
+  --line-soft: rgba(255, 255, 255, 0.06);
+  --t-1: #ffffff;
+  --t-2: rgba(255, 255, 255, 0.72);
+  --t-3: rgba(255, 255, 255, 0.50);
+  --t-4: rgba(255, 255, 255, 0.32);
+  --t-5: rgba(255, 255, 255, 0.18);
+  --accent: #00E5FF;
+  --accent-soft: rgba(0, 229, 255, 0.10);
+  --accent-line: rgba(0, 229, 255, 0.30);
+  --legacy-sage: oklch(0.78 0.17 158);
   --c-protein: oklch(0.74 0.17 25);
   --c-fat: oklch(0.83 0.14 80);
   --c-carbs: oklch(0.77 0.14 215);
   --c-cal: oklch(0.78 0.16 295);
   --c-muscle: oklch(0.78 0.17 150);
-  --c-bodyfat: oklch(0.72 0.18 10);
+  --c-bodyfat: #00E5FF;
   --c-weight: oklch(0.76 0.16 295);
   --c-warn: oklch(0.80 0.16 75);
-  --c-danger: oklch(0.68 0.20 25);
-  --c-success: oklch(0.76 0.18 158);
+  --c-danger: #FF3D3D;
+  --c-success: #00E5FF;
   --c-streak: oklch(0.78 0.18 55);
-  --nav-bg: oklch(0.16 0.014 285 / 0.78);
-  --tip-bg: oklch(0.18 0.018 285 / 0.96);
-  --r-xs: 8px; --r-sm: 12px; --r-md: 16px; --r-lg: 20px; --r-xl: 28px;
-  --shadow-1: 0 1px 0 oklch(1 0 0 / 0.04) inset, 0 8px 24px oklch(0.05 0.01 285 / 0.40);
+  --nav-bg: rgba(10, 10, 10, 0.92);
+  --tip-bg: rgba(10, 10, 10, 0.96);
+  --r-xs: 6px; --r-sm: 10px; --r-md: 14px; --r-lg: 18px; --r-xl: 24px;
+  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 8px 24px rgba(0, 0, 0, 0.6);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
@@ -77,6 +82,8 @@ export const STYLE=`@import url('${FONT_URL}');
 @keyframes sheetUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
 @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
 @keyframes pulseRing{0%,100%{box-shadow:0 0 0 0 var(--accent-soft)}50%{box-shadow:0 0 0 6px transparent}}
+@keyframes ring-pulse{0%,100%{filter:drop-shadow(0 0 14px rgba(0,229,255,0.35))}50%{filter:drop-shadow(0 0 24px rgba(0,229,255,0.55))}}
+@keyframes status-dot-pulse{0%,100%{box-shadow:0 0 5px rgba(0,229,255,0.6)}50%{box-shadow:0 0 11px rgba(0,229,255,0.9)}}
 .rise{animation:riseIn 0.55s var(--ease-out) both}
 .r1{animation-delay:.04s}.r2{animation-delay:.10s}.r3{animation-delay:.16s}.r4{animation-delay:.22s}.r5{animation-delay:.28s}.r6{animation-delay:.34s}
 .fade{animation:fadeIn 0.5s var(--ease-out) both}
@@ -101,4 +108,50 @@ button{font-family:inherit;color:inherit}
 .ring-pulse{animation:pulseRing 2.5s var(--ease-out) infinite}
 .hbar{height:6px;border-radius:3px;background:var(--elev-2);overflow:hidden;position:relative}
 .hbar > i{display:block;height:100%;border-radius:3px;transition:width 0.8s var(--ease-out)}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   V2 SCOPE — Phase 1 "premium Whoop" aesthetic.
+   Applied via class="v2-scope" on the Overview tab wrapper.
+   Tokens here override the OKLCH sage tokens for descendant elements ONLY.
+   Other tabs (Macros, Peps, Whoop, More) continue to use the root tokens. */
+.v2-scope{
+  --v2-bg: #000000;
+  --v2-elev-0: #050505;
+  --v2-elev-1: #0a0a0a;
+  --v2-elev-2: #141414;
+  --v2-line: rgba(255,255,255,0.08);
+  --v2-line-mid: rgba(255,255,255,0.14);
+  --v2-t-1: #ffffff;
+  --v2-t-2: rgba(255,255,255,0.72);
+  --v2-t-3: rgba(255,255,255,0.50);
+  --v2-t-4: rgba(255,255,255,0.32);
+  --v2-cyan: #00E5FF;
+  --v2-cyan-soft: rgba(0,229,255,0.10);
+  --v2-cyan-line: rgba(0,229,255,0.30);
+  --v2-red: #FF3D3D;
+  --v2-amber: #FFB020;
+  --v2-r-sm: 8px;
+  --v2-r-md: 12px;
+  --v2-r-lg: 18px;
+  color: var(--v2-t-1);
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.005em;
+}
+.v2-scope .v2-mono{font-family:'JetBrains Mono',ui-monospace,monospace;letter-spacing:0}
+.v2-scope .v2-cap{text-transform:uppercase;letter-spacing:0.14em;font-weight:600}
+@keyframes v2-pulse-ring{
+  0%,100%{filter:drop-shadow(0 0 16px rgba(0,229,255,0.40))}
+  50%   {filter:drop-shadow(0 0 28px rgba(0,229,255,0.65))}
+}
+@keyframes v2-pulse-dot{
+  0%,100%{box-shadow:0 0 6px var(--v2-cyan)}
+  50%   {box-shadow:0 0 12px var(--v2-cyan)}
+}
+@keyframes v2-ambient-glow{
+  0%,100%{box-shadow:inset 0 0 0 1px var(--v2-line), 0 0 0 0 rgba(0,229,255,0.0)}
+  50%   {box-shadow:inset 0 0 0 1px var(--v2-cyan-line), 0 0 32px -12px rgba(0,229,255,0.45)}
+}
+.v2-pulse-ring{animation:v2-pulse-ring 3.2s ease-in-out infinite}
+.v2-pulse-dot{animation:v2-pulse-dot 2.4s ease-in-out infinite}
+.v2-ambient-glow{animation:v2-ambient-glow 5s ease-in-out infinite}
 `;

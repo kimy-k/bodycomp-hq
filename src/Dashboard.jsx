@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { Fragment, useState, useEffect, useMemo, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ReferenceLine, Legend, Cell } from "recharts";
 import {
   enrich,
@@ -25,7 +25,7 @@ import {todayKey, localDateKey, addDays, buildProj, calcMonthly, compressImage} 
 import {computeInsights} from "./insights.js";
 import {Icon} from "./Icon.jsx";
 import {FONT_URL, STYLE} from "./styles.js";
-import {Tip, Card, H2, TabBtn, Insight, cBox, Skel, SkelTab, Toast, Logo} from "./ui.jsx";
+import {Tip, Card, H2, TabBtn, Insight, cBox, Skel, SkelTab, Toast, Logo, RingProgress} from "./ui.jsx";
 import {ensureServiceWorker, subscribePush, unsubscribePush, sendTestPush} from "./push-client.js";
 import {Onboarding} from "./Onboarding.jsx";
 import {ErrorBoundary} from "./ErrorBoundary.jsx";
@@ -639,19 +639,19 @@ function DashboardInner(){
     <div className="bcq-app">
       <style>{STYLE}</style>
 
-      {/* ═══ HEADER ═══ */}
+      {/* ═══ HEADER ═══ Concept C styling — Inter sans, cyan accent */}
       <header className="rise" style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16,gap:12}}>
         <div style={{minWidth:0,flex:1}}>
-          <div className="mono" style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".12em",textTransform:"uppercase",marginBottom:4}}>{todayLabel}</div>
-          <h1 className="serif" style={{fontSize:30,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.025em",lineHeight:1,fontWeight:400}}>
-            Hello, <span style={{color:"var(--accent)"}}>{profile.name}</span>
+          <div className="mono" style={{fontSize:10,color:"var(--t-3)",letterSpacing:".18em",textTransform:"uppercase",marginBottom:6,fontWeight:600}}>{todayLabel}</div>
+          <h1 style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:26,color:"var(--t-1)",margin:0,letterSpacing:"-0.025em",lineHeight:1.1,fontWeight:500,fontStyle:"normal"}}>
+            Hello, <span style={{color:"var(--accent)",fontWeight:700}}>{profile.name}</span>
           </h1>
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          <button onClick={toggleTheme} className="touch" style={{width:38,height:38,borderRadius:12,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-3)",cursor:"pointer"}}>
+          <button onClick={toggleTheme} className="touch" style={{width:38,height:38,borderRadius:10,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-3)",cursor:"pointer"}}>
             <Icon n={dark?"moon":"sun"} s={16}/>
           </button>
-          <button onClick={()=>setShowSettings(true)} className="touch" style={{width:38,height:38,borderRadius:12,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-3)",cursor:"pointer"}}>
+          <button onClick={()=>setShowSettings(true)} className="touch" style={{width:38,height:38,borderRadius:10,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-3)",cursor:"pointer"}}>
             <Icon n="gear" s={16}/>
           </button>
         </div>
@@ -733,11 +733,101 @@ function DashboardInner(){
 
       {/* ═══ OVERVIEW (BODY) ═══ */}
       {tab==="overview"&&(<>
-        {/* ═══ AI Weekly Summary ═══
-            Gemini-powered narrative report. Cached + on-demand regenerate. */}
+        {/* ═══════════════════════════════════════════════════════════
+            PHASE 1 OVERVIEW — Concept C layout
+            Hero recovery ring → Body comp tiles → Trend chart → AI summary
+            → Peptide 7-day adherence → Cost rollup
+            ═══════════════════════════════════════════════════════════ */}
+
+        {/* ─── Hero recovery ring (only when Whoop data exists) ─── */}
         {(()=>{
-          /* Tiny inline markdown→JSX renderer. Handles ##/###, **bold**, - lists, paragraphs.
-             Limited by design — full markdown libs would bloat the bundle for marginal benefit. */
+          const latestWhoop = whoopHist?.[0];
+          if (!latestWhoop || latestWhoop.recovery == null) {
+            return (<div className="rise" style={{background:"linear-gradient(180deg, var(--elev-1), var(--bg))",border:"1px solid var(--line-soft)",borderRadius:"var(--r-lg)",padding:"22px 18px",marginBottom:12,textAlign:"center"}}>
+              <div className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--accent)",fontWeight:700,marginBottom:6}}>Today</div>
+              <div style={{fontSize:13,color:"var(--t-3)",marginBottom:14,lineHeight:1.5}}>No Whoop data yet · connect to see your recovery ring here</div>
+              <button onClick={()=>setTab("whoop")} className="touch mono" style={{padding:"8px 16px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:11,fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",cursor:"pointer"}}>Connect Whoop →</button>
+            </div>);
+          }
+          /* Format sleep hours from sleep_hours decimal → H:MM */
+          const sh = latestWhoop.sleep_hours;
+          const sleepStr = sh ? `${Math.floor(sh)}:${String(Math.round((sh%1)*60)).padStart(2,"0")}` : "—";
+          return (<div className="rise" style={{background:"linear-gradient(180deg, #0a0a0a 0%, #000 100%)",border:"1px solid var(--line)",borderRadius:"var(--r-lg)",padding:"22px 18px 18px",marginBottom:12,textAlign:"center",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 300px 180px at 50% 30%, rgba(0,229,255,0.08), transparent 60%)",pointerEvents:"none"}}/>
+            <div className="mono" style={{position:"relative",fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--accent)",fontWeight:700,marginBottom:14}}>Today</div>
+            <div style={{position:"relative"}}>
+              <RingProgress value={latestWhoop.recovery} size={200} stroke={14} color="var(--accent)" label="Recovery" unit="%" pulse={true}/>
+            </div>
+            <div style={{position:"relative",display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:0,marginTop:18,paddingTop:18,borderTop:"1px solid var(--line)"}}>
+              {[
+                {k:"HRV",   v: latestWhoop.hrv_ms ?? "—", u:"ms"},
+                {k:"RHR",   v: latestWhoop.rhr ?? "—",    u:"bpm"},
+                {k:"Sleep", v: sleepStr,                  u:"hrs"},
+                {k:"Strain",v: latestWhoop.strain ?? "—", u:"day"},
+              ].map((s,i)=>(<div key={s.k} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,position:"relative",borderLeft:i>0?"1px solid var(--line-soft)":"none"}}>
+                <span className="mono" style={{fontSize:9,letterSpacing:".18em",textTransform:"uppercase",color:"var(--t-4)",fontWeight:700}}>{s.k}</span>
+                <span style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:22,fontWeight:700,color:"var(--t-1)",letterSpacing:"-0.02em",lineHeight:1}}>{s.v}</span>
+                <span className="mono" style={{fontSize:9,color:"var(--t-4)",fontWeight:600,letterSpacing:".04em"}}>{s.u}</span>
+              </div>))}
+            </div>
+          </div>);
+        })()}
+
+        {/* ─── Body composition section ─── */}
+        <div className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700,margin:"22px 0 10px 4px"}}>Body composition</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+          {/* Primary body fat tile — spans 2 cols */}
+          <div className="rise" style={{gridColumn:"span 2",background:"linear-gradient(135deg, rgba(0,229,255,0.04), #0a0a0a 70%)",border:"1px solid var(--accent-line)",borderRadius:"var(--r-md)",padding:"12px 14px"}}>
+            <div className="mono" style={{fontSize:9.5,letterSpacing:".20em",textTransform:"uppercase",color:"var(--accent)",fontWeight:700,marginBottom:8}}>Body fat · goal {goalPct}%</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+              <span style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:54,fontWeight:800,color:"var(--accent)",letterSpacing:"-0.04em",lineHeight:1}}>{last.fatPct}</span>
+              <span className="mono" style={{fontSize:11,color:"var(--t-4)",fontWeight:600,letterSpacing:".04em"}}>%</span>
+              {deltaFat!==null&&<span className="mono" style={{fontSize:10,fontWeight:700,marginLeft:"auto",letterSpacing:".04em",color:deltaFat>0?"var(--c-danger)":"var(--accent)"}}>{deltaFat>0?"▲":"▼"} {Math.abs(deltaFat)}</span>}
+            </div>
+            <div className="mono" style={{fontSize:9.5,color:"var(--t-4)",marginTop:6,letterSpacing:".04em"}}>{fatToLose} kg fat to goal · best {best.fatPct}</div>
+          </div>
+          {/* Muscle tile */}
+          <div className="rise" style={{background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"12px 14px"}}>
+            <div className="mono" style={{fontSize:9.5,letterSpacing:".20em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700,marginBottom:8}}>Muscle</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+              <span style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:36,fontWeight:800,color:"var(--t-1)",letterSpacing:"-0.04em",lineHeight:1}}>{last.muscle}</span>
+              <span className="mono" style={{fontSize:11,color:"var(--t-4)",fontWeight:600,letterSpacing:".04em"}}>kg</span>
+            </div>
+            <div className="mono" style={{fontSize:9.5,color:"var(--t-4)",marginTop:6,letterSpacing:".04em"}}>Peak 19.0 {deltaMuscle!==null&&<span style={{color:deltaMuscle<0?"var(--c-danger)":"var(--accent)",fontWeight:700}}>{deltaMuscle>0?"▲":"▼"} {Math.abs(deltaMuscle)}</span>}</div>
+          </div>
+          {/* Weight tile */}
+          <div className="rise" style={{background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"12px 14px"}}>
+            <div className="mono" style={{fontSize:9.5,letterSpacing:".20em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700,marginBottom:8}}>Weight</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+              <span style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:36,fontWeight:800,color:"var(--t-1)",letterSpacing:"-0.04em",lineHeight:1}}>{last.weight}</span>
+              <span className="mono" style={{fontSize:11,color:"var(--t-4)",fontWeight:600,letterSpacing:".04em"}}>kg</span>
+            </div>
+            <div className="mono" style={{fontSize:9.5,color:"var(--t-4)",marginTop:6,letterSpacing:".04em"}}>{deltaWeight!==null?<span style={{color:deltaWeight<0?"var(--accent)":"var(--c-danger)",fontWeight:700}}>{deltaWeight>0?"▲":"▼"} {Math.abs(deltaWeight)}</span>:"Latest"} from last</div>
+          </div>
+        </div>
+
+        {/* ─── Body fat trend chart ─── */}
+        <div className="rise" style={{background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"14px 14px 6px",marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10,padding:"0 2px"}}>
+            <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Body fat · trend</span>
+            <span className="mono" style={{fontSize:10,color:"var(--accent)",letterSpacing:".10em",fontWeight:600}}>{goalPct}% target</span>
+          </div>
+          <ResponsiveContainer width="100%" height={180}>
+            <AreaChart data={data} margin={{top:6,right:10,left:4,bottom:0}}>
+              <defs><linearGradient id="bfAreaV2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--accent)" stopOpacity={0.34}/><stop offset="100%" stopColor="var(--accent)" stopOpacity={0.02}/></linearGradient></defs>
+              <CartesianGrid strokeDasharray="2 5" stroke="rgba(255,255,255,0.06)" vertical={false}/>
+              <XAxis dataKey="labelYr" tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono",letterSpacing:"0.04em"}} axisLine={false} tickLine={false} interval={1}/>
+              <YAxis domain={[Math.min(goalPct-2,28),48]} allowDecimals={false} tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={26}/>
+              <Tooltip content={<Tip/>}/>
+              <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.5}/>
+              <Area type="monotone" dataKey="fatPct" stroke="var(--accent)" strokeWidth={2.2} fill="url(#bfAreaV2)" name="Body Fat" dot={{r:2.5,fill:"var(--accent)",stroke:"#000",strokeWidth:0}} activeDot={{r:4.5,fill:"var(--accent)",stroke:"#000",strokeWidth:2}}/>
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* ─── AI Weekly Summary — Concept C clinical card ─── */}
+        {(()=>{
+          /* Tiny markdown→JSX renderer reused from prior shipping turn */
           const renderMd = md => {
             if (!md) return null;
             const lines = md.replace(/\r\n/g, "\n").split("\n");
@@ -745,14 +835,13 @@ function DashboardInner(){
             let listBuf = [];
             const flushList = () => {
               if (listBuf.length) {
-                out.push(<ul key={`l${out.length}`} style={{margin:"4px 0 10px",paddingLeft:18,fontSize:12.5,color:"var(--t-2)",lineHeight:1.6}}>
+                out.push(<ul key={`l${out.length}`} style={{margin:"4px 0 8px",paddingLeft:18,fontSize:12.5,color:"var(--t-2)",lineHeight:1.6}}>
                   {listBuf.map((item,j) => <li key={j} style={{marginBottom:3}}>{renderInline(item)}</li>)}
                 </ul>);
                 listBuf = [];
               }
             };
             const renderInline = txt => {
-              /* Process **bold** segments */
               const parts = [];
               let i = 0;
               const re = /\*\*([^*]+)\*\*/g;
@@ -773,96 +862,129 @@ function DashboardInner(){
               const li = trimmed.match(/^[-*]\s+(.+)$/);
               if (h2 || h3) {
                 flushList();
-                out.push(<h3 key={`h${idx}`} className="serif" style={{fontSize:14,fontWeight:600,color:"var(--accent)",margin:"14px 0 6px",fontStyle:"italic",letterSpacing:".01em"}}>{renderInline(h2 ? h2[1] : h3[1])}</h3>);
+                out.push(<h3 key={`h${idx}`} className="mono" style={{fontSize:9.5,fontWeight:700,color:"var(--accent)",margin:"14px 0 6px",letterSpacing:".22em",textTransform:"uppercase"}}>{renderInline(h2 ? h2[1] : h3[1])}</h3>);
               } else if (li) {
                 listBuf.push(li[1]);
               } else {
                 flushList();
-                out.push(<p key={`p${idx}`} style={{fontSize:12.5,color:"var(--t-2)",lineHeight:1.65,margin:"0 0 8px"}}>{renderInline(trimmed)}</p>);
+                out.push(<p key={`p${idx}`} style={{fontSize:12.5,color:"var(--t-2)",lineHeight:1.6,margin:"0 0 8px"}}>{renderInline(trimmed)}</p>);
               }
             });
             flushList();
             return out;
           };
-          return(<div className="rise" style={{marginBottom:22,background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"16px 18px",borderLeft:`3px solid var(--accent)`}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:aiSummary?12:8,gap:10,flexWrap:"wrap"}}>
-              <div>
-                <div style={{fontSize:9.5,color:"var(--accent)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:700,marginBottom:2}}>AI weekly summary</div>
-                <div className="serif" style={{fontSize:18,fontStyle:"italic",color:"var(--t-1)",letterSpacing:"-0.01em"}}>{aiSummary?"Your week in review":"Generate this week's summary"}</div>
-                {aiSummary?.generated_at&&<div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:3,letterSpacing:".02em"}}>generated {new Date(aiSummary.generated_at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})} · {aiSummary.model||"gemini"}</div>}
+          return(<div className="rise" style={{background:"linear-gradient(180deg, #0a0a0a, #050505)",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"16px 16px 18px",marginBottom:12,position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",left:0,top:0,bottom:0,width:2,background:"var(--accent)",boxShadow:"0 0 8px var(--accent)"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:14,paddingLeft:8}}>
+              <div className="mono" style={{fontSize:9.5,letterSpacing:".22em",textTransform:"uppercase",color:"var(--accent)",fontWeight:700,display:"flex",alignItems:"center",gap:7}}>
+                <span style={{width:5,height:5,borderRadius:"50%",background:"var(--accent)",boxShadow:"0 0 6px var(--accent)"}}/>
+                AI · weekly
               </div>
-              <button onClick={generateAISummary} disabled={aiLoading} className="touch" style={{padding:"8px 14px",borderRadius:"var(--r-sm)",border:"none",background:aiLoading?"var(--elev-2)":"var(--accent)",color:aiLoading?"var(--t-3)":"var(--bg)",fontSize:12,fontWeight:600,cursor:aiLoading?"wait":"pointer",whiteSpace:"nowrap"}}>
-                {aiLoading?"Thinking…":aiSummary?"Regenerate":"Generate"}
+              <button onClick={generateAISummary} disabled={aiLoading} className="touch mono" style={{padding:"6px 12px",borderRadius:"var(--r-sm)",background:"transparent",color:"var(--accent)",border:"1px solid var(--accent-line)",fontSize:10,fontWeight:700,cursor:aiLoading?"wait":"pointer",letterSpacing:".14em",textTransform:"uppercase",opacity:aiLoading?0.6:1}}>
+                {aiLoading?"…":aiSummary?"↻ Refresh":"Generate"}
               </button>
             </div>
-            {aiError&&<div style={{padding:"10px 12px",background:"color-mix(in oklch, var(--c-danger) 10%, transparent)",border:"1px solid color-mix(in oklch, var(--c-danger) 30%, transparent)",borderRadius:"var(--r-sm)",fontSize:11,color:"var(--c-danger)",fontFamily:"Geist Mono",marginTop:8}}>
-              {aiError.includes("no_api_key")?"GEMINI_API_KEY not configured in Vercel.":aiError.slice(0,200)}
-            </div>}
-            {aiCacheLoaded&&!aiSummary&&!aiError&&!aiLoading&&<div style={{fontSize:12,color:"var(--t-3)",lineHeight:1.5,fontStyle:"italic"}}>
-              Click <strong style={{color:"var(--accent)"}}>Generate</strong> to get a narrative summary of your week — body comp, peptide compliance, recovery patterns, and 1-2 things to watch. Uses Gemini 2.5 Flash (free tier).
-            </div>}
-            {aiSummary&&<div style={{marginTop:6}}>
-              {renderMd(aiSummary.summary_md)}
+            <div style={{paddingLeft:8}}>
+              {aiError&&<div className="mono" style={{padding:"10px 12px",background:"rgba(255,61,61,0.10)",border:"1px solid rgba(255,61,61,0.30)",borderRadius:"var(--r-sm)",fontSize:11,color:"var(--c-danger)",marginBottom:6}}>
+                {aiError.includes("no_api_key")?"GEMINI_API_KEY not configured in Vercel.":aiError.slice(0,200)}
+              </div>}
+              {aiCacheLoaded&&!aiSummary&&!aiError&&!aiLoading&&<div style={{fontSize:12.5,color:"var(--t-3)",lineHeight:1.55}}>
+                Click <strong style={{color:"var(--accent)",fontWeight:600}}>Generate</strong> to get a narrative summary of your week — body comp, peptide compliance, recovery patterns, and 1-2 things to watch.
+              </div>}
+              {aiSummary&&renderMd(aiSummary.summary_md)}
+              {aiSummary?.generated_at&&<div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:10,letterSpacing:".06em"}}>{new Date(aiSummary.generated_at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})} · {aiSummary.model||"gemini"}</div>}
+            </div>
+          </div>);
+        })()}
+
+        {/* ─── Peptide 7-day adherence preview ─── */}
+        {userPeps.length>0&&(()=>{
+          const today_d = new Date();
+          const days = Array.from({length:7},(_,i)=>{
+            const d = new Date(today_d);
+            d.setDate(d.getDate()-(6-i));
+            const dateKey = d.toISOString().slice(0,10);
+            const dow = d.toLocaleDateString("en-US",{weekday:"narrow"});
+            return {dateKey, dow};
+          });
+          let totalTakenLast7 = 0;
+          let totalDueLast7 = 0;
+          userPeps.forEach(p=>{
+            const sch = p.schedule || [];
+            days.forEach(({dateKey})=>{
+              const wd = new Date(dateKey+"T12:00:00").getDay();
+              if (sch.includes(wd)) {
+                totalDueLast7++;
+                const log = sharedDoseLog.find(l=>l.date===dateKey);
+                if (log?.checks?.[p.id]) totalTakenLast7++;
+              }
+            });
+          });
+          const adherencePct = totalDueLast7>0 ? Math.round(totalTakenLast7/totalDueLast7*100) : 0;
+          const todayKey_ = new Date().toISOString().slice(0,10);
+          return(<div className="rise" style={{background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:14,marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Adherence · 7d</span>
+              <span className="mono" style={{fontSize:11,color:"var(--accent)",fontWeight:700,letterSpacing:".10em"}}>{totalTakenLast7}/{totalDueLast7} · {adherencePct}%</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"auto repeat(7, 1fr)",gap:4,alignItems:"center"}}>
+              <span/>
+              {days.map(d=>(<span key={d.dateKey} className="mono" style={{fontSize:9,color:"var(--t-4)",textAlign:"center",letterSpacing:".06em",textTransform:"uppercase",fontWeight:700}}>{d.dow}</span>))}
+              {userPeps.slice(0,3).map(p=>(<Fragment key={p.id}>
+                <span style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:11,color:"var(--t-2)",paddingRight:8,fontWeight:600}}>{p.name}</span>
+                {days.map(({dateKey})=>{
+                  const wd = new Date(dateKey+"T12:00:00").getDay();
+                  const isDue = (p.schedule||[]).includes(wd);
+                  const log = sharedDoseLog.find(l=>l.date===dateKey);
+                  const taken = log?.checks?.[p.id];
+                  const isFuture = dateKey > todayKey_;
+                  let cls, content;
+                  if (taken) { cls = {background:"var(--accent)",color:"#000",boxShadow:"0 0 8px rgba(0,229,255,0.30)"}; content = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" style={{width:11,height:11}}><path d="M5 12l5 5L20 7"/></svg>; }
+                  else if (isDue && !isFuture) { cls = {background:"var(--c-danger)",color:"#000"}; content = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" style={{width:11,height:11}}><path d="M6 6l12 12M6 18L18 6"/></svg>; }
+                  else { cls = {background:"#141414",border:"1px solid var(--line-soft)"}; content = null; }
+                  return <div key={dateKey} style={{aspectRatio:1,borderRadius:3,display:"flex",alignItems:"center",justifyContent:"center",...cls}}>{content}</div>;
+                })}
+              </Fragment>))}
+            </div>
+            {userPeps.length>3&&<div className="mono" style={{fontSize:9.5,color:"var(--t-4)",marginTop:8,textAlign:"center",letterSpacing:".06em"}}>+{userPeps.length-3} more · see Peps tab</div>}
+          </div>);
+        })()}
+
+        {/* ─── Cost rollup — sum of monthly cost across cost-tracked active batches ─── */}
+        {(()=>{
+          const active = batches.filter(b=>!b.exhausted&&b.cost!=null);
+          if (active.length===0) return null;
+          const byCcy = {};
+          active.forEach(b=>{
+            const pep = PEPTIDES.find(p=>p.id===b.peptide_id);
+            const mo = pep ? costPerMonth(b, pep) : null;
+            const ccy = b.currency || "USD";
+            if (mo != null) byCcy[ccy] = (byCcy[ccy]||0) + mo;
+          });
+          const lines = Object.entries(byCcy).map(([ccy,total])=>fmtCost(Math.round(total),ccy));
+          if (lines.length===0) return null;
+          const fatLossKg = best.fatPct && last.fatPct ? Math.max(0, (best.fatPct - last.fatPct) / 100 * last.weight) : 0;
+          const monthlyTotal = Object.values(byCcy).reduce((s,v)=>s+v,0);
+          const perKg = fatLossKg > 0 ? Math.round(monthlyTotal / fatLossKg) : null;
+          const primaryCcy = Object.keys(byCcy)[0] || "USD";
+          return(<div style={{display:"flex",gap:8,marginBottom:12}}>
+            <div className="rise" style={{flex:1,background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"12px 14px"}}>
+              <div className="mono" style={{fontSize:9.5,letterSpacing:".20em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Stack · mo</div>
+              <div style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:22,fontWeight:800,letterSpacing:"-0.03em",color:"var(--t-1)",marginTop:4}}>{lines[0]}</div>
+              {lines.length>1&&<div className="mono" style={{fontSize:9.5,color:"var(--t-4)",marginTop:3,letterSpacing:".04em"}}>+ {lines.slice(1).join(" · ")}</div>}
+            </div>
+            {perKg!=null&&<div className="rise" style={{flex:1,background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"12px 14px"}}>
+              <div className="mono" style={{fontSize:9.5,letterSpacing:".20em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Per fat kg lost</div>
+              <div style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:22,fontWeight:800,letterSpacing:"-0.03em",color:"var(--t-1)",marginTop:4}}>{fmtCost(perKg, primaryCcy)}</div>
             </div>}
           </div>);
         })()}
 
-        {insightsLoaded&&(<div className="rise" style={{marginBottom:22}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
-            <h2 className="serif" style={{fontSize:24,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>This week</h2>
-            {insights.length>0&&<span className="mono" style={{fontSize:10,color:"var(--t-4)",letterSpacing:".08em",textTransform:"uppercase"}}>{insights.length} pattern{insights.length!==1?"s":""}</span>}
-          </div>
-          {insights.length===0?(<div style={{padding:"14px 16px",background:"var(--elev-1)",borderRadius:"var(--r-md)",color:"var(--t-3)",fontSize:12.5,fontStyle:"italic",borderLeft:"3px solid var(--t-5)"}}>Log a few more days to surface patterns. Need ≥3 macro days, ≥3 peptide days, or ≥3 Whoop entries.</div>):(insights.slice(0,6).map((ins,i)=>(<div key={ins.id} className="rise" style={{animationDelay:`${i*0.05}s`,background:"var(--elev-1)",borderLeft:`3px solid ${ins.color}`,borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:7,display:"flex",alignItems:"flex-start",gap:11}}>
-            <div style={{marginTop:1,flexShrink:0}}><Icon n={ins.icon} s={15} c={ins.color} sw={1.7}/></div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:10,color:ins.color,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase",marginBottom:3}}>{ins.title}</div>
-              <div style={{fontSize:12.5,color:"var(--t-2)",lineHeight:1.55}}>{ins.body}</div>
-            </div>
-          </div>)))}
-        </div>)}
-
-        <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:8}}>
-          <Card title="Body Fat" value={last.fatPct} unit="%" sub={`Best ${best.fatPct}%${deltaFat!==null?` · ${deltaFat>0?"▲":"▼"}${Math.abs(deltaFat)} from last`:""}`} color="var(--c-bodyfat)" icon="fat" delay={0.04}/>
-          <Card title="Muscle" value={last.muscle} unit="kg" sub={`Peak 19.0${deltaMuscle!==null?` · ${deltaMuscle>0?"▲":"▼"}${Math.abs(deltaMuscle)}kg`:""}`} color="var(--c-muscle)" icon="muscle" delay={0.10}/>
-          <Card title="Weight" value={last.weight} unit="kg" sub={deltaWeight!==null?`${deltaWeight>0?"▲":"▼"}${Math.abs(deltaWeight)}kg from last`:"Latest"} color="var(--c-weight)" icon="scale" delay={0.16}/>
-          <Card title="To Lose" value={fatToLose} unit="kg" sub={`fat mass to reach ${goalPct}%`} color="var(--c-fat)" icon="target" delay={0.22}/>
-        </div>
-
-        <H2 sub={`${goalPct}% goal line`} delay={0.28}>Body fat</H2>
-        <div className="rise r5" style={cBox}>
-          <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={data} margin={{top:10,right:14,left:4,bottom:0}}>
-              <defs><linearGradient id="bfArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--c-bodyfat)" stopOpacity={0.32}/><stop offset="100%" stopColor="var(--c-bodyfat)" stopOpacity={0.02}/></linearGradient></defs>
-              <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
-              <XAxis dataKey="labelYr" tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} interval={1}/>
-              <YAxis domain={[Math.min(goalPct-2,28),48]} allowDecimals={false} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={34}/>
-              <Tooltip content={<Tip/>}/>
-              <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.6} label={{value:`${goalPct}% goal`,position:"insideBottomRight",fill:"var(--accent)",fontSize:10,fontFamily:"Geist Mono"}}/>
-              <Area type="monotone" dataKey="fatPct" stroke="var(--c-bodyfat)" strokeWidth={2.2} fill="url(#bfArea)" name="Body Fat" dot={{r:3,fill:"var(--c-bodyfat)",stroke:"var(--bg)",strokeWidth:1.5}} activeDot={{r:5,fill:"var(--c-bodyfat)",stroke:"var(--bg)",strokeWidth:2}}/>
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        <H2 delay={0.32}>Weight & muscle</H2>
-        <div className="rise r6" style={cBox}>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={data} margin={{top:10,right:14,left:4,bottom:0}}>
-              <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
-              <XAxis dataKey="labelYr" tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} interval={1}/>
-              <YAxis yAxisId="w" domain={[53,59]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28}/>
-              <YAxis yAxisId="m" orientation="right" domain={[15,20]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28}/>
-              <Tooltip content={<Tip/>}/>
-              <Legend iconType="circle" iconSize={7} wrapperStyle={{fontSize:11,color:"var(--t-3)",fontFamily:"Geist Mono",paddingTop:4}}/>
-              <Line yAxisId="w" type="monotone" dataKey="weight" stroke="var(--c-weight)" strokeWidth={2} name="Weight" dot={{r:2.5}} activeDot={{r:4.5}}/>
-              <Line yAxisId="m" type="monotone" dataKey="muscle" stroke="var(--c-muscle)" strokeWidth={2} name="Muscle" dot={{r:2.5}} activeDot={{r:4.5}}/>
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div style={{marginTop:22}}>
-          <button onClick={()=>setShowPlan(!showPlan)} className="touch" style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"transparent",cursor:"pointer",color:"var(--t-2)",fontSize:13,fontWeight:500}}>
-            <span style={{display:"flex",alignItems:"center",gap:8}}><Icon n="target" s={15} c="var(--t-3)"/> Plan & recommendations</span>
-            <Icon n={showPlan?"chevUp":"chevDown"} s={16} c="var(--t-3)"/>
+        {/* ─── Plan & recommendations (kept as collapsible at bottom) ─── */}
+        <div style={{marginTop:14}}>
+          <button onClick={()=>setShowPlan(!showPlan)} className="touch mono" style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"transparent",cursor:"pointer",color:"var(--t-3)",fontSize:10,fontWeight:700,letterSpacing:".18em",textTransform:"uppercase"}}>
+            <span style={{display:"flex",alignItems:"center",gap:8}}><Icon n="target" s={14} c="var(--t-3)"/> Plan &amp; recommendations</span>
+            <Icon n={showPlan?"chevUp":"chevDown"} s={14} c="var(--t-3)"/>
           </button>
           {showPlan&&(<div style={{marginTop:10}}>
             <Insight icon="macros" title="Nutrition" color="var(--c-fat)" text={`${TARGETS.cal} kcal target · ${TARGETS.protein}g protein per day.`}/>

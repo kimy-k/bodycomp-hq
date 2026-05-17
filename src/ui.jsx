@@ -83,3 +83,38 @@ export const Toast=({toast})=>!toast?null:(<div className="sheet" style={{positi
   <Icon n={toast.type==="error"?"warn":"check"} s={16} c={toast.type==="error"?"var(--c-danger)":"var(--c-success)"} sw={2}/>
   <span>{toast.msg}</span>
 </div>);
+
+/* ═══ RingProgress ═══
+   SVG-based animated progress ring. Phase 1 primitive used by Whoop recovery hero
+   on Overview, and Phase 2 will reuse on Whoop tab.
+   Props:
+     value   number 0-100  — fill percentage
+     size    px            — outer ring diameter (default 180)
+     stroke  px            — ring thickness (default 13)
+     color   css color     — ring color (default accent cyan)
+     label   string        — small cap above number
+     unit    string        — small unit below number ("%" usually)
+     pulse   bool          — apply ambient drop-shadow pulse animation */
+export const RingProgress = ({value=0, size=180, stroke=13, color="var(--accent)", label, unit="%", pulse=true, children}) => {
+  const v = Math.max(0, Math.min(100, value || 0));
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const dashOffset = c * (1 - v / 100);
+  return (
+    <div style={{position:"relative",width:size,height:size,margin:"0 auto",animation:pulse?"ring-pulse 3.2s ease-in-out infinite":"none"}}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{display:"block"}}>
+        <circle cx={size/2} cy={size/2} r={r} stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} fill="none"/>
+        <circle cx={size/2} cy={size/2} r={r} stroke={color} strokeWidth={stroke} fill="none" strokeLinecap="round"
+          strokeDasharray={c} strokeDashoffset={dashOffset}
+          style={{transform:"rotate(-90deg)",transformOrigin:"center",transition:"stroke-dashoffset 800ms var(--ease-out)"}}/>
+      </svg>
+      <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:0}}>
+        {children ? children : (<>
+          {label && <span className="mono" style={{fontSize:9.5,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700,marginBottom:2}}>{label}</span>}
+          <span style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:Math.round(size*0.36),fontWeight:800,letterSpacing:"-0.05em",color:"var(--t-1)",lineHeight:0.9}}>{Math.round(v)}</span>
+          {unit && <span className="mono" style={{fontSize:11,letterSpacing:".12em",color:color,fontWeight:700,marginTop:4}}>{unit}</span>}
+        </>)}
+      </div>
+    </div>
+  );
+};

@@ -469,7 +469,7 @@ function DashboardInner(){
 
   const [whoopData,setWhoopData]=useState(null);const [whoopLoading,setWhoopLoading]=useState(true);const [whoopHist,setWhoopHist]=useState([]);
   const [showPlan,setShowPlan]=useState(false);
-  useEffect(()=>{setWhoopData(null);setWhoopLoading(true);(async()=>{const row=await db.get("daily_whoop",day);if(row)setWhoopData({recovery:row.recovery,sleep:row.sleep,strain:row.strain,hrv_ms:row.hrv_ms,rhr:row.rhr,sleep_hours:row.sleep_hours,sleep_efficiency:row.sleep_efficiency,source:row.source});const hist=await db.list("daily_whoop",14);setWhoopHist(hist.map(r=>({date:r.date,recovery:r.recovery,sleep:r.sleep,strain:r.strain,hrv_ms:r.hrv_ms,rhr:r.rhr})));setWhoopLoading(false);})();},[day,db]);
+  useEffect(()=>{setWhoopData(null);setWhoopLoading(true);(async()=>{const row=await db.get("daily_whoop",day);if(row)setWhoopData({recovery:row.recovery,sleep:row.sleep,strain:row.strain,hrv_ms:row.hrv_ms,rhr:row.rhr,sleep_hours:row.sleep_hours,sleep_efficiency:row.sleep_efficiency,source:row.source});const hist=await db.list("daily_whoop",14);setWhoopHist(hist.map(r=>({date:r.date,recovery:r.recovery,sleep:r.sleep,strain:r.strain,hrv_ms:r.hrv_ms,rhr:r.rhr,sleep_hours:r.sleep_hours,sleep_efficiency:r.sleep_efficiency})));setWhoopLoading(false);})();},[day,db]);
   const saveWhoop=async(d)=>{setWhoopData(d);db.upsert("daily_whoop",{date:day,source:"manual",...d});};
   const [whoopInput,setWhoopInput]=useState({recovery:"",sleep:"",strain:""});
 
@@ -506,7 +506,7 @@ function DashboardInner(){
       setWhoopSyncMsg(`✓ synced ${result.synced} day${result.synced!==1?"s":""}`);
       await loadWhoopConn();
       const row=await db.get("daily_whoop",day);if(row)setWhoopData({recovery:row.recovery,sleep:row.sleep,strain:row.strain,hrv_ms:row.hrv_ms,rhr:row.rhr,sleep_hours:row.sleep_hours,sleep_efficiency:row.sleep_efficiency,source:row.source});
-      const hist=await db.list("daily_whoop",14);setWhoopHist(hist.map(r=>({date:r.date,recovery:r.recovery,sleep:r.sleep,strain:r.strain,hrv_ms:r.hrv_ms,rhr:r.rhr})));
+      const hist=await db.list("daily_whoop",14);setWhoopHist(hist.map(r=>({date:r.date,recovery:r.recovery,sleep:r.sleep,strain:r.strain,hrv_ms:r.hrv_ms,rhr:r.rhr,sleep_hours:r.sleep_hours,sleep_efficiency:r.sleep_efficiency})));
     } else {
       setWhoopSyncMsg(`✗ ${result.error||"sync failed"}`);
     }
@@ -763,7 +763,7 @@ function DashboardInner(){
                 {k:"HRV",   v: latestWhoop.hrv_ms ?? "—", u:"ms"},
                 {k:"RHR",   v: latestWhoop.rhr ?? "—",    u:"bpm"},
                 {k:"Sleep", v: sleepStr,                  u:"hrs"},
-                {k:"Strain",v: latestWhoop.strain ?? "—", u:"day"},
+                {k:"Strain",v: latestWhoop.strain != null ? Number(latestWhoop.strain).toFixed(1) : "—", u:""},
               ].map((s,i)=>(<div key={s.k} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,position:"relative",borderLeft:i>0?"1px solid var(--line-soft)":"none"}}>
                 <span className="mono" style={{fontSize:9,letterSpacing:".18em",textTransform:"uppercase",color:"var(--t-4)",fontWeight:700}}>{s.k}</span>
                 <span style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:22,fontWeight:700,color:"var(--t-1)",letterSpacing:"-0.02em",lineHeight:1}}>{s.v}</span>
@@ -1850,8 +1850,8 @@ function DashboardInner(){
               <YAxis domain={[0,100]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28}/>
               <Tooltip content={<Tip/>}/>
               <Legend iconType="circle" iconSize={7} wrapperStyle={{fontSize:11,color:"var(--t-3)",fontFamily:"Geist Mono",paddingTop:4}}/>
-              <Line type="monotone" dataKey="recovery" stroke="var(--c-success)" strokeWidth={2} name="Recovery" dot={{r:2.5}} activeDot={{r:4.5}}/>
-              <Line type="monotone" dataKey="sleep" stroke="var(--c-carbs)" strokeWidth={2} name="Sleep" dot={{r:2.5}} activeDot={{r:4.5}}/>
+              <Line type="monotone" dataKey="recovery" stroke="var(--accent)" strokeWidth={2.2} name="Recovery" dot={{r:2.5,fill:"var(--accent)"}} activeDot={{r:5,fill:"var(--accent)",stroke:"#000",strokeWidth:2}}/>
+              <Line type="monotone" dataKey="sleep" stroke="var(--c-weight)" strokeWidth={2.2} strokeDasharray="5 3" name="Sleep" dot={{r:2.5,fill:"var(--c-weight)"}} activeDot={{r:5,fill:"var(--c-weight)",stroke:"#000",strokeWidth:2}}/>
             </LineChart>
           </ResponsiveContainer></div>
 

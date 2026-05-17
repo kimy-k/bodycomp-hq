@@ -678,9 +678,9 @@ function DashboardInner(){
               <defs><linearGradient id="bfArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--c-bodyfat)" stopOpacity={0.32}/><stop offset="100%" stopColor="var(--c-bodyfat)" stopOpacity={0.02}/></linearGradient></defs>
               <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
               <XAxis dataKey="labelYr" tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} interval={1}/>
-              <YAxis domain={[Math.min(goalPct-2,28),48]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28}/>
+              <YAxis domain={[Math.min(goalPct-2,28),48]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={34}/>
               <Tooltip content={<Tip/>}/>
-              <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.6} label={{value:`${goalPct}%`,position:"right",fill:"var(--accent)",fontSize:10,fontFamily:"Geist Mono"}}/>
+              <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.6} label={{value:`${goalPct}% goal`,position:"insideBottomRight",fill:"var(--accent)",fontSize:10,fontFamily:"Geist Mono"}}/>
               <Area type="monotone" dataKey="fatPct" stroke="var(--c-bodyfat)" strokeWidth={2.2} fill="url(#bfArea)" name="Body Fat" dot={{r:3,fill:"var(--c-bodyfat)",stroke:"var(--bg)",strokeWidth:1.5}} activeDot={{r:5,fill:"var(--c-bodyfat)",stroke:"var(--bg)",strokeWidth:2}}/>
             </AreaChart>
           </ResponsiveContainer>
@@ -1351,10 +1351,10 @@ function DashboardInner(){
           <LineChart data={projections} margin={{top:10,right:14,left:-6,bottom:0}}>
             <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
             <XAxis dataKey="label" tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false}/>
-            <YAxis domain={[Math.min(goalPct-2,26),40]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28}/>
+            <YAxis domain={[Math.min(goalPct-2,26),40]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={34}/>
             <Tooltip content={<Tip/>}/>
             <Legend iconType="circle" iconSize={7} wrapperStyle={{fontSize:11,color:"var(--t-3)",fontFamily:"Geist Mono",paddingTop:4}}/>
-            <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.6} label={{value:`${goalPct}% goal`,position:"right",fill:"var(--accent)",fontSize:10,fontFamily:"Geist Mono"}}/>
+            <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.6} label={{value:`${goalPct}% goal`,position:"insideBottomRight",fill:"var(--accent)",fontSize:10,fontFamily:"Geist Mono"}}/>
             {scenarios.map(s=>(<Line key={s.name} type="monotone" dataKey={s.name} stroke={s.color} strokeWidth={2} name={s.name} dot={false} strokeDasharray={s.name==="On Track"?"0":"5 4"}/>))}
           </LineChart>
         </ResponsiveContainer></div>
@@ -1367,9 +1367,9 @@ function DashboardInner(){
           <BarChart data={monthly} margin={{top:10,right:14,left:-6,bottom:0}}>
             <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
             <XAxis dataKey="label" tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false}/>
-            <YAxis domain={[Math.min(goalPct-2,30),48]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28}/>
+            <YAxis domain={[Math.min(goalPct-2,30),48]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={34}/>
             <Tooltip content={<Tip/>}/>
-            <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.6} label={{value:`${goalPct}%`,position:"right",fill:"var(--accent)",fontSize:10,fontFamily:"Geist Mono"}}/>
+            <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.6} label={{value:`${goalPct}% goal`,position:"insideBottomRight",fill:"var(--accent)",fontSize:10,fontFamily:"Geist Mono"}}/>
             <Bar dataKey="avgPct" name="Avg Fat %" radius={[6,6,0,0]}>
               {monthly.map((m,i)=>(<Cell key={i} fill={m.avgPct<=38?"var(--c-success)":m.avgPct<=40?"var(--c-cal)":"var(--c-bodyfat)"} fillOpacity={0.72}/>))}
             </Bar>

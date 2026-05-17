@@ -17,7 +17,7 @@
 const SB_URL = "https://xstinpgwhpjwoohpkjgn.supabase.co/rest/v1";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzdGlucGd3aHBqd29vaHBramduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MTI4MzksImV4cCI6MjA5NDQ4ODgzOX0.XVrnWxg4MXOB9iBxkq9rP9T8XBsBjS8Ff85jC4MhLPc";
 
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-flash-latest";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 const sbHdr = {apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json"};
@@ -161,15 +161,24 @@ ${JSON.stringify(data, null, 2)}`;
 }
 
 async function callGemini(prompt, apiKey) {
-  const r = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+  /* Auth via X-goog-api-key header (Google's canonical pattern — keeps key out of URL/logs). */
+  const r = await fetch(GEMINI_URL, {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    headers: {
+      "Content-Type": "application/json",
+      "X-goog-api-key": apiKey,
+    },
     body: JSON.stringify({
       contents: [{parts: [{text: prompt}]}],
       generationConfig: {
         temperature: 0.5,
         topP: 0.9,
-        maxOutputTokens: 1200,
+        /* High cap: Gemini 2.5+ uses some output tokens internally for "thinking",
+           so a low cap (e.g. 1200) gets eaten before any prose is emitted. 4000 gives margin. */
+        maxOutputTokens: 4000,
+        /* Disable thinking mode entirely. For a templated narrative summary we don't need
+           chain-of-thought reasoning; saves tokens, faster, and prevents silent truncation. */
+        thinkingConfig: {thinkingBudget: 0},
       },
       /* Disable safety filters at lowest threshold — health data triggers some false positives */
       safetySettings: [
@@ -185,9 +194,15 @@ async function callGemini(prompt, apiKey) {
     throw new Error(`Gemini ${r.status}: ${body.slice(0, 300)}`);
   }
   const json = await r.json();
-  const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+  const candidate = json.candidates?.[0];
+  const text = candidate?.content?.parts?.map(p => p.text || "").join("") || "";
+  const finishReason = candidate?.finishReason || "unknown";
   if (!text) {
-    throw new Error(`Gemini returned no text. Finish reason: ${json.candidates?.[0]?.finishReason || "unknown"}`);
+    throw new Error(`Gemini returned no text. Finish reason: ${finishReason}`);
+  }
+  /* Surface truncation clearly — STOP is normal, MAX_TOKENS/SAFETY means content was cut off. */
+  if (finishReason && finishReason !== "STOP") {
+    console.warn(`[ai/weekly] non-STOP finish: ${finishReason}, text=${text.length}ch`);
   }
   return text;
 }

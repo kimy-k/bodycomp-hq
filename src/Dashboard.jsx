@@ -1893,7 +1893,7 @@ function DashboardInner(){
             {[
               {k:"recovery",l:"Recovery",v:whoopData.recovery,u:"%",color:whoopData.recovery>=67?"var(--c-success)":whoopData.recovery>=34?"var(--c-warn)":"var(--c-danger)",icon:"heart"},
               {k:"sleep",l:"Sleep",v:whoopData.sleep,u:"%",color:whoopData.sleep>=85?"var(--c-success)":whoopData.sleep>=70?"var(--c-warn)":"var(--c-danger)",icon:"sleep"},
-              {k:"strain",l:"Strain",v:whoopData.strain,u:"",color:whoopData.strain>=14?"var(--c-danger)":whoopData.strain>=8?"var(--c-warn)":"var(--c-carbs)",icon:"strain"},
+              {k:"strain",l:"Strain",v:whoopData.strain!=null?Number(whoopData.strain).toFixed(1):"—",u:"",color:whoopData.strain>=14?"var(--c-danger)":whoopData.strain>=8?"var(--c-warn)":"var(--c-carbs)",icon:"strain"},
             ].map((m,i)=>(<div key={m.k} className="rise" style={{animationDelay:`${i*0.06}s`,flex:1,background:"var(--elev-1)",borderLeft:`3px solid ${m.color}`,borderRadius:"var(--r-sm)",padding:"14px 8px",textAlign:"center"}}>
               <Icon n={m.icon} s={18} c={m.color} sw={1.7}/>
               <div className="serif tabular" style={{fontSize:32,color:m.color,marginTop:6,fontStyle:"italic",lineHeight:1}}>{m.v!=null?m.v:"—"}<span style={{fontSize:13,color:"var(--t-3)"}}>{m.v!=null?m.u:""}</span></div>
@@ -1955,7 +1955,7 @@ function DashboardInner(){
               <div className="mono" style={{display:"flex",gap:12,fontSize:12.5,letterSpacing:".01em"}}>
                 <span style={{color:rc,fontWeight:600}}>{d.recovery}%</span>
                 <span style={{color:"var(--c-carbs)"}}>{d.sleep}%</span>
-                <span style={{color:"var(--c-warn)"}}>{d.strain}</span>
+                <span style={{color:"var(--c-warn)"}}>{d.strain!=null?Number(d.strain).toFixed(1):"—"}</span>
               </div>
             </div>
           );})}

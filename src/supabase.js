@@ -241,4 +241,48 @@ export const makeDb = (uid, onErr = () => {}) => ({
       return null;
     }
   },
+  /* ─── Wellness methods (P17) — subjective daily log keyed by (user_id, date). */
+  async getWellness(date) {
+    try {
+      const r = await fetch(`${SB}/daily_wellness?user_id=eq.${uid}&date=eq.${date}&select=*`, {headers: hdr});
+      if (!r.ok) throw new Error(`daily_wellness: ${r.status}`);
+      const data = await r.json();
+      return Array.isArray(data) && data.length ? data[0] : null;
+    } catch (e) {
+      onErr(`Couldn't load wellness`);
+      return null;
+    }
+  },
+  async listWellness(days = 14) {
+    /* Most-recent first, used for sparklines + insights correlation later. */
+    try {
+      const r = await fetch(`${SB}/daily_wellness?user_id=eq.${uid}&select=*&order=date.desc&limit=${days}`, {headers: hdr});
+      if (!r.ok) throw new Error(`daily_wellness: ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      onErr(`Couldn't load wellness history`);
+      return [];
+    }
+  },
+  async upsertWellness(date, patch) {
+    /* Patch may include any of {mood, energy, sleep_quality, notes}. Other fields preserved. */
+    if (!date) return null;
+    try {
+      const r = await fetch(`${SB}/daily_wellness?on_conflict=user_id,date`, {
+        method: "POST",
+        headers: {...hdr, Prefer: "resolution=merge-duplicates,return=representation"},
+        body: JSON.stringify({user_id: uid, date, ...patch}),
+      });
+      if (!r.ok) {
+        const body = await r.text().catch(() => "");
+        console.warn(`[BCQ] upsertWellness: HTTP ${r.status}`, body);
+        throw new Error(`daily_wellness: ${r.status}`);
+      }
+      const data = await r.json();
+      return Array.isArray(data) ? data[0] : data;
+    } catch (e) {
+      onErr(`Couldn't save wellness`);
+      return null;
+    }
+  },
 });

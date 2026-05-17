@@ -160,6 +160,31 @@ function DashboardInner(){
     setPepHist(rows.map(r=>({date:r.date,checks:r.checks||{},sideEffects:r.side_effects||[]})));
   })();},[tab]);
 
+  /* ═══ P17: WELLNESS DAILY LOG ═══
+     Subjective markers — complements Whoop's objective data. One row per (user,date)
+     in daily_wellness table. mood/energy/sleep_quality are 1-5; notes is free text.
+     Tap a button to save instantly (no submit). */
+  const [wellness,setWellness]=useState({mood:null,energy:null,sleep_quality:null,notes:""});
+  const [wellnessLoading,setWellnessLoading]=useState(true);
+  const [wellnessHist,setWellnessHist]=useState([]);
+  useEffect(()=>{setWellnessLoading(true);(async()=>{
+    const row=await db.getWellness(day);
+    setWellness({mood:row?.mood??null,energy:row?.energy??null,sleep_quality:row?.sleep_quality??null,notes:row?.notes||""});
+    const hist=await db.listWellness(14);
+    setWellnessHist(hist||[]);
+    setWellnessLoading(false);
+  })();},[day,db]);
+  const saveWellness=useCallback(async(patch)=>{
+    const merged={...wellness,...patch};
+    setWellness(merged);  /* optimistic */
+    const saved=await db.upsertWellness(day,patch);
+    /* Refresh hist so the sparkline updates */
+    if(saved){
+      const hist=await db.listWellness(14);
+      setWellnessHist(hist||[]);
+    }
+  },[wellness,db,day]);
+
   const todayDow=new Date().getDay();
 
   /* ═══ PEPTIDE STACK (P10) — per-user editable peptide list, sourced from DB ═══
@@ -1009,6 +1034,72 @@ function DashboardInner(){
                 </div>
                 <div style={{fontSize:10,color:"var(--t-4)",textAlign:"center",marginTop:6,fontStyle:"italic"}}>Tap any cell to log a missed dose or edit history</div>
               </div>);
+            })()}
+          </div>
+
+          {/* ═══ P17: Wellness daily log ═══ */}
+          <div style={{marginTop:22}}>
+            <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:10}}>
+              <div style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600}}>How you feel today</div>
+              {(wellness.mood||wellness.energy||wellness.sleep_quality)&&<span className="mono" style={{fontSize:10,color:"var(--t-4)",letterSpacing:".06em"}}>tap to update</span>}
+            </div>
+            {(()=>{
+              /* Render three rating rows. Each row: label + 5 pill buttons.
+                 The color gradient runs from danger (1) → warn (3) → success (5). */
+              const ROWS = [
+                {key:"mood",          label:"Mood",   hint:"😞 → 😄"},
+                {key:"energy",        label:"Energy", hint:"low → high"},
+                {key:"sleep_quality", label:"Sleep",  hint:"poor → great"},
+              ];
+              /* Colors for ratings 1..5 — keeps the visual feedback consistent */
+              const tint=(v,active)=>{
+                if(!active)return{bg:"var(--elev-1)",fg:"var(--t-3)",bd:"var(--line-soft)"};
+                if(v<=2)return{bg:"color-mix(in oklch, var(--c-danger) 16%, transparent)",fg:"var(--c-danger)",bd:"var(--c-danger)"};
+                if(v===3)return{bg:"color-mix(in oklch, var(--c-warn) 14%, transparent)",fg:"var(--c-warn)",bd:"var(--c-warn)"};
+                return{bg:"var(--accent-soft)",fg:"var(--accent)",bd:"var(--accent-line)"};
+              };
+              return(<>
+                {ROWS.map(row=>(
+                  <div key={row.key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                    <div style={{flex:"0 0 64px",fontSize:12,color:"var(--t-2)",fontWeight:500}}>{row.label}</div>
+                    <div style={{display:"flex",gap:5,flex:1}}>
+                      {[1,2,3,4,5].map(v=>{
+                        const active=wellness[row.key]===v;
+                        const t=tint(v,active);
+                        return(<button key={v} onClick={()=>saveWellness({[row.key]:active?null:v})} className="touch" style={{flex:1,minWidth:0,padding:"8px 0",borderRadius:"var(--r-sm)",border:`1px solid ${t.bd}`,background:t.bg,color:t.fg,fontSize:13,fontWeight:active?700:500,cursor:"pointer",transition:"all .15s var(--ease-out)",fontFamily:active?"Geist Mono, monospace":"inherit"}}>{v}</button>);
+                      })}
+                    </div>
+                  </div>
+                ))}
+                {/* Notes — collapsed by default, expands when typing */}
+                <textarea
+                  value={wellness.notes||""}
+                  onChange={e=>setWellness({...wellness,notes:e.target.value})}
+                  onBlur={e=>saveWellness({notes:e.target.value})}
+                  placeholder="Notes (optional — sleep oddities, stressors, what you ate, etc.)"
+                  rows={wellness.notes?2:1}
+                  className="bcq-input"
+                  style={{width:"100%",resize:"vertical",fontSize:12,marginTop:6,lineHeight:1.5,fontFamily:"inherit"}}
+                />
+                {/* 7-day mini-trend — only shows after a few days of data */}
+                {wellnessHist.length>=2&&(<div style={{marginTop:12,padding:"10px 12px",background:"var(--elev-1)",borderRadius:"var(--r-sm)"}}>
+                  <div style={{fontSize:9.5,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",marginBottom:6,fontWeight:600}}>Last {wellnessHist.length} days</div>
+                  {ROWS.map(row=>{
+                    /* Reverse to chronological order */
+                    const series=[...wellnessHist].reverse().map(w=>w[row.key]);
+                    return(<div key={row.key} style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
+                      <div style={{flex:"0 0 50px",fontSize:10,color:"var(--t-4)"}}>{row.label}</div>
+                      <div style={{display:"flex",gap:2,flex:1,height:18,alignItems:"flex-end"}}>
+                        {series.map((v,i)=>{
+                          if(v==null)return<div key={i} style={{flex:1,height:2,background:"var(--line-soft)",borderRadius:1,alignSelf:"center"}}/>;
+                          const color=v<=2?"var(--c-danger)":v===3?"var(--c-warn)":"var(--accent)";
+                          return<div key={i} style={{flex:1,height:`${v*20}%`,background:color,borderRadius:1,opacity:0.85}} title={`${v}/5`}/>;
+                        })}
+                      </div>
+                    </div>);
+                  })}
+                </div>)}
+              </>);
             })()}
           </div>
 

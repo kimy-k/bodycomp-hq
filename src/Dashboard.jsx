@@ -24,7 +24,7 @@ import {todayKey, localDateKey, addDays, buildProj, calcMonthly, compressImage} 
 import {computeInsights} from "./insights.js";
 import {Icon} from "./Icon.jsx";
 import {FONT_URL, STYLE} from "./styles.js";
-import {Tip, Card, H2, TabBtn, Insight, cBox, Skel, SkelTab, Toast} from "./ui.jsx";
+import {Tip, Card, H2, TabBtn, Insight, cBox, Skel, SkelTab, Toast, Logo} from "./ui.jsx";
 import {ensureServiceWorker, subscribePush, unsubscribePush, sendTestPush} from "./push-client.js";
 import {Onboarding} from "./Onboarding.jsx";
 import {ErrorBoundary} from "./ErrorBoundary.jsx";
@@ -448,8 +448,7 @@ function DashboardInner(){
   if(!userId)return(<div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 20px"}}>
     <style>{STYLE}</style>
     <div className="fade" style={{maxWidth:380,width:"100%",textAlign:"center"}}>
-      <div className="serif" style={{fontSize:40,color:"var(--t-1)",fontStyle:"italic",letterSpacing:"-0.02em",marginBottom:6,lineHeight:1.05}}>Body Comp HQ</div>
-      <div className="mono" style={{fontSize:11,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",marginBottom:36}}>Who's using this device?</div>
+      <div style={{marginBottom:36}}><Logo size={42} sub="Who's using this device?"/></div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         {Object.entries(PROFILES).map(([id,p])=>(<button key={id} onClick={()=>setUserId(id)} className="touch" style={{padding:"18px 22px",borderRadius:"var(--r-md)",border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-1)",fontSize:15,fontWeight:500,cursor:"pointer",display:"flex",alignItems:"center",gap:14,textAlign:"left",transition:"all .18s var(--ease-out)"}} onMouseEnter={e=>{e.currentTarget.style.background="var(--elev-2)";e.currentTarget.style.borderColor="var(--accent-line)";}} onMouseLeave={e=>{e.currentTarget.style.background="var(--elev-1)";e.currentTarget.style.borderColor="var(--line-soft)";}}>
           <div style={{width:42,height:42,borderRadius:"50%",background:"var(--accent-soft)",color:"var(--accent)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0,fontWeight:600}}>{p.name.charAt(0)}</div>
@@ -463,7 +462,7 @@ function DashboardInner(){
       <div style={{fontSize:11,color:"var(--t-4)",marginTop:24,lineHeight:1.5,fontStyle:"italic"}}>Once you pick, this device stays locked to that profile. You can switch later from Settings.</div>
     </div>
   </div>);
-  if(onboarded===null)return(<div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center"}}><style>{STYLE}</style><div className="fade" style={{color:"var(--t-3)",fontSize:13,letterSpacing:".06em"}}>Loading…</div></div>);
+  if(onboarded===null)return(<div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:20}}><style>{STYLE}</style><div className="fade"><Logo size={36}/></div><div className="fade" style={{color:"var(--t-3)",fontSize:11,letterSpacing:".12em",textTransform:"uppercase",animationDelay:".15s"}}>Loading…</div></div>);
   if(!onboarded)return <Onboarding db={db} onComplete={handleOnboardComplete}/>;
 
   return(

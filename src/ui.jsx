@@ -4,6 +4,32 @@
 
 import {Icon} from "./Icon.jsx";
 
+/* Body Comp HQ wordmark — Instrument Serif italic. Used in the loading screen,
+   user picker, and onboarding. Pass `size` (font size in px) and optional `sub`
+   for a tiny subtitle below. */
+export const Logo = ({size = 40, sub, color = "var(--t-1)", accent = "var(--accent)"}) => (
+  <div style={{display: "flex", flexDirection: "column", alignItems: "center", gap: 4}}>
+    <div className="serif" style={{
+      fontSize: size,
+      color,
+      fontStyle: "italic",
+      letterSpacing: "-0.025em",
+      lineHeight: 1,
+      fontWeight: 400,
+    }}>
+      Body Comp <span style={{color: accent}}>HQ</span>
+    </div>
+    {sub && <div className="mono" style={{
+      fontSize: Math.max(9, size * 0.26),
+      color: "var(--t-3)",
+      letterSpacing: ".12em",
+      textTransform: "uppercase",
+      fontWeight: 600,
+    }}>{sub}</div>}
+  </div>
+);
+
+
 /* ═══ SHARED UI ═══ */
 export const Tip=({active,payload,label})=>!active||!payload?.length?null:(<div style={{background:"var(--tip-bg)",backdropFilter:"blur(20px)",border:"1px solid var(--line)",borderRadius:14,padding:"10px 14px",fontSize:12,color:"var(--t-1)",boxShadow:"var(--shadow-1)"}}><div className="mono" style={{fontWeight:600,marginBottom:6,fontSize:11,color:"var(--t-2)",textTransform:"uppercase",letterSpacing:".08em"}}>{label}</div>{payload.map((p,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}><span style={{width:7,height:7,borderRadius:"50%",background:p.color,display:"inline-block"}}/><span style={{color:"var(--t-3)",fontSize:11}}>{p.name}</span><span className="mono" style={{fontWeight:600,color:p.color,marginLeft:"auto",fontSize:12}}>{p.value}</span></div>))}</div>);
 

@@ -920,6 +920,11 @@ function DashboardInner(){
             const dow = d.toLocaleDateString("en-US",{weekday:"narrow"});
             return {dateKey, dow};
           });
+          /* Use insightsData.pepHist (loaded on Body tab via the overview useEffect)
+             as the source of truth — same source the Patterns card uses, guarantees
+             they agree. sharedDoseLog can't be used here because it short-circuits
+             when no batches exist. */
+          const doseLog = insightsData.pepHist || [];
           let totalTakenLast7 = 0;
           let totalDueLast7 = 0;
           userPeps.forEach(p=>{
@@ -928,7 +933,7 @@ function DashboardInner(){
               const wd = new Date(dateKey+"T12:00:00").getDay();
               if (sch.includes(wd)) {
                 totalDueLast7++;
-                const log = sharedDoseLog.find(l=>l.date===dateKey);
+                const log = doseLog.find(l=>l.date===dateKey);
                 if (log?.checks?.[p.id]) totalTakenLast7++;
               }
             });
@@ -948,11 +953,13 @@ function DashboardInner(){
                 {days.map(({dateKey})=>{
                   const wd = new Date(dateKey+"T12:00:00").getDay();
                   const isDue = (p.schedule||[]).includes(wd);
-                  const log = sharedDoseLog.find(l=>l.date===dateKey);
+                  const log = doseLog.find(l=>l.date===dateKey);
                   const taken = log?.checks?.[p.id];
+                  const isToday = dateKey === todayKey_;
                   const isFuture = dateKey > todayKey_;
                   let cls, content;
                   if (taken) { cls = {background:"var(--accent)",color:"#000",boxShadow:"0 0 8px rgba(0,229,255,0.30)"}; content = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" style={{width:11,height:11}}><path d="M5 12l5 5L20 7"/></svg>; }
+                  else if (isDue && isToday) { /* due today, not yet logged — soft amber pending state, not the harsh red */ cls = {background:"rgba(255,176,32,0.18)",color:"var(--c-warn)",border:"1px solid rgba(255,176,32,0.40)"}; content = <span className="mono" style={{fontSize:9,fontWeight:700}}>·</span>; }
                   else if (isDue && !isFuture) { cls = {background:"var(--c-danger)",color:"#000"}; content = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" style={{width:11,height:11}}><path d="M6 6l12 12M6 18L18 6"/></svg>; }
                   else { cls = {background:"#141414",border:"1px solid var(--line-soft)"}; content = null; }
                   return <div key={dateKey} style={{aspectRatio:1,borderRadius:3,display:"flex",alignItems:"center",justifyContent:"center",...cls}}>{content}</div>;

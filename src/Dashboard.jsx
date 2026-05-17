@@ -674,11 +674,11 @@ function DashboardInner(){
         <H2 sub={`${goalPct}% goal line`} delay={0.28}>Body fat</H2>
         <div className="rise r5" style={cBox}>
           <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={data} margin={{top:10,right:14,left:-6,bottom:0}}>
+            <AreaChart data={data} margin={{top:10,right:14,left:4,bottom:0}}>
               <defs><linearGradient id="bfArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--c-bodyfat)" stopOpacity={0.32}/><stop offset="100%" stopColor="var(--c-bodyfat)" stopOpacity={0.02}/></linearGradient></defs>
               <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
               <XAxis dataKey="labelYr" tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} interval={1}/>
-              <YAxis domain={[Math.min(goalPct-2,28),48]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={34}/>
+              <YAxis domain={[Math.min(goalPct-2,28),48]} allowDecimals={false} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={34}/>
               <Tooltip content={<Tip/>}/>
               <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.6} label={{value:`${goalPct}% goal`,position:"insideBottomRight",fill:"var(--accent)",fontSize:10,fontFamily:"Geist Mono"}}/>
               <Area type="monotone" dataKey="fatPct" stroke="var(--c-bodyfat)" strokeWidth={2.2} fill="url(#bfArea)" name="Body Fat" dot={{r:3,fill:"var(--c-bodyfat)",stroke:"var(--bg)",strokeWidth:1.5}} activeDot={{r:5,fill:"var(--c-bodyfat)",stroke:"var(--bg)",strokeWidth:2}}/>
@@ -689,7 +689,7 @@ function DashboardInner(){
         <H2 delay={0.32}>Weight & muscle</H2>
         <div className="rise r6" style={cBox}>
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={data} margin={{top:10,right:14,left:-6,bottom:0}}>
+            <LineChart data={data} margin={{top:10,right:14,left:4,bottom:0}}>
               <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
               <XAxis dataKey="labelYr" tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} interval={1}/>
               <YAxis yAxisId="w" domain={[53,59]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28}/>
@@ -1348,10 +1348,10 @@ function DashboardInner(){
           <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:4,letterSpacing:".01em"}}>{s.rate} kg / mo</div>
         </div>))}</div>
         <div className="rise r4" style={cBox}><ResponsiveContainer width="100%" height={260}>
-          <LineChart data={projections} margin={{top:10,right:14,left:-6,bottom:0}}>
+          <LineChart data={projections} margin={{top:10,right:14,left:4,bottom:0}}>
             <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
             <XAxis dataKey="label" tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false}/>
-            <YAxis domain={[Math.min(goalPct-2,26),40]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={34}/>
+            <YAxis domain={[Math.min(goalPct-2,26),40]} allowDecimals={false} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={34}/>
             <Tooltip content={<Tip/>}/>
             <Legend iconType="circle" iconSize={7} wrapperStyle={{fontSize:11,color:"var(--t-3)",fontFamily:"Geist Mono",paddingTop:4}}/>
             <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.6} label={{value:`${goalPct}% goal`,position:"insideBottomRight",fill:"var(--accent)",fontSize:10,fontFamily:"Geist Mono"}}/>
@@ -1364,10 +1364,10 @@ function DashboardInner(){
       {tab==="monthly"&&(<>
         <H2 sub="Average body fat by month">Monthly trend</H2>
         <div className="rise r2" style={cBox}><ResponsiveContainer width="100%" height={220}>
-          <BarChart data={monthly} margin={{top:10,right:14,left:-6,bottom:0}}>
+          <BarChart data={monthly} margin={{top:10,right:14,left:4,bottom:0}}>
             <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
             <XAxis dataKey="label" tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false}/>
-            <YAxis domain={[Math.min(goalPct-2,30),48]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={34}/>
+            <YAxis domain={[Math.min(goalPct-2,30),48]} allowDecimals={false} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={34}/>
             <Tooltip content={<Tip/>}/>
             <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.6} label={{value:`${goalPct}% goal`,position:"insideBottomRight",fill:"var(--accent)",fontSize:10,fontFamily:"Geist Mono"}}/>
             <Bar dataKey="avgPct" name="Avg Fat %" radius={[6,6,0,0]}>
@@ -1437,7 +1437,7 @@ function DashboardInner(){
         {whoopHist.length>0&&(<>
           <H2 sub="Last 7 days">Trend</H2>
           <div className="rise r3" style={cBox}><ResponsiveContainer width="100%" height={190}>
-            <LineChart data={whoopHist.slice(0,7).reverse()} margin={{top:10,right:14,left:-6,bottom:0}}>
+            <LineChart data={whoopHist.slice(0,7).reverse()} margin={{top:10,right:14,left:4,bottom:0}}>
               <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
               <XAxis dataKey="date" tickFormatter={d=>new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"narrow",day:"numeric"})} tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false}/>
               <YAxis domain={[0,100]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28}/>
@@ -1552,7 +1552,7 @@ function DashboardInner(){
             <div className="rise r2" style={{display:"flex",gap:5,marginBottom:10,flexWrap:"wrap"}}>{M_FIELDS.map(f=>(<button key={f.k} onClick={()=>setTrendField(f.k)} style={{padding:"5px 11px",borderRadius:999,border:trendField===f.k?`1px solid ${f.c}`:"1px solid var(--line-soft)",background:trendField===f.k?`color-mix(in oklch, ${f.c} 14%, transparent)`:"transparent",color:trendField===f.k?f.c:"var(--t-3)",fontSize:11,cursor:"pointer",fontWeight:500}}>{f.l}</button>))}</div>
             <div className="rise r3" style={cBox}>
               <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={[...measurements].reverse().filter(m=>m[trendField]!=null)} margin={{top:10,right:14,left:-6,bottom:0}}>
+                <LineChart data={[...measurements].reverse().filter(m=>m[trendField]!=null)} margin={{top:10,right:14,left:4,bottom:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
                   <XAxis dataKey="date" tickFormatter={d=>new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})} tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false}/>
                   <YAxis tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28} domain={["dataMin - 1","dataMax + 1"]}/>

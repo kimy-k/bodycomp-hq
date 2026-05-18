@@ -1070,12 +1070,21 @@ function DashboardInner(){
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {rows.map(row => {
                   const cur = wellness[row.key];
+                  /* Color gradient that mirrors meaning: 1-2 = danger (low), 3 = warn (neutral), 4-5 = success (high).
+                     Communicates valence at a glance, not just selection state. */
+                  const tint=(v,active)=>{
+                    if(!active)return{bg:"var(--elev-2)",fg:"var(--t-3)",bd:"var(--line-soft)"};
+                    if(v<=2)return{bg:"color-mix(in oklch, var(--c-danger) 16%, transparent)",fg:"var(--c-danger)",bd:"var(--c-danger)"};
+                    if(v===3)return{bg:"color-mix(in oklch, var(--c-warn) 14%, transparent)",fg:"var(--c-warn)",bd:"var(--c-warn)"};
+                    return{bg:"color-mix(in oklch, var(--accent) 16%, transparent)",fg:"var(--accent)",bd:"var(--accent)"};
+                  };
                   return(<div key={row.key} style={{display:"flex",alignItems:"center",gap:10}}>
                     <span style={{fontSize:11.5,color:"var(--t-3)",width:54,flexShrink:0,fontWeight:500}}>{row.label}</span>
                     <div style={{display:"flex",gap:5,flex:1}}>
                       {[1,2,3,4,5].map(v => {
                         const active = cur===v;
-                        return(<button key={v} onClick={()=>saveWellness({[row.key]:active?null:v})} className="touch" style={{flex:1,minWidth:0,padding:"7px 0",borderRadius:"var(--r-sm)",border:active?`1px solid var(--accent)`:`1px solid var(--line-soft)`,background:active?"color-mix(in oklch, var(--accent) 16%, transparent)":"var(--elev-2)",color:active?"var(--accent)":"var(--t-3)",fontSize:12,fontWeight:active?700:500,cursor:"pointer",transition:"all .15s var(--ease-out)",fontFamily:active?"Geist Mono, monospace":"inherit",letterSpacing:active?".05em":"0"}}>{v}</button>);
+                        const t=tint(v,active);
+                        return(<button key={v} onClick={()=>saveWellness({[row.key]:active?null:v})} className="touch" style={{flex:1,minWidth:0,padding:"7px 0",borderRadius:"var(--r-sm)",border:`1px solid ${t.bd}`,background:t.bg,color:t.fg,fontSize:12,fontWeight:active?700:500,cursor:"pointer",transition:"all .15s var(--ease-out)",fontFamily:active?"Geist Mono, monospace":"inherit",letterSpacing:active?".05em":"0"}}>{v}</button>);
                       })}
                     </div>
                   </div>);
@@ -1591,38 +1600,19 @@ function DashboardInner(){
           {/* ═══ P17: Wellness daily log ═══ */}
           <div style={{marginTop:22}}>
             <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:10}}>
-              <div style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600}}>How you feel today</div>
-              {(wellness.mood||wellness.energy||wellness.sleep_quality)&&<span className="mono" style={{fontSize:10,color:"var(--t-4)",letterSpacing:".06em"}}>tap to update</span>}
+              <div style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600}}>Today's notes</div>
+              <span className="mono" style={{fontSize:9.5,color:"var(--t-5)",letterSpacing:".06em"}}>mood entry on Today tab</span>
             </div>
             {(()=>{
-              /* Render three rating rows. Each row: label + 5 pill buttons.
-                 The color gradient runs from danger (1) → warn (3) → success (5). */
+              /* ROWS retained only for the 7-day mini-trend visualization below.
+                 Wellness CHIP ENTRY now lives only on Today tab (deduped). */
               const ROWS = [
-                {key:"mood",          label:"Mood",   hint:"😞 → 😄"},
-                {key:"energy",        label:"Energy", hint:"low → high"},
-                {key:"sleep_quality", label:"Sleep",  hint:"poor → great"},
+                {key:"mood",          label:"Mood"},
+                {key:"energy",        label:"Energy"},
+                {key:"sleep_quality", label:"Sleep"},
               ];
-              /* Colors for ratings 1..5 — keeps the visual feedback consistent */
-              const tint=(v,active)=>{
-                if(!active)return{bg:"var(--elev-1)",fg:"var(--t-3)",bd:"var(--line-soft)"};
-                if(v<=2)return{bg:"color-mix(in oklch, var(--c-danger) 16%, transparent)",fg:"var(--c-danger)",bd:"var(--c-danger)"};
-                if(v===3)return{bg:"color-mix(in oklch, var(--c-warn) 14%, transparent)",fg:"var(--c-warn)",bd:"var(--c-warn)"};
-                return{bg:"var(--accent-soft)",fg:"var(--accent)",bd:"var(--accent-line)"};
-              };
               return(<>
-                {ROWS.map(row=>(
-                  <div key={row.key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-                    <div style={{flex:"0 0 64px",fontSize:12,color:"var(--t-2)",fontWeight:500}}>{row.label}</div>
-                    <div style={{display:"flex",gap:5,flex:1}}>
-                      {[1,2,3,4,5].map(v=>{
-                        const active=wellness[row.key]===v;
-                        const t=tint(v,active);
-                        return(<button key={v} onClick={()=>saveWellness({[row.key]:active?null:v})} className="touch" style={{flex:1,minWidth:0,padding:"8px 0",borderRadius:"var(--r-sm)",border:`1px solid ${t.bd}`,background:t.bg,color:t.fg,fontSize:13,fontWeight:active?700:500,cursor:"pointer",transition:"all .15s var(--ease-out)",fontFamily:active?"Geist Mono, monospace":"inherit"}}>{v}</button>);
-                      })}
-                    </div>
-                  </div>
-                ))}
-                {/* Notes — collapsed by default, expands when typing */}
+                {/* Notes textarea — peptide-contextual notes (auto-saves on blur) */}
                 <textarea
                   value={wellness.notes||""}
                   onChange={e=>{
@@ -1635,11 +1625,11 @@ function DashboardInner(){
                   placeholder="Notes (optional — sleep oddities, stressors, what you ate, etc.)"
                   rows={3}
                   className="bcq-input"
-                  style={{width:"100%",resize:"none",fontSize:12,marginTop:6,lineHeight:1.55,fontFamily:"inherit",minHeight:72,overflow:"auto",boxSizing:"border-box"}}
+                  style={{width:"100%",resize:"none",fontSize:12,lineHeight:1.55,fontFamily:"inherit",minHeight:72,overflow:"auto",boxSizing:"border-box"}}
                 />
-                {/* 7-day mini-trend — only shows after a few days of data */}
+                {/* 7-day mini-trend — historical view of mood/energy/sleep entered on Today tab */}
                 {wellnessHist.length>=2&&(<div style={{marginTop:12,padding:"10px 12px",background:"var(--elev-1)",borderRadius:"var(--r-sm)"}}>
-                  <div style={{fontSize:9.5,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",marginBottom:6,fontWeight:600}}>Last {wellnessHist.length} days</div>
+                  <div style={{fontSize:9.5,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",marginBottom:6,fontWeight:600}}>Mood trend · last {wellnessHist.length} days</div>
                   {ROWS.map(row=>{
                     /* Reverse to chronological order */
                     const series=[...wellnessHist].reverse().map(w=>w[row.key]);

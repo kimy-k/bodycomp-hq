@@ -1062,7 +1062,7 @@ function DashboardInner(){
             </div>);
           })()}
 
-          {/* ─── Up Next — next scheduled peptide dose with countdown ─── */}
+          {/* ─── Pending Today — all due-and-unlogged peptides, sorted by urgency ─── */}
           {(() => {
             /* Parse "9:00 PM" / "8 AM" / "9:26 PM" into minutes-since-midnight.
                Returns null for vague labels like bare "PM"/"AM"/"Morning"/"" — those
@@ -1081,16 +1081,13 @@ function DashboardInner(){
             const candidates = duePeptides
               .filter(p => !checkedToday[p.id])
               .map(p => ({...p, minutes: parseTime12h(p.time)}));
-            /* Three buckets: upcoming-timed, overdue-timed, untimed.
-               Priority order for "next": untimed-AM if morning + we're in AM, else upcoming-timed,
-               else overdue-timed, else untimed. Keep simple: untimed last since they're vaguer. */
+            /* Sort: overdue first (most-recent first), then untimed, then upcoming.
+               "Do this NOW" items at the top of the list. */
             const timed = candidates.filter(p => p.minutes !== null);
             const untimed = candidates.filter(p => p.minutes === null);
-            const upcoming = timed.filter(p => p.minutes >= nowMin).sort((a,b) => a.minutes - b.minutes);
             const overdue = timed.filter(p => p.minutes < nowMin).sort((a,b) => b.minutes - a.minutes);
-            const next = upcoming[0] || overdue[0] || untimed[0] || null;
-            const isOverdueNext = !!(next && overdue[0]?.id === next?.id && !upcoming.length);
-            const isUntimedNext = !!(next && next.minutes === null);
+            const upcoming = timed.filter(p => p.minutes >= nowMin).sort((a,b) => a.minutes - b.minutes);
+            const ordered = [...overdue, ...untimed, ...upcoming];
             const fmtCountdown = (m) => {
               const abs = Math.abs(m);
               const h = Math.floor(abs / 60);
@@ -1102,42 +1099,49 @@ function DashboardInner(){
             const totalDue = duePeptides.length;
             const taken = duePeptides.filter(p => checkedToday[p.id]).length;
             const allDone = totalDue > 0 && taken === totalDue;
-            const otherPending = candidates.length - 1;
 
             return(<div className="rise r3" style={{background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"14px 16px",marginBottom:14}}>
-              <div className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700,marginBottom:11}}>Up next</div>
-              {next ? (
-                <div style={{display:"flex",alignItems:"center",gap:12}}>
-                  <div style={{width:34,height:34,borderRadius:8,background:`color-mix(in oklch, ${next.color} 18%, transparent)`,border:`1px solid color-mix(in oklch, ${next.color} 40%, transparent)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    <Icon n="vial" s={16} c={next.color} sw={1.8}/>
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-                      <span style={{fontSize:14,color:"var(--t-1)",fontWeight:600,letterSpacing:"-0.01em"}}>{next.name}</span>
-                      {next.time&&<span className="mono" style={{fontSize:11,color:"var(--t-4)",letterSpacing:".04em"}}>{next.time}</span>}
-                    </div>
-                    <div className="mono" style={{fontSize:11,color:isOverdueNext?"var(--c-warn)":"var(--accent)",letterSpacing:".08em",marginTop:2,fontWeight:600}}>
-                      {isUntimedNext
-                        ? `DUE TODAY`
-                        : isOverdueNext
-                        ? `OVERDUE · ${fmtCountdown(nowMin - next.minutes)} AGO`
-                        : `IN ${fmtCountdown(next.minutes - nowMin).toUpperCase()}`}
-                    </div>
-                  </div>
-                  {otherPending > 0 && <span className="mono" style={{fontSize:10,color:"var(--t-5)",letterSpacing:".10em",flexShrink:0}}>+{otherPending}</span>}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:totalDue>0?11:0}}>
+                <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Pending today</span>
+                {totalDue>0&&<span className="mono" style={{fontSize:10,color:allDone?"var(--accent)":"var(--t-4)",letterSpacing:".10em",fontWeight:600}}>{taken}/{totalDue} logged</span>}
+              </div>
+              {ordered.length > 0 ? (
+                <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                  {ordered.map(p => {
+                    const isOverdue = p.minutes !== null && p.minutes < nowMin;
+                    const isUntimed = p.minutes === null;
+                    const stateColor = isOverdue ? "var(--c-warn)" : "var(--accent)";
+                    const stateLabel = isUntimed
+                      ? "DUE TODAY"
+                      : isOverdue
+                      ? `OVERDUE · ${fmtCountdown(nowMin - p.minutes)} AGO`
+                      : `IN ${fmtCountdown(p.minutes - nowMin).toUpperCase()}`;
+                    return(<div key={p.id} style={{display:"flex",alignItems:"center",gap:11,padding:"4px 0"}}>
+                      <div style={{width:28,height:28,borderRadius:7,background:`color-mix(in oklch, ${p.color} 18%, transparent)`,border:`1px solid color-mix(in oklch, ${p.color} 38%, transparent)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                        <Icon n="vial" s={13} c={p.color} sw={1.8}/>
+                      </div>
+                      <div style={{flex:1,minWidth:0,display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+                        <div style={{display:"flex",alignItems:"baseline",gap:7,minWidth:0,flex:1}}>
+                          <span style={{fontSize:13.5,color:"var(--t-1)",fontWeight:600,letterSpacing:"-0.01em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
+                          {p.time&&<span className="mono" style={{fontSize:10.5,color:"var(--t-4)",letterSpacing:".04em",flexShrink:0}}>{p.time}</span>}
+                        </div>
+                        <span className="mono" style={{fontSize:10,color:stateColor,letterSpacing:".08em",fontWeight:700,flexShrink:0}}>{stateLabel}</span>
+                      </div>
+                    </div>);
+                  })}
                 </div>
               ) : allDone ? (
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <div style={{width:34,height:34,borderRadius:8,background:"color-mix(in oklch, var(--accent) 16%, transparent)",border:"1px solid var(--accent-line)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    <Icon n="check" s={18} c="var(--accent)" sw={2.5}/>
+                <div style={{display:"flex",alignItems:"center",gap:10,paddingTop:4}}>
+                  <div style={{width:28,height:28,borderRadius:7,background:"color-mix(in oklch, var(--accent) 16%, transparent)",border:"1px solid var(--accent-line)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <Icon n="check" s={15} c="var(--accent)" sw={2.5}/>
                   </div>
                   <div>
-                    <div style={{fontSize:14,color:"var(--t-1)",fontWeight:600}}>All caught up</div>
-                    <div className="mono" style={{fontSize:10.5,color:"var(--t-4)",letterSpacing:".06em",marginTop:2}}>{taken} of {totalDue} doses logged today</div>
+                    <div style={{fontSize:13.5,color:"var(--t-1)",fontWeight:600}}>All caught up</div>
+                    <div className="mono" style={{fontSize:10,color:"var(--t-4)",letterSpacing:".06em",marginTop:2}}>{taken} of {totalDue} doses logged today</div>
                   </div>
                 </div>
               ) : (
-                <div style={{fontSize:13,color:"var(--t-4)",lineHeight:1.5}}>Nothing scheduled today. Rest well.</div>
+                <div style={{fontSize:13,color:"var(--t-4)",lineHeight:1.5,paddingTop:4}}>Nothing scheduled today. Rest well.</div>
               )}
             </div>);
           })()}

@@ -371,4 +371,31 @@ export const makeDb = (uid, onErr = () => {}) => ({
       return {ok: false, summary_md: "", error: String(e.message || e)};
     }
   },
+
+  /* ─── AI food parser — natural language → {protein, fat, carbs}.
+     Used in the Add Meal modal "Smart fill" input. ~5s end-to-end. */
+  async parseFoodWithAI(description) {
+    try {
+      const r = await fetch(`/api/ai/food-parse`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({description}),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || !data.ok) {
+        return {ok: false, error: data.error || `Parser returned ${r.status}`};
+      }
+      return {
+        ok: true,
+        name: data.name,
+        protein_g: data.protein_g,
+        fat_g: data.fat_g,
+        carbs_g: data.carbs_g,
+        confidence: data.confidence,
+        notes: data.notes,
+      };
+    } catch (e) {
+      return {ok: false, error: String(e.message || e)};
+    }
+  },
 });

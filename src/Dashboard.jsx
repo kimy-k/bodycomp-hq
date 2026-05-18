@@ -92,6 +92,28 @@ function DashboardInner(){
   /* ═══ MACRO STATE ═══ */
   const MEAL_TAGS=["Lunch","Snack","Dinner","Breakfast","Other"];
   const [meals,setMeals]=useState([]);const [wheyOn,setWheyOn]=useState(true);const [macroSub,setMacroSub]=useState("log");const [mLoading,setMLoading]=useState(true);const [histDays,setHistDays]=useState([]);const [adding,setAdding]=useState(false);const [newMeal,setNewMeal]=useState({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});
+  /* AI food parser state — Wave A. Natural-language → {name,protein,fat,carbs}.
+     Fills the Add Meal form so user can adjust before saving. */
+  const [foodParse,setFoodParse]=useState({input:"",loading:false,error:null,confidence:null,notes:null});
+  const parseFood=useCallback(async()=>{
+    const desc=foodParse.input.trim();
+    if(!desc||foodParse.loading)return;
+    setFoodParse(prev=>({...prev,loading:true,error:null,confidence:null,notes:null}));
+    const result=await db.parseFoodWithAI(desc);
+    if(result.ok){
+      setNewMeal(prev=>({
+        name:result.name,
+        protein:String(result.protein_g),
+        fat:String(result.fat_g),
+        carbs:String(result.carbs_g),
+        tag:prev.tag,  /* preserve current tag selection */
+      }));
+      setFoodParse({input:desc,loading:false,error:null,confidence:result.confidence,notes:result.notes});
+    }else{
+      setFoodParse(prev=>({...prev,loading:false,error:result.error}));
+    }
+  },[db,foodParse.input,foodParse.loading]);
+  const resetFoodParse=useCallback(()=>{setFoodParse({input:"",loading:false,error:null,confidence:null,notes:null});},[]);
   const [favs,setFavs]=useState([]);const [showFavs,setShowFavs]=useState(false);
   const [editId,setEditId]=useState(null);const [editMeal,setEditMeal]=useState({name:"",protein:"",fat:"",carbs:"",tag:""});
   const day=todayKey();
@@ -1225,6 +1247,25 @@ function DashboardInner(){
             </div>
             <div className="hbar" style={{marginBottom:8}}><i style={{width:`${Math.min(100,totals.protein/TARGETS.protein*100)}%`,background:totals.protein>=TARGETS.protein?"var(--c-success)":"var(--c-protein)"}}/></div>
             <div className="mono" style={{fontSize:11,color:rem.protein>0?"var(--t-3)":"var(--c-success)",letterSpacing:".01em"}}>{rem.protein>0?`${Math.round(rem.protein)}g remaining`:"✓ Target hit"}</div>
+            {/* Smart projection — Wave A. Anchors current pace against time-of-day.
+                Hidden when target is hit, or when too early/late for meaningful pace. */}
+            {rem.protein>0&&(()=>{
+              const now=new Date();
+              const startH=7, endH=22;  /* eating window: 7am to 10pm */
+              const curH=now.getHours()+now.getMinutes()/60;
+              if(curH<startH+1||curH>endH-0.5)return null;  /* too early or too late */
+              const hoursIn=curH-startH;
+              const hoursLeft=endH-curH;
+              const pace=totals.protein/hoursIn;
+              const projected=Math.round(totals.protein+pace*hoursLeft);
+              const onPace=projected>=TARGETS.protein;
+              const needRate=Math.round(rem.protein/hoursLeft);
+              return(<div className="mono" style={{fontSize:10.5,color:onPace?"var(--c-success)":"var(--t-4)",letterSpacing:".01em",marginTop:4,lineHeight:1.5}}>
+                {onPace
+                  ? `On pace for ${projected}g by ${endH-12} PM.`
+                  : `Behind pace · need ${needRate}g/hr to hit target by ${endH-12} PM.`}
+              </div>);
+            })()}
           </div>
 
           {/* TDEE strip */}
@@ -1248,15 +1289,25 @@ function DashboardInner(){
             })()}
           </div>)}
 
-          {/* Secondary macros */}
+          {/* Secondary macros with progress rings — Wave A. Each tile shows a small
+              SVG ring filled by % of target. Visually upgrades the strip from text-only
+              to a macro distribution display. */}
           <div style={{display:"flex",gap:8,marginBottom:14}}>
-            {[{k:"cal",l:"Cal",v:totals.cal,t:TARGETS.cal,c:"var(--c-cal)"},{k:"fat",l:"Fat",v:Math.round(totals.fat),t:TARGETS.fat,c:"var(--c-fat)"},{k:"carbs",l:"Carbs",v:Math.round(totals.carbs),t:TARGETS.carbs,c:"var(--c-carbs)"}].map((m,i)=>(
-              <div key={m.k} className="rise" style={{animationDelay:`${0.04+i*0.04}s`,flex:1,background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 8px",textAlign:"center"}}>
-                <div style={{fontSize:9.5,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:2}}>{m.l}</div>
-                <div className="serif tabular" style={{fontSize:22,color:m.c,fontStyle:"italic",lineHeight:1}}>{m.v}</div>
-                <div className="mono" style={{fontSize:9.5,color:"var(--t-4)",marginTop:3}}>/ {m.t}</div>
-              </div>
-            ))}
+            {[{k:"cal",l:"Cal",v:totals.cal,t:TARGETS.cal,c:"var(--c-cal)"},{k:"fat",l:"Fat",v:Math.round(totals.fat),t:TARGETS.fat,c:"var(--c-fat)"},{k:"carbs",l:"Carbs",v:Math.round(totals.carbs),t:TARGETS.carbs,c:"var(--c-carbs)"}].map((m,i)=>{
+              const pct=Math.max(0,Math.min(100,(m.v/m.t)*100));
+              const r=18, c=2*Math.PI*r, off=c-(pct/100)*c;
+              return(<div key={m.k} className="rise" style={{animationDelay:`${0.04+i*0.04}s`,flex:1,background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 8px",display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                <svg width="44" height="44" viewBox="0 0 44 44" style={{flexShrink:0,transform:"rotate(-90deg)"}}>
+                  <circle cx="22" cy="22" r={r} fill="none" stroke="var(--elev-3)" strokeWidth="3"/>
+                  <circle cx="22" cy="22" r={r} fill="none" stroke={m.c} strokeWidth="3" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} style={{transition:"stroke-dashoffset .4s var(--ease-out)"}}/>
+                </svg>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:9.5,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>{m.l}</div>
+                  <div className="serif tabular" style={{fontSize:20,color:m.c,fontStyle:"italic",lineHeight:1,letterSpacing:"-0.01em"}}>{m.v}</div>
+                  <div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:2,letterSpacing:".02em"}}>/ {m.t}</div>
+                </div>
+              </div>);
+            })}
           </div>
 
           {/* Whey toggle — only shown when configured in Settings */}
@@ -1333,8 +1384,41 @@ function DashboardInner(){
             <div style={{width:34,height:4,background:"var(--elev-3)",borderRadius:2,margin:"-6px auto 12px"}}/>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:14,alignItems:"baseline"}}>
               <h3 className="serif" style={{fontSize:22,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>New meal</h3>
-              <button onClick={()=>{setAdding(false);setNewMeal({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});}} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={18}/></button>
+              <button onClick={()=>{setAdding(false);setNewMeal({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});resetFoodParse();}} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={18}/></button>
             </div>
+
+            {/* Smart fill — Wave A. Type any food description, Gemini estimates macros. */}
+            <div style={{marginBottom:14,background:"color-mix(in oklch, var(--accent) 8%, transparent)",border:"1px solid var(--accent-line)",borderRadius:"var(--r-sm)",padding:"12px 13px 13px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:"var(--accent)",boxShadow:"0 0 6px var(--accent)"}}/>
+                <span className="mono" style={{fontSize:9.5,color:"var(--accent)",letterSpacing:".22em",textTransform:"uppercase",fontWeight:700}}>Smart fill</span>
+                <span style={{fontSize:11,color:"var(--t-4)",marginLeft:"auto"}}>powered by AI</span>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <input
+                  value={foodParse.input}
+                  onChange={e=>setFoodParse(prev=>({...prev,input:e.target.value,error:null}))}
+                  onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();parseFood();}}}
+                  disabled={foodParse.loading}
+                  placeholder='e.g. "chicken caesar salad, no dressing"'
+                  className="bcq-input"
+                  style={{flex:1,fontSize:13,padding:"10px 12px"}}
+                />
+                <button
+                  onClick={parseFood}
+                  disabled={!foodParse.input.trim()||foodParse.loading}
+                  className="touch mono"
+                  style={{padding:"0 16px",borderRadius:"var(--r-sm)",border:"none",background:foodParse.input.trim()&&!foodParse.loading?"var(--accent)":"var(--elev-2)",color:foodParse.input.trim()&&!foodParse.loading?"var(--bg)":"var(--t-4)",fontSize:11,fontWeight:700,cursor:foodParse.loading?"wait":(foodParse.input.trim()?"pointer":"default"),letterSpacing:".12em",textTransform:"uppercase",opacity:foodParse.loading?0.7:1,minWidth:64}}>
+                  {foodParse.loading?"…":"Parse"}
+                </button>
+              </div>
+              {foodParse.confidence&&(<div style={{marginTop:10,paddingTop:9,borderTop:"1px solid color-mix(in oklch, var(--accent) 20%, transparent)",display:"flex",alignItems:"flex-start",gap:8}}>
+                <span className="mono" style={{fontSize:9,color:foodParse.confidence==="high"?"var(--c-success)":foodParse.confidence==="low"?"var(--c-warn)":"var(--t-2)",letterSpacing:".14em",fontWeight:700,padding:"2px 7px",background:"var(--elev-2)",borderRadius:999,flexShrink:0,marginTop:1}}>{foodParse.confidence.toUpperCase()}</span>
+                {foodParse.notes&&<span style={{fontSize:11,color:"var(--t-3)",lineHeight:1.4,flex:1}}>{foodParse.notes}</span>}
+              </div>)}
+              {foodParse.error&&<div className="mono" style={{fontSize:10.5,color:"var(--c-danger)",marginTop:8,lineHeight:1.4}}>{foodParse.error.slice(0,140)}</div>}
+            </div>
+
             <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}>{MEAL_TAGS.map(t=>(<button key={t} onClick={()=>setNewMeal({...newMeal,tag:t})} className="touch" style={{padding:"7px 13px",borderRadius:999,border:newMeal.tag===t?"1px solid var(--accent-line)":"1px solid transparent",background:newMeal.tag===t?"var(--accent-soft)":"var(--elev-2)",color:newMeal.tag===t?"var(--accent)":"var(--t-3)",fontSize:11.5,fontWeight:500,cursor:"pointer"}}>{t}</button>))}</div>
             <div style={{marginBottom:12}}>
               <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Meal name</div>
@@ -1351,7 +1435,7 @@ function DashboardInner(){
               <span className="serif tabular" style={{fontSize:24,color:"var(--c-cal)",fontStyle:"italic"}}>{calcCal(+newMeal.protein,+newMeal.fat,+newMeal.carbs)}</span>
               <span style={{fontSize:11,color:"var(--t-3)",marginLeft:4}}>kcal</span>
             </div>)}
-            <button onClick={addMeal} disabled={!newMeal.name} className="touch" style={{width:"100%",padding:"14px",borderRadius:"var(--r-md)",border:"none",background:newMeal.name?"var(--t-1)":"var(--elev-2)",color:newMeal.name?"var(--bg)":"var(--t-4)",fontSize:14,fontWeight:600,cursor:newMeal.name?"pointer":"default",transition:"all .2s var(--ease-out)"}}>Add meal</button>
+            <button onClick={()=>{addMeal();resetFoodParse();}} disabled={!newMeal.name} className="touch" style={{width:"100%",padding:"14px",borderRadius:"var(--r-md)",border:"none",background:newMeal.name?"var(--t-1)":"var(--elev-2)",color:newMeal.name?"var(--bg)":"var(--t-4)",fontSize:14,fontWeight:600,cursor:newMeal.name?"pointer":"default",transition:"all .2s var(--ease-out)"}}>Add meal</button>
           </div>)}
         </>)}
 

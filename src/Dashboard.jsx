@@ -2129,15 +2129,19 @@ function DashboardInner(){
 
         {whoopHist.length>0&&(<>
           <H2 sub="Last 7 days">Trend</H2>
-          <div className="rise r3" style={cBox}><ResponsiveContainer width="100%" height={190}>
-            <LineChart data={whoopHist.slice(0,7).reverse()} margin={{top:10,right:14,left:4,bottom:0}}>
+          <div className="rise r3" style={cBox}><ResponsiveContainer width="100%" height={210}>
+            {/* Three lines, two Y-axes. Recovery + Sleep share the left 0-100% axis.
+                Strain (0-21 Whoop scale) gets its own right axis so it can use the full chart height. */}
+            <LineChart data={whoopHist.slice(0,7).reverse()} margin={{top:10,right:10,left:4,bottom:0}}>
               <CartesianGrid strokeDasharray="2 4" stroke="var(--line-soft)" vertical={false}/>
               <XAxis dataKey="date" tickFormatter={d=>new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"narrow",day:"numeric"})} tick={{fill:"var(--t-3)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false}/>
-              <YAxis domain={[0,100]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28}/>
+              <YAxis yAxisId="pct" domain={[0,100]} tick={{fill:"var(--t-3)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28}/>
+              <YAxis yAxisId="strain" orientation="right" domain={[0,21]} ticks={[0,7,14,21]} tick={{fill:"var(--c-warn)",fontSize:10,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={24}/>
               <Tooltip content={<Tip/>}/>
               <Legend iconType="circle" iconSize={7} wrapperStyle={{fontSize:11,color:"var(--t-3)",fontFamily:"Geist Mono",paddingTop:4}}/>
-              <Line type="monotone" dataKey="recovery" stroke="var(--accent)" strokeWidth={2.2} name="Recovery" dot={{r:2.5,fill:"var(--accent)"}} activeDot={{r:5,fill:"var(--accent)",stroke:"#000",strokeWidth:2}}/>
-              <Line type="monotone" dataKey="sleep" stroke="var(--c-weight)" strokeWidth={2.2} strokeDasharray="5 3" name="Sleep" dot={{r:2.5,fill:"var(--c-weight)"}} activeDot={{r:5,fill:"var(--c-weight)",stroke:"#000",strokeWidth:2}}/>
+              <Line yAxisId="pct" type="monotone" dataKey="recovery" stroke="var(--accent)" strokeWidth={2.2} name="Recovery" dot={{r:2.5,fill:"var(--accent)"}} activeDot={{r:5,fill:"var(--accent)",stroke:"#000",strokeWidth:2}}/>
+              <Line yAxisId="pct" type="monotone" dataKey="sleep" stroke="var(--c-weight)" strokeWidth={2.2} strokeDasharray="5 3" name="Sleep" dot={{r:2.5,fill:"var(--c-weight)"}} activeDot={{r:5,fill:"var(--c-weight)",stroke:"#000",strokeWidth:2}}/>
+              <Line yAxisId="strain" type="monotone" dataKey="strain" stroke="var(--c-warn)" strokeWidth={2.2} strokeDasharray="1 3" name="Strain" dot={{r:2.5,fill:"var(--c-warn)"}} activeDot={{r:5,fill:"var(--c-warn)",stroke:"#000",strokeWidth:2}}/>
             </LineChart>
           </ResponsiveContainer></div>
 

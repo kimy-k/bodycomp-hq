@@ -783,7 +783,7 @@ function DashboardInner(){
             </div>
             <div style={{position:"relative",display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:0,marginTop:18,paddingTop:18,borderTop:"1px solid var(--line)"}}>
               {[
-                {k:"HRV",   v: latestWhoop.hrv_ms ?? "—", u:"ms"},
+                {k:"HRV",   v: latestWhoop.hrv_ms != null ? Number(latestWhoop.hrv_ms).toFixed(1) : "—", u:"ms"},
                 {k:"RHR",   v: latestWhoop.rhr ?? "—",    u:"bpm"},
                 {k:"Sleep", v: sleepStr,                  u:"hrs"},
                 {k:"Strain",v: latestWhoop.strain != null ? Number(latestWhoop.strain).toFixed(1) : "—", u:""},
@@ -1995,12 +1995,14 @@ function DashboardInner(){
               <div style={{fontSize:10,color:"var(--t-3)",marginTop:4,letterSpacing:".08em",textTransform:"uppercase",fontWeight:600}}>{m.l}</div>
             </div>))}
           </div>
-          {/* Secondary metrics from Whoop sync — HRV, RHR, sleep hours */}
+          {/* Secondary metrics from Whoop sync — HRV, RHR, sleep hours.
+              PostgREST returns `numeric` columns as STRINGS — wrap with Number()
+              before calling .toFixed or React crashes inside ErrorBoundary. */}
           {(whoopData.hrv_ms||whoopData.rhr||whoopData.sleep_hours)&&(<div style={{display:"flex",gap:12,fontSize:11,color:"var(--t-3)",marginBottom:14,padding:"10px 14px",background:"var(--elev-1)",borderRadius:"var(--r-sm)",flexWrap:"wrap"}}>
-            {whoopData.hrv_ms!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{whoopData.hrv_ms.toFixed(0)}</span> ms HRV</span>}
+            {whoopData.hrv_ms!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{Number(whoopData.hrv_ms).toFixed(0)}</span> ms HRV</span>}
             {whoopData.rhr!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{whoopData.rhr}</span> bpm RHR</span>}
-            {whoopData.sleep_hours!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{whoopData.sleep_hours}</span> h slept</span>}
-            {whoopData.sleep_efficiency!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{whoopData.sleep_efficiency.toFixed(0)}%</span> efficient</span>}
+            {whoopData.sleep_hours!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{Number(whoopData.sleep_hours).toFixed(2)}</span> h slept</span>}
+            {whoopData.sleep_efficiency!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{Number(whoopData.sleep_efficiency).toFixed(0)}%</span> efficient</span>}
           </div>)}
           {whoopData.source!=="whoop_sync"&&<button onClick={()=>{setWhoopData(null);setWhoopInput({recovery:"",sleep:"",strain:""});}} className="touch" style={{width:"100%",padding:"11px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"transparent",color:"var(--t-3)",fontSize:12,cursor:"pointer"}}>Edit today's entry</button>}
         </>):(

@@ -117,7 +117,7 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,onSta
         {/* Peptides — manage your stack from the catalog */}
         {showPep && <div className="rise r5" style={section}>
           <h2 className="serif" style={{fontSize:20,margin:"0 0 4px",fontStyle:"italic",color:"var(--t-1)",fontWeight:400,letterSpacing:"-0.015em"}}>Your stack</h2>
-          <p style={{fontSize:11.5,color:"var(--t-3)",margin:"0 0 14px"}}>Toggle which peptides are in your stack. Edit dose, schedule, and timing from the Peptides tab → tap a card.</p>
+          <p style={{fontSize:11.5,color:"var(--t-3)",margin:"0 0 14px"}}>Toggle which peptides are in your stack. To edit dose, schedule, or timing: go to the <strong style={{color:"var(--t-2)",fontWeight:600}}>Peps tab → Stack</strong> and tap the pencil icon on any peptide.</p>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {PEPTIDES.map(p=>{const on=isEnabled(p.id);const cur=stackById[p.id];return(
               <button key={p.id} onClick={()=>onStackToggle&&onStackToggle(p.id,!on)} style={{display:"flex",alignItems:"center",gap:11,padding:"11px 13px",borderRadius:"var(--r-sm)",border:`1px solid ${on?p.color:"var(--line-soft)"}`,background:on?`color-mix(in oklch, ${p.color} 8%, transparent)`:"transparent",cursor:"pointer",textAlign:"left",minHeight:50,transition:"all .2s var(--ease-out)"}}>

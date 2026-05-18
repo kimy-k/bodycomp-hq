@@ -2333,10 +2333,34 @@ function DashboardInner(){
               <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:5,letterSpacing:".02em"}}>{(editPepModal._schedule??eff.schedule).length||"No"} day{(editPepModal._schedule??eff.schedule).length===1?"":"s"} per week</div>
             </div>
 
-            {/* Time */}
+            {/* Time — presets OR custom for precise countdowns in Up Next */}
             <div style={{marginBottom:14}}>
               <label className="mono" style={{display:"block",fontSize:10,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:5}}>Time</label>
-              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{TIMES.map(t=>{const on=(editPepModal._time??eff.time)===t;return(<button key={t} onClick={()=>setEditPepModal({...editPepModal,_time:t})} className="touch" style={{padding:"7px 12px",borderRadius:999,border:`1px solid ${on?p.color:"var(--line-soft)"}`,background:on?`color-mix(in oklch, ${p.color} 15%, transparent)`:"var(--elev-1)",color:on?p.color:"var(--t-3)",fontSize:11.5,fontWeight:on?600:500,cursor:"pointer"}}>{t}</button>);})}</div>
+              {(() => {
+                const curTime = editPepModal._time ?? eff.time ?? "";
+                /* "Custom" mode = current value isn't one of the presets and isn't empty */
+                const isCustom = curTime && !TIMES.includes(curTime);
+                return(<>
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                    {TIMES.map(t=>{
+                      const on=curTime===t;
+                      return(<button key={t} onClick={()=>setEditPepModal({...editPepModal,_time:t})} className="touch" style={{padding:"7px 12px",borderRadius:999,border:`1px solid ${on?p.color:"var(--line-soft)"}`,background:on?`color-mix(in oklch, ${p.color} 15%, transparent)`:"var(--elev-1)",color:on?p.color:"var(--t-3)",fontSize:11.5,fontWeight:on?600:500,cursor:"pointer"}}>{t}</button>);
+                    })}
+                    <button onClick={()=>setEditPepModal({...editPepModal,_time:isCustom?curTime:""})} className="touch" style={{padding:"7px 12px",borderRadius:999,border:`1px solid ${isCustom?p.color:"var(--line-soft)"}`,background:isCustom?`color-mix(in oklch, ${p.color} 15%, transparent)`:"var(--elev-1)",color:isCustom?p.color:"var(--t-3)",fontSize:11.5,fontWeight:isCustom?600:500,cursor:"pointer"}}>Custom…</button>
+                  </div>
+                  {isCustom && (<div style={{marginTop:8}}>
+                    <input
+                      value={curTime}
+                      onChange={e=>setEditPepModal({...editPepModal,_time:e.target.value})}
+                      placeholder="e.g. 9:00 PM"
+                      autoFocus
+                      className="bcq-input mono"
+                      style={{fontSize:13,padding:"10px 12px",width:"100%"}}
+                    />
+                    <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:5,letterSpacing:".02em",lineHeight:1.4}}>Specific times like 9:00 PM enable precise countdowns in Up Next. Use a preset above for generic timing.</div>
+                  </div>)}
+                </>);
+              })()}
             </div>
 
             {/* Status */}

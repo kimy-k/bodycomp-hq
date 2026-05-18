@@ -490,7 +490,17 @@ function DashboardInner(){
 
   const [whoopData,setWhoopData]=useState(null);const [whoopLoading,setWhoopLoading]=useState(true);const [whoopHist,setWhoopHist]=useState([]);
   const [showPlan,setShowPlan]=useState(false);
-  useEffect(()=>{setWhoopData(null);setWhoopLoading(true);(async()=>{const row=await db.get("daily_whoop",day);if(row)setWhoopData({recovery:row.recovery,sleep:row.sleep,strain:row.strain,hrv_ms:row.hrv_ms,rhr:row.rhr,sleep_hours:row.sleep_hours,sleep_efficiency:row.sleep_efficiency,source:row.source});const hist=await db.list("daily_whoop",14);setWhoopHist(hist.map(r=>({date:r.date,recovery:r.recovery,sleep:r.sleep,strain:r.strain,hrv_ms:r.hrv_ms,rhr:r.rhr,sleep_hours:r.sleep_hours,sleep_efficiency:r.sleep_efficiency})));setWhoopLoading(false);})();},[day,db]);
+  useEffect(()=>{setWhoopData(null);setWhoopLoading(true);(async()=>{
+    /* Load 14-day history first so we have a fallback. Whoop dates recovery
+       by the SLEEP NIGHT, so on a Monday morning the "current" row is filed
+       under Sunday's date until Monday's own sync happens. */
+    const hist=await db.list("daily_whoop",14);
+    const todayRow=hist.find(r=>r.date===day);
+    const effective=todayRow||hist[0]||null;
+    if(effective)setWhoopData({recovery:effective.recovery,sleep:effective.sleep,strain:effective.strain,hrv_ms:effective.hrv_ms,rhr:effective.rhr,sleep_hours:effective.sleep_hours,sleep_efficiency:effective.sleep_efficiency,source:effective.source,reading_date:effective.date});
+    setWhoopHist(hist.map(r=>({date:r.date,recovery:r.recovery,sleep:r.sleep,strain:r.strain,hrv_ms:r.hrv_ms,rhr:r.rhr,sleep_hours:r.sleep_hours,sleep_efficiency:r.sleep_efficiency})));
+    setWhoopLoading(false);
+  })();},[day,db]);
   const saveWhoop=async(d)=>{setWhoopData(d);db.upsert("daily_whoop",{date:day,source:"manual",...d});};
   const [whoopInput,setWhoopInput]=useState({recovery:"",sleep:"",strain:""});
 
@@ -526,8 +536,11 @@ function DashboardInner(){
     if(result.ok){
       setWhoopSyncMsg(`✓ synced ${result.synced} day${result.synced!==1?"s":""}`);
       await loadWhoopConn();
-      const row=await db.get("daily_whoop",day);if(row)setWhoopData({recovery:row.recovery,sleep:row.sleep,strain:row.strain,hrv_ms:row.hrv_ms,rhr:row.rhr,sleep_hours:row.sleep_hours,sleep_efficiency:row.sleep_efficiency,source:row.source});
-      const hist=await db.list("daily_whoop",14);setWhoopHist(hist.map(r=>({date:r.date,recovery:r.recovery,sleep:r.sleep,strain:r.strain,hrv_ms:r.hrv_ms,rhr:r.rhr,sleep_hours:r.sleep_hours,sleep_efficiency:r.sleep_efficiency})));
+      /* Refresh hist first, then pick today's row OR most recent (sleep-night convention). */
+      const hist=await db.list("daily_whoop",14);
+      setWhoopHist(hist.map(r=>({date:r.date,recovery:r.recovery,sleep:r.sleep,strain:r.strain,hrv_ms:r.hrv_ms,rhr:r.rhr,sleep_hours:r.sleep_hours,sleep_efficiency:r.sleep_efficiency})));
+      const effective=hist.find(r=>r.date===day)||hist[0]||null;
+      if(effective)setWhoopData({recovery:effective.recovery,sleep:effective.sleep,strain:effective.strain,hrv_ms:effective.hrv_ms,rhr:effective.rhr,sleep_hours:effective.sleep_hours,sleep_efficiency:effective.sleep_efficiency,source:effective.source,reading_date:effective.date});
     } else {
       setWhoopSyncMsg(`✗ ${result.error||"sync failed"}`);
     }
@@ -2060,6 +2073,13 @@ function DashboardInner(){
         </div>
 
         {whoopData?(<>
+          {/* Subtle note when the displayed reading is filed under a different date.
+              Whoop labels recovery by the sleep night, so on Monday morning the most
+              recent row is dated Sunday — surface this so user isn't confused. */}
+          {whoopData.reading_date&&whoopData.reading_date!==day&&(<div className="mono" style={{fontSize:9.5,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+            <span style={{width:4,height:4,borderRadius:"50%",background:"var(--t-5)"}}/>
+            Reading from {new Date(whoopData.reading_date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})} · Whoop sleep-night convention
+          </div>)}
           <div style={{display:"flex",gap:8,marginBottom:14}}>
             {[
               {k:"recovery",l:"Recovery",v:whoopData.recovery,u:"%",color:whoopData.recovery>=67?"var(--c-success)":whoopData.recovery>=34?"var(--c-warn)":"var(--c-danger)",icon:"heart"},

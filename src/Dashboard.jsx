@@ -1298,23 +1298,21 @@ function DashboardInner(){
             })()}
           </div>)}
 
-          {/* Secondary macros with progress rings — Wave A. Each tile shows a small
-              SVG ring filled by % of target. Visually upgrades the strip from text-only
-              to a macro distribution display. */}
+          {/* Secondary macros with progress rings — Wave A. Vertical stack:
+              label on top, ring centered, value below, target at bottom.
+              Symmetric layout = visually balanced. */}
           <div style={{display:"flex",gap:8,marginBottom:14}}>
             {[{k:"cal",l:"Cal",v:totals.cal,t:TARGETS.cal,c:"var(--c-cal)"},{k:"fat",l:"Fat",v:Math.round(totals.fat),t:TARGETS.fat,c:"var(--c-fat)"},{k:"carbs",l:"Carbs",v:Math.round(totals.carbs),t:TARGETS.carbs,c:"var(--c-carbs)"}].map((m,i)=>{
               const pct=Math.max(0,Math.min(100,(m.v/m.t)*100));
               const r=18, c=2*Math.PI*r, off=c-(pct/100)*c;
-              return(<div key={m.k} className="rise" style={{animationDelay:`${0.04+i*0.04}s`,flex:1,background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 8px",display:"flex",alignItems:"center",gap:8,minWidth:0}}>
-                <svg width="44" height="44" viewBox="0 0 44 44" style={{flexShrink:0,transform:"rotate(-90deg)"}}>
+              return(<div key={m.k} className="rise" style={{animationDelay:`${0.04+i*0.04}s`,flex:1,background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 8px 12px",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                <div style={{fontSize:9.5,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>{m.l}</div>
+                <svg width="44" height="44" viewBox="0 0 44 44" style={{transform:"rotate(-90deg)",marginTop:2,marginBottom:1}}>
                   <circle cx="22" cy="22" r={r} fill="none" stroke="var(--elev-3)" strokeWidth="3"/>
                   <circle cx="22" cy="22" r={r} fill="none" stroke={m.c} strokeWidth="3" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} style={{transition:"stroke-dashoffset .4s var(--ease-out)"}}/>
                 </svg>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:9.5,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>{m.l}</div>
-                  <div className="serif tabular" style={{fontSize:20,color:m.c,fontStyle:"italic",lineHeight:1,letterSpacing:"-0.01em"}}>{m.v}</div>
-                  <div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:2,letterSpacing:".02em"}}>/ {m.t}</div>
-                </div>
+                <div className="serif tabular" style={{fontSize:20,color:m.c,fontStyle:"italic",lineHeight:1,letterSpacing:"-0.01em"}}>{m.v}</div>
+                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".02em"}}>/ {m.t}</div>
               </div>);
             })}
           </div>

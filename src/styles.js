@@ -26,7 +26,7 @@ export const STYLE=`@import url('${FONT_URL}');
   --accent-soft: rgba(0, 229, 255, 0.10);
   --accent-line: rgba(0, 229, 255, 0.30);
   --legacy-sage: oklch(0.78 0.17 158);
-  --c-protein: oklch(0.74 0.17 25);
+  --c-protein: #FF3D3D;
   --c-fat: oklch(0.83 0.14 80);
   --c-carbs: oklch(0.77 0.14 215);
   --c-cal: oklch(0.78 0.16 295);

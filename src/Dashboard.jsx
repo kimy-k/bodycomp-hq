@@ -285,7 +285,17 @@ function DashboardInner(){
       .filter(Boolean);
   },[peptideStack]);
 
-  const duePeptides=userPeps.filter(p=>(p.status==="active"||p.status==="prn")&&p.schedule.includes(todayDow));
+  /* "starting" with a passed start_date is functionally active — only future
+     start_dates remain truly upcoming. Used everywhere the app distinguishes
+     "currently running" from "configured but not yet begun". */
+  const isPeptideLive = (p) => {
+    if (p.status === "active" || p.status === "prn") return true;
+    if (p.status === "starting" && p.start_date && p.start_date <= day) return true;
+    return false;
+  };
+  const isPeptideUpcoming = (p) => p.status === "starting" && p.start_date && p.start_date > day;
+
+  const duePeptides=userPeps.filter(p=>isPeptideLive(p)&&p.schedule.includes(todayDow));
   const notDue=userPeps.filter(p=>!duePeptides.includes(p));
   const checkedCount=duePeptides.filter(p=>pepData.checks[p.id]).length;
 
@@ -1491,7 +1501,7 @@ function DashboardInner(){
         {pepSub==="today"&&(<>
           {/* Supply alerts — use live inventory from shared batches when available, else hardcoded supplyNote */}
           {(()=>{
-            const enriched=userPeps.filter(p=>p.status==="active").map(p=>{const inv=inventoryFor(p);return{peptide:p,daysSupply:inv?.daysSupply,dosesRemaining:inv?.dosesRemaining,liveNote:inv?`${inv.dosesRemaining}/${inv.totalDosesInVial} doses left in current vial`:null,isLive:!!inv};}).filter(x=>x.daysSupply!=null&&x.daysSupply<=14).sort((a,b)=>a.daysSupply-b.daysSupply);
+            const enriched=userPeps.filter(p=>isPeptideLive(p)).map(p=>{const inv=inventoryFor(p);return{peptide:p,daysSupply:inv?.daysSupply,dosesRemaining:inv?.dosesRemaining,liveNote:inv?`${inv.dosesRemaining}/${inv.totalDosesInVial} doses left in current vial`:null,isLive:!!inv};}).filter(x=>x.daysSupply!=null&&x.daysSupply<=14).sort((a,b)=>a.daysSupply-b.daysSupply);
             if(enriched.length===0)return null;
             return(<div style={{marginBottom:16}}>{enriched.map(({peptide:p,daysSupply,dosesRemaining,liveNote,isLive})=>{const urgent=daysSupply<=7;return(<div key={p.id} className="rise" style={{background:urgent?"color-mix(in oklch, var(--c-danger) 10%, var(--elev-1))":"color-mix(in oklch, var(--c-warn) 8%, var(--elev-1))",borderLeft:`3px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -1567,7 +1577,7 @@ function DashboardInner(){
                 const isToday=key===day;
                 days.push({key,dow,dayName,dateNum,isToday});
               }
-              const activePeps=userPeps.filter(p=>p.status==="active");
+              const activePeps=userPeps.filter(p=>isPeptideLive(p));
               return(<div style={{overflowX:"auto",background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:14}}>
                 <div style={{display:"grid",gridTemplateColumns:`88px repeat(7,1fr)`,gap:0,minWidth:340}}>
                   <div/>
@@ -1674,7 +1684,7 @@ function DashboardInner(){
           {/* Other peptides */}
           {(notDue.length>0)&&(<div style={{marginTop:18}}>
             <button onClick={()=>setShowOther(!showOther)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",fontSize:11.5,cursor:"pointer",padding:"6px 0",display:"inline-flex",alignItems:"center",gap:6}}>
-              {notDue.filter(p=>p.status!=="break"&&p.status!=="starting").length} not due · {notDue.filter(p=>p.status==="break").length} on break · {notDue.filter(p=>p.status==="starting").length} upcoming
+              {notDue.filter(p=>p.status!=="break"&&!isPeptideUpcoming(p)).length} not due · {notDue.filter(p=>p.status==="break").length} on break · {notDue.filter(p=>isPeptideUpcoming(p)).length} upcoming
               <Icon n={showOther?"chevUp":"chevDown"} s={14}/>
             </button>
             {showOther&&(<div className="sheet" style={{marginTop:8}}>
@@ -1687,8 +1697,8 @@ function DashboardInner(){
         </>)}
 
         {pepSub==="all"&&(<>
-          <H2 sub={`${userPeps.filter(p=>p.status==="active"||p.status==="prn").length} running`}>Active stack</H2>
-          {userPeps.filter(p=>p.status==="active"||p.status==="prn").map((p,i)=>{
+          <H2 sub={`${userPeps.filter(p=>isPeptideLive(p)).length} running`}>Active stack</H2>
+          {userPeps.filter(p=>isPeptideLive(p)).map((p,i)=>{
             /* Compute current cycle week from start_date instead of stale p.week field */
             const weekNow=p.startDate?Math.max(0,Math.floor((Date.now()-new Date(p.startDate+"T12:00:00").getTime())/(7*24*60*60*1000))+1):0;
             const cyclePct=p.totalWeeks>0?Math.min(100,(weekNow/p.totalWeeks)*100):0;
@@ -1766,9 +1776,9 @@ function DashboardInner(){
             </div>);
           })}
 
-          {userPeps.filter(p=>p.status==="starting").length>0&&<>
+          {userPeps.filter(p=>isPeptideUpcoming(p)).length>0&&<>
             <H2>Starting soon</H2>
-            {userPeps.filter(p=>p.status==="starting").map(p=>{const inv=inventoryFor(p);return(<div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:`3px solid ${p.color}`,borderRadius:"var(--r-sm)",padding:"13px 16px",marginBottom:8}}>
+            {userPeps.filter(p=>isPeptideUpcoming(p)).map(p=>{const inv=inventoryFor(p);return(<div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:`3px solid ${p.color}`,borderRadius:"var(--r-sm)",padding:"13px 16px",marginBottom:8}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:14,fontWeight:600,color:p.color}}>{p.name}</span>
                 <div style={{display:"flex",gap:5,alignItems:"center"}}>
@@ -1969,7 +1979,7 @@ function DashboardInner(){
               const checks=d.checks||{};
               const ids=Object.keys(checks);
               const dow=new Date(d.date+"T12:00:00").getDay();
-              const dueCount=userPeps.filter(p=>(p.status==="active"||p.status==="prn")&&p.schedule.includes(dow)).length;
+              const dueCount=userPeps.filter(p=>isPeptideLive(p)&&p.schedule.includes(dow)).length;
               const adherence=dueCount>0?Math.round(ids.length/dueCount*100):0;
               const sf=d.sideEffects||[];
               const adColor=adherence>=80?"var(--c-success)":adherence>=50?"var(--c-warn)":"var(--c-danger)";

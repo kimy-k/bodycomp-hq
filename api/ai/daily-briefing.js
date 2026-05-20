@@ -81,10 +81,14 @@ async function gatherDailyData(userId) {
     .map(r => ({date: r.date, recovery: r.recovery, hrv: r.hrv_ms, sleep_h: r.sleep_hours}));
 
   /* Peptides due today by day-of-week. JS getDay returns 0=Sun..6=Sat,
-     matching how the app stores schedules. */
+     matching how the app stores schedules.
+     A "starting" peptide with start_date in the past is functionally active. */
   const todayDow = new Date(today + "T12:00:00").getDay();
   const dueToday = stack.filter(s => {
-    if (s.status !== "active" && s.status !== "prn") return false;
+    const live = s.status === "active"
+              || s.status === "prn"
+              || (s.status === "starting" && s.start_date && s.start_date <= today);
+    if (!live) return false;
     const sched = Array.isArray(s.schedule) ? s.schedule : [];
     return sched.includes(todayDow);
   }).map(s => ({peptide: s.peptide_id, dose: s.dose, time: s.time}));
@@ -96,7 +100,10 @@ async function gatherDailyData(userId) {
   /* Compute current streak per peptide over last 14 days (consecutive due-and-logged days) */
   const streaks = {};
   for (const s of stack) {
-    if (s.status !== "active") continue;
+    const live = s.status === "active"
+              || s.status === "prn"
+              || (s.status === "starting" && s.start_date && s.start_date <= today);
+    if (!live) continue;
     const id = s.peptide_id;
     const sched = Array.isArray(s.schedule) ? s.schedule : [];
     if (sched.length === 0) continue;

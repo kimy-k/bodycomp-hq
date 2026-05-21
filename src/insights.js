@@ -147,25 +147,92 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
     }
   }
 
-  /* 6. Klow recovery correlation (the killer cross-stream insight) */
-  if (whoopHist && whoopHist.length >= 7 && pepHist && pepHist.length >= 7) {
-    const klowDates = new Set(pepHist.filter(d => (d.checks || {})["klow"]).map(d => d.date));
-    const withK = whoopHist.filter(w => klowDates.has(w.date) && w.recovery != null);
-    const noK = whoopHist.filter(w => !klowDates.has(w.date) && w.recovery != null);
-    if (withK.length >= 3 && noK.length >= 3) {
-      const aW = Math.round(withK.reduce((a,b) => a + +b.recovery, 0) / withK.length);
-      const aN = Math.round(noK.reduce((a,b) => a + +b.recovery, 0) / noK.length);
-      const diff = aW - aN;
-      if (Math.abs(diff) >= 5) {
-        out.push({
-          id: "klow-corr",
-          icon: "vial",
-          title: "Klow × recovery",
-          body: `Recovery averages ${aW}% on Klow days (n=${withK.length}) vs ${aN}% on rest days (n=${noK.length}). ${diff > 0 ? "Worth keeping in the stack." : "Worth a closer look."}`,
-          color: diff > 0 ? "var(--c-success)" : "var(--c-warn)",
-          severity: 1,
-        });
+  /* 6. Generalized peptide × Whoop correlations (replaces hardcoded Klow detector).
+        For each live peptide with ≥5 logged days AND ≥5 rest days that overlap with
+        Whoop data, tests 5 metrics × 2 lag timings. Strict thresholds prevent
+        over-interpretation. Outputs ranked top-5 cards; preliminary tag when n<8. */
+  if (whoopHist && whoopHist.length >= 10 && pepHist && pepHist.length >= 7 && userPeps && userPeps.length > 0) {
+    const addDay = (dateStr, days) => {
+      const d = new Date(dateStr + "T12:00:00");
+      d.setDate(d.getDate() + days);
+      return d.toISOString().slice(0, 10);
+    };
+    const METRICS = [
+      {key: "recovery",         label: "recovery",        threshold: 5,   higherBetter: true,  fmt: v => `${Math.round(v)}%`},
+      {key: "hrv_ms",           label: "HRV",             threshold: 3,   higherBetter: true,  fmt: v => `${Math.round(v)}ms`},
+      {key: "sleep_hours",      label: "sleep",           threshold: 0.3, higherBetter: true,  fmt: v => `${v.toFixed(1)}h`},
+      {key: "sleep_efficiency", label: "sleep efficiency",threshold: 3,   higherBetter: true,  fmt: v => `${Math.round(v)}%`},
+      {key: "strain",           label: "strain",          threshold: 1,   higherBetter: false, fmt: v => v.toFixed(1)},
+    ];
+    const LAGS = [
+      {days: 0, suffix: ""},
+      {days: 1, suffix: " (next morning)"},
+    ];
+    /* Set of dates with any peptide log entry — used to distinguish "rest day" from "untracked" */
+    const loggedDates = new Set(pepHist.map(d => d.date));
+    const findings = [];
+
+    /* Iterate every live peptide (active/prn/starting). For "starting" we don't bother
+       checking start_date — if there's enough overlap data it's already running. */
+    const considered = userPeps.filter(p => p.status === "active" || p.status === "prn" || p.status === "starting");
+
+    for (const pep of considered) {
+      const pepDates = new Set(pepHist.filter(d => (d.checks || {})[pep.id]).map(d => d.date));
+      if (pepDates.size < 5) continue;
+
+      for (const metric of METRICS) {
+        for (const lag of LAGS) {
+          const taken = [], rest = [];
+
+          for (const w of whoopHist) {
+            const raw = w[metric.key];
+            if (raw == null || raw === "") continue;
+            const val = Number(raw);
+            if (!isFinite(val)) continue;
+
+            /* For lag=0, whoop date = pep date.
+               For lag=1, whoop date = pep date + 1 (next morning reading reflects last night's pep dose). */
+            const checkDate = lag.days === 0 ? w.date : addDay(w.date, -lag.days);
+            if (!loggedDates.has(checkDate)) continue;  /* Skip days with no pep-log data */
+
+            if (pepDates.has(checkDate)) taken.push(val);
+            else rest.push(val);
+          }
+
+          if (taken.length < 5 || rest.length < 5) continue;
+
+          const meanT = taken.reduce((s, v) => s + v, 0) / taken.length;
+          const meanR = rest.reduce((s, v) => s + v, 0) / rest.length;
+          const diff = meanT - meanR;
+          if (Math.abs(diff) < metric.threshold) continue;
+
+          const preliminary = taken.length < 8 || rest.length < 8;
+          const direction = diff > 0;
+          /* For strain, higher = worse; for everything else, higher = better */
+          const isGood = metric.higherBetter ? direction : !direction;
+
+          findings.push({
+            pep, metric, lag, meanT, meanR, diff,
+            nT: taken.length, nR: rest.length,
+            preliminary, isGood,
+            /* Score = effect-size normalized by threshold × ln(total sample) */
+            score: (Math.abs(diff) / metric.threshold) * Math.log(taken.length + rest.length + 1),
+          });
+        }
       }
+    }
+
+    /* Rank by effect-size × sample-size, cap output at 5 cards */
+    findings.sort((a, b) => b.score - a.score);
+    for (const f of findings.slice(0, 5)) {
+      out.push({
+        id: `pep-whoop-${f.pep.id}-${f.metric.key}-${f.lag.days}`,
+        icon: "vial",
+        title: `${f.pep.name} × ${f.metric.label}${f.lag.suffix}`,
+        body: `Averages ${f.metric.fmt(f.meanT)} on ${f.pep.name} days (n=${f.nT}) vs ${f.metric.fmt(f.meanR)} on rest days (n=${f.nR}). ${f.isGood ? "Positive signal" : "Worth a closer look"}${f.preliminary ? " · preliminary" : ""}.`,
+        color: f.isGood ? "var(--c-success)" : "var(--c-warn)",
+        severity: f.preliminary ? 0 : 1,
+      });
     }
   }
 

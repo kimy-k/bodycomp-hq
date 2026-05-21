@@ -305,14 +305,14 @@ function DashboardInner(){
   },[peptideStack]);
 
   /* "starting" with a passed start_date is functionally active — only future
-     start_dates remain truly upcoming. Used everywhere the app distinguishes
-     "currently running" from "configured but not yet begun". */
+     start_dates remain truly upcoming. Note: userPeps maps DB's snake_case
+     start_date → camelCase startDate at line 297, so we read startDate here. */
   const isPeptideLive = (p) => {
     if (p.status === "active" || p.status === "prn") return true;
-    if (p.status === "starting" && p.start_date && p.start_date <= day) return true;
+    if (p.status === "starting" && p.startDate && p.startDate <= day) return true;
     return false;
   };
-  const isPeptideUpcoming = (p) => p.status === "starting" && p.start_date && p.start_date > day;
+  const isPeptideUpcoming = (p) => p.status === "starting" && p.startDate && p.startDate > day;
 
   const duePeptides=userPeps.filter(p=>isPeptideLive(p)&&p.schedule.includes(todayDow));
   const notDue=userPeps.filter(p=>!duePeptides.includes(p));

@@ -487,6 +487,7 @@ function DashboardInner(){
   /* ═══ INSIGHTS DATA — loaded when Body tab opens ═══ */
   const [insightsData,setInsightsData]=useState({pepHist:[],macroHist:[],whoopHist:[],wellnessHist:[],meas:[]});
   const [insightsLoaded,setInsightsLoaded]=useState(false);
+  const [patternsExpanded,setPatternsExpanded]=useState(false);
   useEffect(()=>{if(tab!=="overview")return;(async()=>{const [pH,mH,wH,welH,mE]=await Promise.all([db.list("daily_peptides",21),db.list("daily_macros",21),db.list("daily_whoop",21),db.list("daily_wellness",21),db.list("body_measurements",30)]);setInsightsData({pepHist:pH||[],macroHist:mH||[],whoopHist:wH||[],wellnessHist:welH||[],meas:mE||[]});setInsightsLoaded(true);})();},[tab,day,db]);
 
   const insights=useMemo(()=>{if(!insightsLoaded)return[];return computeInsights({pepHist:insightsData.pepHist,macroHist:insightsData.macroHist,whoopHist:insightsData.whoopHist,wellnessHist:insightsData.wellnessHist,measurements:insightsData.meas,scans:data,userPeps,TARGETS,whey,goalBf:goalPct,userConfig});},[insightsLoaded,insightsData,data,userPeps,TARGETS,whey,goalPct,userConfig]);
@@ -966,21 +967,24 @@ function DashboardInner(){
         })()}
 
         {/* ─── Patterns & Insights (Phase 1 of smart layer) ─── */}
-        {insightsLoaded&&insights.length>0&&(<div className="rise" style={{marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"4px 4px 10px"}}>
-            <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Patterns · {insights.length} detected</span>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {insights.slice(0,6).map((ins,i)=>(<div key={ins.id} className="rise" style={{animationDelay:`${i*0.04}s`,background:"#0a0a0a",border:"1px solid var(--line-soft)",borderLeft:`3px solid ${ins.color}`,borderRadius:"var(--r-sm)",padding:"11px 13px",display:"flex",alignItems:"flex-start",gap:11}}>
-              <div style={{marginTop:1,flexShrink:0}}><Icon n={ins.icon} s={14} c={ins.color} sw={1.8}/></div>
-              <div style={{flex:1,minWidth:0}}>
-                <div className="mono" style={{fontSize:9.5,color:ins.color,fontWeight:700,letterSpacing:".18em",textTransform:"uppercase",marginBottom:3}}>{ins.title}</div>
-                <div style={{fontSize:12.5,color:"var(--t-2)",lineHeight:1.55}}>{ins.body}</div>
-              </div>
-            </div>))}
-          </div>
-          {insights.length>6&&<div className="mono" style={{fontSize:9.5,color:"var(--t-4)",marginTop:8,textAlign:"center",letterSpacing:".06em"}}>+{insights.length-6} more patterns</div>}
-        </div>)}
+        {insightsLoaded&&insights.length>0&&(()=>{
+          const visibleCount = patternsExpanded ? insights.length : 6;
+          return(<div className="rise" style={{marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"4px 4px 10px"}}>
+              <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Patterns · {insights.length} detected</span>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {insights.slice(0,visibleCount).map((ins,i)=>(<div key={ins.id} className="rise" style={{animationDelay:`${i*0.04}s`,background:"#0a0a0a",border:"1px solid var(--line-soft)",borderLeft:`3px solid ${ins.color}`,borderRadius:"var(--r-sm)",padding:"11px 13px",display:"flex",alignItems:"flex-start",gap:11}}>
+                <div style={{marginTop:1,flexShrink:0}}><Icon n={ins.icon} s={14} c={ins.color} sw={1.8}/></div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div className="mono" style={{fontSize:9.5,color:ins.color,fontWeight:700,letterSpacing:".18em",textTransform:"uppercase",marginBottom:3}}>{ins.title}</div>
+                  <div style={{fontSize:12.5,color:"var(--t-2)",lineHeight:1.55}}>{ins.body}</div>
+                </div>
+              </div>))}
+            </div>
+            {insights.length>6&&<button onClick={()=>setPatternsExpanded(v=>!v)} className="touch mono" style={{display:"block",width:"100%",marginTop:8,padding:"8px 12px",background:"transparent",border:"1px solid var(--line-soft)",borderRadius:"var(--r-sm)",color:"var(--accent)",fontSize:10.5,fontWeight:600,letterSpacing:".10em",cursor:"pointer",textTransform:"uppercase"}}>{patternsExpanded?`Show less`:`Show ${insights.length-6} more patterns`}</button>}
+          </div>);
+        })()}
 
         {/* ─── Cost rollup — sum of monthly cost across cost-tracked active batches ─── */}
         {(()=>{

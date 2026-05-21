@@ -46,7 +46,14 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
     let due = 0, taken = 0;
     sorted.filter(d => inLast(d.date, 7)).forEach(d => {
       const dow = new Date(d.date + "T12:00:00").getDay();
-      const dueFor = userPeps.filter(p => (p.status === "active" || p.status === "prn") && (p.schedule || []).includes(dow));
+      /* A peptide is "due" on historical day d only if it was actually running then.
+         Active/prn count always; starting counts if its start date had passed by d. */
+      const dueFor = userPeps.filter(p => {
+        const wasLive = p.status === "active"
+                     || p.status === "prn"
+                     || (p.status === "starting" && p.startDate && p.startDate <= d.date);
+        return wasLive && (p.schedule || []).includes(dow);
+      });
       due += dueFor.length;
       taken += dueFor.filter(p => (d.checks || {})[p.id]).length;
     });

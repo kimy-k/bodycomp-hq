@@ -129,8 +129,9 @@ function DashboardInner(){
   useEffect(()=>{setMeals([]);setWheyOn(true);setMLoading(true);(async()=>{
     const row=await db.get("daily_macros",macroDate);
     if(row){setMeals(row.meals||[]);setWheyOn(row.whey!==false);}
-    const cfg=await db.getConfig("favs");
-    if(cfg)setFavs(cfg);
+    /* Load shared household favorites (own + partner's). Each item carries _owner. */
+    const sharedFavs=await db.getSharedFavs();
+    if(sharedFavs)setFavs(sharedFavs);
     setMLoading(false);
   })();},[macroDate,db]);
 
@@ -139,7 +140,13 @@ function DashboardInner(){
     db.upsert("daily_macros",{date:macroDate,meals:m,whey:w});
   },[macroDate]);
 
-  const saveFavs=async(f)=>{setFavs(f);db.setConfig("favs",f);};
+  /* Save favs: strip _owner, write ONLY the current user's items to config.
+     The full combined list (with partner's) stays in local state for display. */
+  const saveFavs=async(allFavs)=>{
+    setFavs(allFavs);
+    const mine=allFavs.filter(f=>f._owner===db.currentUser).map(({_owner,...m})=>m);
+    db.setConfig("favs",mine);
+  };
 
   useEffect(()=>{if(macroSub!=="history"||tab!=="macros")return;(async()=>{
     const rows=await db.list("daily_macros",14);
@@ -152,9 +159,21 @@ function DashboardInner(){
   const addMeal=()=>{if(!newMeal.name)return;const m={name:newMeal.name,protein:+(newMeal.protein||0),fat:+(newMeal.fat||0),carbs:+(newMeal.carbs||0),tag:newMeal.tag||"Other",id:Date.now()};saveMacro([...meals,m],wheyOn);setNewMeal({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});setAdding(false);};
   const removeMeal=id=>saveMacro(meals.filter(m=>m.id!==id),wheyOn);
   const toggleWhey=()=>saveMacro(meals,!wheyOn);
-  const addFav=(m)=>{if(!favs.find(f=>f.name===m.name))saveFavs([...favs,{name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag||"Other"}]);};
-  const removeFav=(name)=>saveFavs(favs.filter(f=>f.name!==name));
-  const addFromFav=(f)=>{saveMacro([...meals,{...f,id:Date.now()}],wheyOn);setShowFavs(false);};
+  const addFav=(m)=>{
+    /* De-dupe against OWN list only — partner's "Egg sandwich" doesn't block yours. */
+    if(favs.find(f=>f.name===m.name&&f._owner===db.currentUser))return;
+    saveFavs([...favs,{name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag||"Other",_owner:db.currentUser}]);
+  };
+  const removeFav=(name)=>{
+    /* Only allow removing your own favorites — partner's are read-only to you. */
+    saveFavs(favs.filter(f=>!(f.name===name&&f._owner===db.currentUser)));
+  };
+  const addFromFav=(f)=>{
+    /* Strip _owner before adding to today's meals log — it's not part of the meal schema. */
+    const {_owner,...meal}=f;
+    saveMacro([...meals,{...meal,id:Date.now()}],wheyOn);
+    setShowFavs(false);
+  };
   const startEdit=(m)=>{setEditId(m.id);setEditMeal({name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag||"Other"});};
   const saveEdit=()=>{saveMacro(meals.map(m=>m.id===editId?{...m,name:editMeal.name,protein:+(editMeal.protein||0),fat:+(editMeal.fat||0),carbs:+(editMeal.carbs||0),tag:editMeal.tag}:m),wheyOn);setEditId(null);};
 
@@ -1403,13 +1422,20 @@ function DashboardInner(){
               <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13.5,fontWeight:600,color:"var(--c-warn)"}}><Icon n="starFilled" s={15} c="var(--c-warn)"/> Favorites</span>
               <button onClick={()=>setShowFavs(false)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={16}/></button>
             </div>
-            {favs.map((f,i)=>(<div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:i<favs.length-1?"1px solid var(--line-soft)":"none"}}>
-              <div onClick={()=>addFromFav(f)} style={{flex:1,cursor:"pointer"}}>
-                <div style={{fontSize:13,fontWeight:500,color:"var(--t-1)"}}>{f.name}</div>
-                <div className="mono" style={{fontSize:11,color:"var(--t-3)",marginTop:2}}>{calcCal(f.protein,f.fat,f.carbs)} · <span style={{color:"var(--c-protein)",fontWeight:600}}>{f.protein}P</span> · {f.fat}F · {f.carbs}C</div>
-              </div>
-              <button onClick={()=>removeFav(f.name)} className="touch" style={{background:"none",border:"none",color:"var(--t-4)",cursor:"pointer",padding:6}}><Icon n="x" s={14}/></button>
-            </div>))}
+            {favs.map((f,i)=>{
+              const isMine=f._owner===db.currentUser;
+              const partnerLabel=!isMine&&f._owner?f._owner.charAt(0).toUpperCase()+f._owner.slice(1):"";
+              return(<div key={`${f._owner}-${f.name}-${i}`} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:i<favs.length-1?"1px solid var(--line-soft)":"none"}}>
+                <div onClick={()=>addFromFav(f)} style={{flex:1,cursor:"pointer"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:7}}>
+                    <span style={{fontSize:13,fontWeight:500,color:"var(--t-1)"}}>{f.name}</span>
+                    {!isMine&&<span className="mono" style={{fontSize:9,padding:"2px 6px",borderRadius:999,background:"color-mix(in oklch, var(--c-weight) 15%, transparent)",color:"var(--c-weight)",letterSpacing:".08em",fontWeight:600}}>{partnerLabel}</span>}
+                  </div>
+                  <div className="mono" style={{fontSize:11,color:"var(--t-3)",marginTop:2}}>{calcCal(f.protein,f.fat,f.carbs)} · <span style={{color:"var(--c-protein)",fontWeight:600}}>{f.protein}P</span> · {f.fat}F · {f.carbs}C</div>
+                </div>
+                {isMine&&<button onClick={()=>removeFav(f.name)} className="touch" style={{background:"none",border:"none",color:"var(--t-4)",cursor:"pointer",padding:6}}><Icon n="x" s={14}/></button>}
+              </div>);
+            })}
             {favs.length===0&&<div style={{textAlign:"center",padding:"16px 0",color:"var(--t-4)",fontSize:12}}>Star a meal to save it here</div>}
           </div>)}
 

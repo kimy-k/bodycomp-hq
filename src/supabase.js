@@ -14,6 +14,10 @@ export const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 export const hdr = {apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json"};
 
 export const makeDb = (uid, onErr = () => {}) => ({
+  /* Expose the active user id so UI can distinguish own data from partner's
+     (e.g., shared meal favorites between household profiles). */
+  currentUser: uid,
+
   async get(table, dateVal) {
     try {
       const r = await fetch(`${SB}/${table}?user_id=eq.${uid}&date=eq.${dateVal}&select=*`, {headers: hdr});
@@ -183,6 +187,28 @@ export const makeDb = (uid, onErr = () => {}) => ({
     } catch (e) {
       onErr(`Couldn't save settings`);
       return false;
+    }
+  },
+
+  /* Household-shared meal favorites. Fetches every user's "favs" config row
+     (not just the current user's) so partners see each other's starred meals.
+     Each item is tagged with `_owner: user_id` for UI ownership indicators —
+     partner's items can be added to today's log but not deleted. */
+  async getSharedFavs() {
+    try {
+      const r = await fetch(`${SB}/config?key=eq.favs&select=user_id,value`, {headers: hdr});
+      if (!r.ok) throw new Error(`config: ${r.status}`);
+      const rows = await r.json();
+      const combined = [];
+      for (const row of rows) {
+        const meals = Array.isArray(row.value) ? row.value : [];
+        for (const m of meals) {
+          combined.push({...m, _owner: row.user_id});
+        }
+      }
+      return combined;
+    } catch (e) {
+      return null;
     }
   },
   /* ─── Peptide stack methods (P10) — per-user editable stack stored in DB. */

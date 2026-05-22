@@ -140,7 +140,7 @@ export const PRICES = {
   tirz20:        {label:"Tirzepatide 20mg",                                    synthe:2999,                  peptora:4899},
   tirz30:        {label:"Tirzepatide 30mg",          avo:2800, pepticore:3000, synthe:3999,   pepmuse:2700, peptora:5899},
   cagri10:       {label:"Cagrilintide 10mg",         avo:2800,                 synthe:2500},
-  tesa10:        {label:"Tesamorelin 10mg",          avo:2600, pepticore:3500,                              peptora:3599},
+  tesa10:        {label:"Tesamorelin 10mg",          avo:2600, pepticore:3500, pepmuse:1989,                peptora:3599},
   ghkcu50:       {label:"GHK-Cu 50mg",               avo:1000,                 synthe:1500,   pepmuse:900},
   ghkcu100:      {label:"GHK-Cu 100mg",              avo:1600, pepticore:1200, synthe:2000,   pepmuse:1500, peptora:3799, purepept:1500},
   glut1500:      {label:"Glutathione 1500mg",        avo:1650,                 synthe:2499,   pepmuse:1700,               purepept:1500},

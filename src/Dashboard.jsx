@@ -1764,8 +1764,9 @@ function DashboardInner(){
                   .filter(b => b.peptide_id === p.id && !b.exhausted)
                   .sort((a,b) => b.date_recon.localeCompare(a.date_recon))[0];
                 const batchStat = activeBatch ? batchStatus_pure(activeBatch) : null;
+                const perDose = activeBatch ? costPerDose(activeBatch, p) : null;
                 const monthly = activeBatch ? costPerMonth(activeBatch, p) : null;
-                if (!pk && !recon?.stabilityDays && !batchStat && monthly == null) return null;
+                if (!pk && !recon?.stabilityDays && !batchStat && perDose == null && monthly == null) return null;
                 return (<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
                   {pk?.halfLifeNote && (
                     <span title={pk.dosingImplication} className="mono" style={{fontSize:10,color:"var(--t-3)",background:"var(--elev-2)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid var(--line-soft)"}}>
@@ -1782,8 +1783,13 @@ function DashboardInner(){
                       current batch · {batchStat.label}
                     </span>
                   )}
+                  {perDose != null && (
+                    <span className="mono" style={{fontSize:10,color:"var(--accent)",background:"color-mix(in oklch, var(--accent) 10%, transparent)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid color-mix(in oklch, var(--accent) 30%, transparent)",fontWeight:600}}>
+                      {fmtCost(perDose, activeBatch.currency || "USD")}/dose
+                    </span>
+                  )}
                   {monthly != null && (
-                    <span className="mono" style={{fontSize:10,color:"var(--t-2)",background:"var(--elev-2)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid var(--line-soft)",fontWeight:600}}>
+                    <span className="mono" style={{fontSize:10,color:"var(--accent)",background:"color-mix(in oklch, var(--accent) 10%, transparent)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid color-mix(in oklch, var(--accent) 30%, transparent)",fontWeight:600}}>
                       ≈ {fmtCost(monthly, activeBatch.currency || "USD")}/mo
                     </span>
                   )}
@@ -1808,7 +1814,17 @@ function DashboardInner(){
 
           {userPeps.filter(p=>isPeptideUpcoming(p)).length>0&&<>
             <H2>Starting soon</H2>
-            {userPeps.filter(p=>isPeptideUpcoming(p)).map(p=>{const inv=inventoryFor(p);return(<div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:`3px solid ${p.color}`,borderRadius:"var(--r-sm)",padding:"13px 16px",marginBottom:8}}>
+            {userPeps.filter(p=>isPeptideUpcoming(p)).map(p=>{
+              const inv=inventoryFor(p);
+              /* Project monthly cost for upcoming peptides too — same math as Active,
+                 labeled "projected" so it's clear it's not yet incurred. */
+              const activeBatch = batches
+                .filter(b => b.peptide_id === p.id && !b.exhausted)
+                .sort((a,b) => b.date_recon.localeCompare(a.date_recon))[0];
+              const projectedPerDose = activeBatch ? costPerDose(activeBatch, p) : null;
+              const projectedMonthly = activeBatch ? costPerMonth(activeBatch, p) : null;
+              const daysToStart = p.startDate ? Math.max(0, Math.ceil((new Date(p.startDate+"T12:00:00") - new Date(day+"T12:00:00"))/86400000)) : null;
+              return(<div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:`3px solid ${p.color}`,borderRadius:"var(--r-sm)",padding:"13px 16px",marginBottom:8}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:14,fontWeight:600,color:p.color}}>{p.name}</span>
                 <div style={{display:"flex",gap:5,alignItems:"center"}}>
@@ -1819,6 +1835,25 @@ function DashboardInner(){
               <div className="mono" style={{fontSize:12,color:"var(--t-2)",marginTop:3}}>{p.dose}</div>
               <div style={{fontSize:11,color:"var(--t-3)",marginTop:2}}>{p.note}</div>
               <div style={{fontSize:11,color:"var(--t-4)",marginTop:5,lineHeight:1.5,fontStyle:"italic"}}>{p.purpose}</div>
+              {(daysToStart != null || projectedPerDose != null || projectedMonthly != null) && (
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                  {daysToStart != null && (
+                    <span className="mono" style={{fontSize:10,color:p.color,background:`color-mix(in oklch, ${p.color} 10%, transparent)`,padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:`1px solid color-mix(in oklch, ${p.color} 35%, transparent)`,fontWeight:600}}>
+                      starts in {daysToStart}d
+                    </span>
+                  )}
+                  {projectedPerDose != null && (
+                    <span className="mono" style={{fontSize:10,color:"var(--accent)",background:"color-mix(in oklch, var(--accent) 10%, transparent)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid color-mix(in oklch, var(--accent) 30%, transparent)",fontWeight:600}}>
+                      {fmtCost(projectedPerDose, activeBatch.currency || "USD")}/dose
+                    </span>
+                  )}
+                  {projectedMonthly != null && (
+                    <span className="mono" style={{fontSize:10,color:"var(--accent)",background:"color-mix(in oklch, var(--accent) 10%, transparent)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid color-mix(in oklch, var(--accent) 30%, transparent)",fontWeight:600}}>
+                      ≈ {fmtCost(projectedMonthly, activeBatch.currency || "USD")}/mo projected
+                    </span>
+                  )}
+                </div>
+              )}
             </div>);})}
           </>}
 

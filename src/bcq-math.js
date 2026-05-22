@@ -119,16 +119,47 @@ export const currentBatchFor = (pepId, batches, now = new Date()) => {
   return active.sort((a, b) => b.date_recon.localeCompare(a.date_recon))[0] || null;
 };
 
-/* Extract mg quantity from a free-text dose string.
-   "2.5mg (25u)"  → 2.5
-   "40u (10.7mg)" → 10.7
-   "100mcg"       → null  (no mg)
-   ""             → null
-   null/undefined → null */
+/* Extract mg quantity from a free-text dose string. Parses mg, mcg (→ ÷1000),
+   and ug (synonym for mcg). The (?!\w) lookahead prevents false matches like
+   "200mcg" being read as "00 mg" or "Xmg/mL" being read as just mg.
+   "2.5mg (25u)"              → 2.5
+   "40u (10.7mg)"             → 10.7
+   "100mcg"                   → 0.1
+   "12u (0.12mL · 400mcg)"    → 0.4
+   "200mcg x2 daily"          → 0.2  (per-dose mass; BID handled separately)
+   ""                         → null
+   null/undefined             → null */
 export const mgFromDoseStr = str => {
   if (!str) return null;
-  const m = String(str).match(/(\d+\.?\d*)\s*mg/i);
-  return m ? +m[1] : null;
+  const s = String(str);
+  const mgMatch  = s.match(/(\d+\.?\d*)\s*mg(?![a-z])/i);
+  if (mgMatch) return +mgMatch[1];
+  const mcgMatch = s.match(/(\d+\.?\d*)\s*mcg\b/i);
+  if (mcgMatch) return +(+mcgMatch[1] / 1000).toFixed(6);
+  const ugMatch  = s.match(/(\d+\.?\d*)\s*(?:ug|µg)\b/i);
+  if (ugMatch) return +(+ugMatch[1] / 1000).toFixed(6);
+  return null;
+};
+
+/* Extract doses-per-day from a dose string (or null = default 1).
+   Detects BID/TID/QID, "x2 daily", "twice daily", and "x N" multipliers.
+   Caller is responsible for applying this to monthly cost calculations.
+   "2.5mg (25u) BID"     → 2
+   "200mcg x2 daily"     → 2
+   "1 mg TID"            → 3
+   "40u (10.7mg)"        → 1  (no multi-dose marker) */
+export const dosesPerDayFromDose = str => {
+  if (!str) return 1;
+  const s = String(str).toLowerCase();
+  if (/\bqid\b|four\s*times\s*daily/.test(s)) return 4;
+  if (/\btid\b|three\s*times\s*daily|3x\s*daily|x\s*3\s*daily/.test(s)) return 3;
+  if (/\bbid\b|twice\s*daily|2x\s*daily|x\s*2\s*daily/.test(s)) return 2;
+  const xMatch = s.match(/\bx\s*(\d+)\b/);
+  if (xMatch) {
+    const n = +xMatch[1];
+    if (n >= 2 && n <= 6) return n; /* guard nonsense values */
+  }
+  return 1;
 };
 
 /* Live inventory for a peptide based on its current batch + cross-user dose log.
@@ -177,11 +208,11 @@ export const costPerDose = (batch, peptide) => {
 };
 
 /* Monthly cost = cost/dose × doses-per-month.
-   doses-per-month derived from peptide.schedule (array of day indices used in stack).
-   - schedule.length=7 (daily) → 30/mo
-   - schedule.length=4 → 17/mo (4 days × 4.33 weeks)
-   - schedule.length=2 → 9/mo
-   - schedule.length=1 (weekly) → 4.33/mo
+   doses-per-month = scheduled-days-per-week × 4.33 × doses-per-day (BID/TID).
+   - schedule.length=7 daily × 1/day        → ~30/mo
+   - schedule.length=7 daily × 2/day (BID)  → ~60/mo
+   - schedule.length=4 × 1/day              → ~17/mo
+   - schedule.length=1 (weekly)             → ~4.33/mo
    Returns null if cost/dose can't be computed.
    PRN peptides (status='prn') return null since usage is unpredictable. */
 export const costPerMonth = (batch, peptide) => {
@@ -190,7 +221,8 @@ export const costPerMonth = (batch, peptide) => {
   if (peptide.status === "prn") return null;
   const dosesPerWeek = Array.isArray(peptide.schedule) ? peptide.schedule.length : 0;
   if (!dosesPerWeek) return null;
-  const dosesPerMonth = dosesPerWeek * 4.33;
+  const dosesPerDay = dosesPerDayFromDose(peptide.dose);
+  const dosesPerMonth = dosesPerWeek * 4.33 * dosesPerDay;
   return +(cpd * dosesPerMonth).toFixed(2);
 };
 

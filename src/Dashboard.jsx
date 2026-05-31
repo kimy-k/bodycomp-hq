@@ -754,7 +754,10 @@ function DashboardInner(){
             <div className="mono" style={{fontSize:10,color:"var(--t-3)",letterSpacing:".20em",textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Goal · {goalPct}% body fat</div>
             <div className="mono" style={{fontSize:11,color:"var(--t-4)",letterSpacing:".04em"}}>{fatToLose>0?`${fatToLose}kg to go`:"Goal reached"}</div>
           </div>
-          <div style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:32,color:"var(--accent)",lineHeight:1,fontWeight:800,letterSpacing:"-0.04em"}}>{pctDone}<span className="mono" style={{fontSize:13,color:"var(--t-4)",fontWeight:600,letterSpacing:".04em"}}>%</span></div>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
+            <div style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:32,color:"var(--accent)",lineHeight:1,fontWeight:800,letterSpacing:"-0.04em"}}>{pctDone}<span className="mono" style={{fontSize:13,color:"var(--t-4)",fontWeight:600,letterSpacing:".04em"}}>%</span></div>
+            <div className="mono" style={{fontSize:8.5,color:"var(--t-4)",letterSpacing:".14em",textTransform:"uppercase",fontWeight:700}}>of goal</div>
+          </div>
         </div>
         <div className="hbar"><i style={{width:`${pctDone}%`,background:"var(--accent)",boxShadow:"0 0 8px rgba(0,229,255,0.4)"}}/></div>
       </div>}
@@ -850,8 +853,8 @@ function DashboardInner(){
             </div>
             <div style={{position:"relative",display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:0,marginTop:18,paddingTop:18,borderTop:"1px solid var(--line)"}}>
               {[
-                {k:"HRV",   v: latestWhoop.hrv_ms != null ? Number(latestWhoop.hrv_ms).toFixed(1) : "—", u:"ms"},
                 {k:"RHR",   v: latestWhoop.rhr ?? "—",    u:"bpm"},
+                {k:"HRV",   v: latestWhoop.hrv_ms != null ? Number(latestWhoop.hrv_ms).toFixed(1) : "—", u:"ms"},
                 {k:"Sleep", v: sleepStr,                  u:"hrs"},
                 {k:"Strain",v: latestWhoop.strain != null ? Number(latestWhoop.strain).toFixed(1) : "—", u:""},
               ].map((s,i)=>(<div key={s.k} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,position:"relative",borderLeft:i>0?"1px solid var(--line-soft)":"none"}}>
@@ -1770,6 +1773,7 @@ function DashboardInner(){
                 const batchStat = activeBatch ? batchStatus_pure(activeBatch) : null;
                 const perDose = activeBatch ? costPerDose(activeBatch, p) : null;
                 const monthly = activeBatch ? costPerMonth(activeBatch, p) : null;
+                const isExpired = !!(activeBatch && activeBatch.expiry_date && activeBatch.expiry_date < todayKey());
                 if (!pk && !recon?.stabilityDays && !batchStat && perDose == null && monthly == null) return null;
                 return (<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
                   {pk?.halfLifeNote && (
@@ -1787,14 +1791,19 @@ function DashboardInner(){
                       current batch · {batchStat.label}
                     </span>
                   )}
-                  {perDose != null && (
+                  {perDose != null && !isExpired && (
                     <span className="mono" style={{fontSize:10,color:"var(--accent)",background:"color-mix(in oklch, var(--accent) 10%, transparent)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid color-mix(in oklch, var(--accent) 30%, transparent)",fontWeight:600}}>
                       {fmtCost(perDose, activeBatch.currency || "USD")}/dose
                     </span>
                   )}
-                  {monthly != null && (
+                  {monthly != null && !isExpired && (
                     <span className="mono" style={{fontSize:10,color:"var(--accent)",background:"color-mix(in oklch, var(--accent) 10%, transparent)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid color-mix(in oklch, var(--accent) 30%, transparent)",fontWeight:600}}>
                       ≈ {fmtCost(monthly, activeBatch.currency || "USD")}/mo
+                    </span>
+                  )}
+                  {monthly != null && isExpired && (
+                    <span className="mono" style={{fontSize:10,color:"var(--c-warn)",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid color-mix(in oklch, var(--c-warn) 32%, transparent)",fontWeight:600}}>
+                      batch expired · reorder to resume cost
                     </span>
                   )}
                 </div>);
@@ -2043,7 +2052,7 @@ function DashboardInner(){
 
         {pepSub==="history"&&(<>
           {pepHist.length===0?<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="calendar" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No history yet</div></div>:(<>
-            {pepHist.map((d,i)=>{
+            {(()=>{const _t=todayKey();const _rows=pepHist.some(h=>h.date===_t)?pepHist:[{date:_t,checks:{},sideEffects:[]},...pepHist];return _rows.map((d,i)=>{
               const lb=new Date(d.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
               const checks=d.checks||{};
               const ids=Object.keys(checks);
@@ -2051,10 +2060,11 @@ function DashboardInner(){
               const dueCount=userPeps.filter(p=>isPeptideLive(p)&&p.schedule.includes(dow)).length;
               const adherence=dueCount>0?Math.round(ids.length/dueCount*100):0;
               const sf=d.sideEffects||[];
-              const adColor=adherence>=80?"var(--c-success)":adherence>=50?"var(--c-warn)":"var(--c-danger)";
+              const isToday=d.date===todayKey();
+              const adColor=isToday&&ids.length===0?"var(--t-3)":adherence>=80?"var(--c-success)":adherence>=50?"var(--c-warn)":"var(--c-danger)";
               return(<div key={i} className="rise" style={{animationDelay:`${i*0.03}s`,background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"14px 16px",marginBottom:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
-                  <span style={{fontSize:13,fontWeight:600,color:"var(--t-1)"}}>{lb}</span>
+                  <span style={{fontSize:13,fontWeight:600,color:"var(--t-1)"}}>{lb}{isToday&&<span className="mono" style={{marginLeft:7,fontSize:9.5,color:"var(--accent)",letterSpacing:".06em",textTransform:"uppercase"}}>today</span>}</span>
                   <div style={{display:"flex",gap:8,alignItems:"baseline"}}>
                     <span className="serif tabular" style={{fontSize:20,color:adColor,fontStyle:"italic"}}>{adherence}<span style={{fontSize:12}}>%</span></span>
                     <span className="mono" style={{fontSize:10.5,color:"var(--t-4)"}}>{ids.length}/{dueCount}</span>
@@ -2065,7 +2075,7 @@ function DashboardInner(){
                 </div>
                 {sf.length>0&&<div style={{fontSize:11,color:"var(--c-danger)",marginTop:6,display:"inline-flex",alignItems:"center",gap:5,fontStyle:"italic"}}><Icon n="warn" s={11} c="var(--c-danger)" sw={2}/> {sf.join(", ")}</div>}
               </div>);
-            })}
+            });})()}
           </>)}
         </>)}
       </>)}
@@ -2174,8 +2184,8 @@ function DashboardInner(){
               PostgREST returns `numeric` columns as STRINGS — wrap with Number()
               before calling .toFixed or React crashes inside ErrorBoundary. */}
           {(whoopData.hrv_ms||whoopData.rhr||whoopData.sleep_hours)&&(<div style={{display:"flex",gap:12,fontSize:11,color:"var(--t-3)",marginBottom:14,padding:"10px 14px",background:"var(--elev-1)",borderRadius:"var(--r-sm)",flexWrap:"wrap"}}>
-            {whoopData.hrv_ms!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{Number(whoopData.hrv_ms).toFixed(0)}</span> ms HRV</span>}
             {whoopData.rhr!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{whoopData.rhr}</span> bpm RHR</span>}
+            {whoopData.hrv_ms!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{Number(whoopData.hrv_ms).toFixed(0)}</span> ms HRV</span>}
             {whoopData.sleep_hours!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{Number(whoopData.sleep_hours).toFixed(2)}</span> h slept</span>}
             {whoopData.sleep_efficiency!=null&&<span><span className="mono" style={{color:"var(--t-1)",fontWeight:600}}>{Number(whoopData.sleep_efficiency).toFixed(0)}%</span> efficient</span>}
           </div>)}

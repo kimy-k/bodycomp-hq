@@ -64,7 +64,8 @@ async function gatherDailyData(userId) {
   const latestDaysOld = latestDate
     ? Math.round((new Date(today + "T12:00:00").getTime() - new Date(latestDate + "T12:00:00").getTime()) / 86400000)
     : null;
-  const todayWhoop = latestWhoop && latestDaysOld != null && latestDaysOld <= 1 ? latestWhoop : null;
+  const hasWhoop = !!(latestWhoop && latestWhoop.recovery != null);
+  const whoopStale = hasWhoop && latestDaysOld != null && latestDaysOld >= 2;
 
   /* 14-day Whoop baselines for "X% below avg" claims */
   const whoopValid = whoop14.filter(w => w.date < today);  /* exclude today from baseline */
@@ -137,15 +138,16 @@ async function gatherDailyData(userId) {
   return {
     date: today,
     day_of_week: ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][todayDow],
-    whoop_today: todayWhoop ? {
-      reading_date: todayWhoop.date,         /* may be yesterday's date — Whoop convention */
-      days_old: latestDaysOld,                /* 0 = filed under today, 1 = filed under yesterday (typical morning) */
-      recovery: todayWhoop.recovery,
-      sleep_h: todayWhoop.sleep_hours,
-      sleep_efficiency: todayWhoop.sleep_efficiency,
-      hrv: todayWhoop.hrv_ms,
-      rhr: todayWhoop.rhr,
-      strain: todayWhoop.strain,
+    whoop_today: hasWhoop ? {
+      reading_date: latestWhoop.date,        /* may be yesterday's date — Whoop convention */
+      days_old: latestDaysOld,               /* 0 = today, 1 = yesterday (typical morning), 2+ = stale */
+      stale: whoopStale,                     /* true when latest reading is 2+ days old — Whoop hasn't synced since */
+      recovery: latestWhoop.recovery,
+      sleep_h: latestWhoop.sleep_hours,
+      sleep_efficiency: latestWhoop.sleep_efficiency,
+      hrv: latestWhoop.hrv_ms,
+      rhr: latestWhoop.rhr,
+      strain: latestWhoop.strain,
     } : null,
     whoop_14d_baseline: baseline,
     whoop_recent_3d: recent3,
@@ -165,7 +167,7 @@ function buildPrompt(userId, data) {
 
 Output exactly three short paragraphs, each starting with a bolded label, separated by blank lines. NO headings, NO bullet lists, NO extra prose.
 
-**Overnight** — One sentence about last night's sleep and current recovery state: sleep hours, HRV, recovery score, brief comparison to baseline if useful. Use exact numbers from the data. Note: Whoop dates each recovery score by the SLEEP NIGHT, so a row filed under yesterday's date IS this morning's reading (treat \`whoop_today\` as current whenever it is not null, regardless of \`reading_date\`). Only if \`whoop_today\` is null entirely, say "Whoop hasn't synced yet for today."
+**Overnight** — One sentence about last night's sleep and current recovery state: sleep hours, HRV, recovery score, brief comparison to baseline if useful. Use exact numbers from the data. Note: Whoop dates each recovery score by the SLEEP NIGHT, so a row filed under yesterday's date IS this morning's reading. If \`whoop_today\` is present and \`whoop_today.stale\` is false, treat it as current. If \`whoop_today\` is present but \`whoop_today.stale\` is true, present it as your most recent reading from \`whoop_today.days_old\` days ago and note Whoop hasn't synced since. Only if \`whoop_today\` is null entirely, say "Whoop hasn't synced yet."
 
 **Today** — One sentence about what matters today: which peptides are due, day of week, current macro/protein progress if logged.
 

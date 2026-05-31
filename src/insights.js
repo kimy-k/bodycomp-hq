@@ -231,7 +231,20 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
 
     /* Rank by effect-size × sample-size, cap output at 5 cards */
     findings.sort((a, b) => b.score - a.score);
-    for (const f of findings.slice(0, 5)) {
+    /* Dedupe: keep only the best-scoring lag per peptide×metric so the same
+       correlation (e.g. CJC+Ipamorelin × Recovery) can't appear twice — once for
+       same-day and once for next-morning. findings is already score-sorted, so the
+       first occurrence of each pep×metric is the strongest. */
+    const seenPepMetric = new Set();
+    const topFindings = [];
+    for (const f of findings) {
+      const key = `${f.pep.id}-${f.metric.key}`;
+      if (seenPepMetric.has(key)) continue;
+      seenPepMetric.add(key);
+      topFindings.push(f);
+      if (topFindings.length >= 5) break;
+    }
+    for (const f of topFindings) {
       out.push({
         id: `pep-whoop-${f.pep.id}-${f.metric.key}-${f.lag.days}`,
         icon: "vial",

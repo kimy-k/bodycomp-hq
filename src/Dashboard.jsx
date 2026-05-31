@@ -12,6 +12,7 @@ import {
   mgFromDoseStr,
   inventoryFor as inventoryFor_pure,
   costPerMg, costPerDose, costPerMonth, fmtCost,
+  sharedActiveComponents,
 } from "./bcq-math.js";
 import {SB, SB_KEY, hdr, makeDb} from "./supabase.js";
 import {
@@ -20,6 +21,7 @@ import {
   PRODUCT_FOR_PEPTIDE, PRICES,
   PG_SLUG_FOR_PEPTIDE, PG_BASE, PG_DIRECTORY, pgUrlFor,
   reorderOptionsFor, RECONSTITUTION, PHARMACOKINETICS, recommendedReconFor,
+  COMPONENT_LABELS,
 } from "./data.js";
 import {todayKey, localDateKey, addDays, buildProj, calcMonthly, compressImage} from "./helpers.js";
 import {computeInsights} from "./insights.js";
@@ -1632,6 +1634,7 @@ function DashboardInner(){
                       if(isFuture){icon="";}
                       else if(!scheduled){icon=<span style={{color:"var(--t-5)"}}>–</span>;}
                       else if(taken){icon=<Icon n="check" s={12} c="var(--c-success)" sw={2.5}/>;bg="color-mix(in oklch, var(--c-success) 14%, transparent)";}
+                      else if(d.isToday){/* today not over yet — pending, never "missed" */icon=<span className="mono" style={{fontSize:13,lineHeight:1,color:"var(--accent)"}}>·</span>;bg="color-mix(in oklch, var(--accent) 9%, transparent)";}
                       else{icon=<Icon n="x" s={11} c="var(--c-danger)" sw={2.5}/>;bg="color-mix(in oklch, var(--c-danger) 10%, transparent)";}
                       const cellProps=editable&&scheduled?{onClick:()=>setEditPastDose({peptideId:p.id,date:d.key}),style:{display:"flex",alignItems:"center",justifyContent:"center",padding:"7px 0",background:bg,borderBottom:"1px solid var(--line-soft)",cursor:"pointer",transition:"background .15s var(--ease-out)"},onMouseEnter:e=>{e.currentTarget.style.background="color-mix(in oklch, var(--accent) 12%, "+bg+")";},onMouseLeave:e=>{e.currentTarget.style.background=bg;}}:{style:{display:"flex",alignItems:"center",justifyContent:"center",padding:"7px 0",background:bg,borderBottom:"1px solid var(--line-soft)"}};
                       return(<div key={d.key} {...cellProps}>{icon}</div>);
@@ -1641,6 +1644,7 @@ function DashboardInner(){
                 <div style={{display:"flex",gap:14,justifyContent:"center",marginTop:10,flexWrap:"wrap"}}>
                   <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,color:"var(--t-3)"}}><Icon n="check" s={11} c="var(--c-success)" sw={2.5}/> taken</span>
                   <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,color:"var(--t-3)"}}><Icon n="x" s={10} c="var(--c-danger)" sw={2.5}/> missed</span>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,color:"var(--t-3)"}}><span className="mono" style={{color:"var(--accent)",fontSize:13,lineHeight:1}}>·</span> today</span>
                   <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,color:"var(--t-3)"}}><span style={{color:"var(--t-5)"}}>–</span> not due</span>
                 </div>
                 <div style={{fontSize:10,color:"var(--t-4)",textAlign:"center",marginTop:6,fontStyle:"italic"}}>Tap any cell to log a missed dose or edit history</div>
@@ -1859,7 +1863,7 @@ function DashboardInner(){
 
           {userPeps.filter(p=>p.status==="break").length>0&&<>
             <H2>On break</H2>
-            {userPeps.filter(p=>p.status==="break").map(p=>{const inv=inventoryFor(p);return(<div key={p.id} className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"11px 16px",marginBottom:6,opacity:.6}}>
+            {userPeps.filter(p=>p.status==="break").map(p=>{const inv=inventoryFor(p);const overlap=sharedActiveComponents(p,userPeps);const sharers=userPeps.filter(o=>o.id!==p.id&&(o.status==="active"||o.status==="starting")&&(o.components||[]).some(c=>overlap.includes(c))).map(o=>o.name);return(<Fragment key={p.id}><div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"11px 16px",marginBottom:6,opacity:.6}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:13,color:"var(--t-2)",display:"inline-flex",alignItems:"center",gap:6}}><Icon n="pause" s={12} c="var(--t-4)"/> {p.name}</span>
                 <div style={{display:"flex",gap:5,alignItems:"center"}}>
@@ -1868,7 +1872,7 @@ function DashboardInner(){
                 </div>
               </div>
               <div style={{fontSize:11.5,color:"var(--t-4)",marginTop:3}}>{p.note}</div>
-            </div>);})}
+            </div>{overlap.length>0&&<div style={{marginTop:-2,marginBottom:8,fontSize:10.5,lineHeight:1.45,color:"#e0a84a",background:"color-mix(in oklch, #e0a84a 12%, transparent)",border:"1px solid color-mix(in oklch, #e0a84a 32%, transparent)",borderRadius:8,padding:"7px 10px"}}>Not a true washout — {sharers.join(" & ")} {sharers.length>1?"are":"is"} active, still delivering {overlap.map(c=>COMPONENT_LABELS[c]||c).join(", ")}. Check with your doctor before counting this as a break.</div>}</Fragment>);})}
           </>}
         </>)}
 

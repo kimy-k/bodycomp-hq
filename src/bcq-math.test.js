@@ -19,6 +19,7 @@ import {
   costPerDose,
   costPerMonth,
   fmtCost,
+  sharedActiveComponents,
 } from "./bcq-math.js";
 
 /* Fixed reference date for all time-dependent tests: May 17, 2026, noon UTC */
@@ -314,9 +315,9 @@ describe("mgFromDoseStr", () => {
     expect(mgFromDoseStr("  3.5  mg  ")).toBe(3.5);
   });
 
-  it("returns null for mcg-only or invalid input", () => {
-    expect(mgFromDoseStr("100mcg")).toBe(null);
-    expect(mgFromDoseStr("200mcg (2u)")).toBe(null);
+  it("converts mcg/µg to mg; returns null only for non-numeric input", () => {
+    expect(mgFromDoseStr("100mcg")).toBe(0.1);
+    expect(mgFromDoseStr("200mcg (2u)")).toBe(0.2);
     expect(mgFromDoseStr("topical")).toBe(null);
     expect(mgFromDoseStr("")).toBe(null);
     expect(mgFromDoseStr(null)).toBe(null);
@@ -468,7 +469,7 @@ describe("cost helpers", () => {
 
   it("returns null when dose has no mg parse", () => {
     const batch = {cost: 80, mg_total: 30};
-    const semax = {dose: "200mcg"};  // no mg
+    const semax = {dose: "topical"};  // no parseable mg/mcg
     expect(costPerDose(batch, semax)).toBe(null);
   });
 
@@ -499,5 +500,38 @@ describe("cost helpers", () => {
     expect(fmtCost(75, "EUR")).toBe("€75");
     expect(fmtCost(2.667, "USD")).toBe("$2.67");
     expect(fmtCost(null, "USD")).toBe(null);
+  });
+});
+
+describe("sharedActiveComponents (overlap-aware break flag)", () => {
+  const klow = {id:"klow", status:"active",   components:["bpc157","tb500","ghkcu","kpv"]};
+  const glow = {id:"glow", status:"break",    components:["bpc157","tb500","ghkcu"]};
+  const reta = {id:"reta", status:"active"}; // no components
+
+  it("flags overlap when a broken blend shares compounds with an active one", () => {
+    expect(sharedActiveComponents(glow, [klow, reta])).toEqual(["bpc157","tb500","ghkcu"]);
+  });
+
+  it("returns empty when the overlapping peptide is NOT active", () => {
+    expect(sharedActiveComponents(glow, [{...klow, status:"break"}, reta])).toEqual([]);
+  });
+
+  it("counts 'starting' peptides as delivering the compound", () => {
+    expect(sharedActiveComponents(glow, [{...klow, status:"starting"}])).toEqual(["bpc157","tb500","ghkcu"]);
+  });
+
+  it("ignores the peptide itself and returns [] for component-less peptides", () => {
+    expect(sharedActiveComponents(glow, [glow])).toEqual([]);
+    expect(sharedActiveComponents(reta, [klow])).toEqual([]);
+  });
+
+  it("returns only the shared subset, not all components", () => {
+    const ghkOnly = {id:"x", status:"active", components:["ghkcu"]};
+    expect(sharedActiveComponents(glow, [ghkOnly])).toEqual(["ghkcu"]);
+  });
+
+  it("handles missing/empty inputs safely", () => {
+    expect(sharedActiveComponents(null, [klow])).toEqual([]);
+    expect(sharedActiveComponents(glow, null)).toEqual([]);
   });
 });

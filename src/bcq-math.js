@@ -233,3 +233,21 @@ export const fmtCost = (amount, currency = "USD") => {
   if (sym) return `${sym}${amount.toLocaleString("en-US", {minimumFractionDigits: 0, maximumFractionDigits: 2})}`;
   return `${amount.toLocaleString("en-US", {minimumFractionDigits: 0, maximumFractionDigits: 2})} ${currency}`;
 };
+
+/* ─── Blend overlap (overlap-aware break flag) ───────────────────────────
+   A "break" from a blend isn't a real washout if another *currently active*
+   peptide still delivers the same component compounds. Given a peptide and the
+   rest of the user's effective stack, return the component-ids `pep` shares
+   with any active (or starting) peptide. Empty array ⇒ a genuine washout.
+   Pure; status strings: 'active' | 'starting' | 'break' | 'prn'. */
+export const sharedActiveComponents = (pep, others) => {
+  const comp = (pep && Array.isArray(pep.components)) ? pep.components : [];
+  if (!comp.length) return [];
+  const active = new Set();
+  for (const o of (others || [])) {
+    if (!o || o.id === pep.id) continue;
+    if (o.status !== "active" && o.status !== "starting") continue;
+    for (const c of (Array.isArray(o.components) ? o.components : [])) active.add(c);
+  }
+  return comp.filter(c => active.has(c));
+};

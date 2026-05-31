@@ -37,17 +37,24 @@ export const calcCal = (p,f,c) => Math.round((p||0)*4+(f||0)*9+(c||0)*4);
    The id is the stable key — never rename existing ones. */
 export const PEPTIDES = [
   {id:"reta",  name:"Retatrutide",      sub:"Triple agonist",         color:"oklch(0.70 0.18 25)",  purpose:"Triple agonist (GLP-1/GIP/Glucagon). Suppresses appetite, accelerates fat loss, improves insulin sensitivity. Your primary weight-loss peptide."},
-  {id:"klow",  name:"Klow",              sub:"BPC + TB + GHK + KPV",  color:"oklch(0.76 0.17 160)", purpose:"4-in-1 blend: BPC-157 (gut healing) + TB-500 (tissue repair) + GHK-Cu (skin/collagen) + KPV (anti-inflammatory). Recovery, healing, skin quality."},
+  {id:"klow",  name:"Klow",              sub:"BPC + TB + GHK + KPV", components:["bpc157","tb500","ghkcu","kpv"], color:"oklch(0.76 0.17 160)", purpose:"4-in-1 blend: BPC-157 (gut healing) + TB-500 (tissue repair) + GHK-Cu (skin/collagen) + KPV (anti-inflammatory). Recovery, healing, skin quality."},
   {id:"nad",   name:"NAD+",              sub:"Cellular energy",        color:"oklch(0.74 0.14 240)", purpose:"Cellular energy currency. Activates sirtuins (longevity genes), supports DNA repair, boosts mitochondrial function. Anti-aging and metabolic support."},
   {id:"ta1",   name:"Thymosin Alpha-1",  sub:"Immune modulator",       color:"oklch(0.74 0.16 305)", purpose:"Immune modulator from the thymus. Boosts T-cell function, enhances immune surveillance, anti-viral/anti-tumor activity. Strengthens immune system."},
   {id:"amino", name:"5-Amino-1MQ",       sub:"NNMT inhibitor",         color:"oklch(0.78 0.16 50)",  purpose:"NNMT enzyme inhibitor. Blocks fat storage pathway, increases metabolic rate, promotes fat cell energy expenditure. Direct fat-loss mechanism separate from Reta."},
   {id:"snap8", name:"Snap-8",            sub:"Topical · anti-aging",   color:"oklch(0.76 0.18 335)", purpose:"Acetyl octapeptide-3 (topical). Relaxes facial muscles like mild Botox — reduces fine lines and wrinkles. Applied to skin, not injected."},
-  {id:"cjcipa",name:"CJC+Ipamorelin",    sub:"GH secretagogue",        color:"oklch(0.78 0.14 180)", purpose:"Dual GH secretagogue. CJC amplifies natural growth hormone pulses, Ipamorelin triggers them. Together: deeper sleep, fat loss, recovery, skin, anti-aging."},
+  {id:"cjcipa",name:"CJC+Ipamorelin",    sub:"GH secretagogue", components:["cjc1295","ipamorelin"],        color:"oklch(0.78 0.14 180)", purpose:"Dual GH secretagogue. CJC amplifies natural growth hormone pulses, Ipamorelin triggers them. Together: deeper sleep, fat loss, recovery, skin, anti-aging."},
   {id:"tesa",  name:"Tesamorelin",       sub:"GHRH analog · visceral fat", color:"oklch(0.72 0.15 280)", purpose:"GHRH analog. Targets visceral abdominal fat, lifts IGF-1, supports lean mass preservation. FDA-approved for HIV lipodystrophy; used off-label for body comp."},
-  {id:"semax", name:"Semax+Selank",      sub:"Nootropic sprays",       color:"oklch(0.84 0.14 90)",  purpose:"Nootropic nasal sprays. Semax: boosts BDNF, sharpens focus and memory. Selank: anxiolytic, calms without sedation. Together: calm clarity for demanding work."},
+  {id:"semax", name:"Semax+Selank",      sub:"Nootropic sprays", components:["semax","selank"],       color:"oklch(0.84 0.14 90)",  purpose:"Nootropic nasal sprays. Semax: boosts BDNF, sharpens focus and memory. Selank: anxiolytic, calms without sedation. Together: calm clarity for demanding work."},
   {id:"motsc", name:"MOTS-c",            sub:"Mitochondrial",          color:"oklch(0.66 0.02 285)", purpose:"Mitochondrial peptide. Enhances exercise capacity, improves insulin sensitivity, activates AMPK (the exercise-mimetic pathway). Makes workouts more effective."},
-  {id:"glow",  name:"Glow",              sub:"BPC + TB + GHK",         color:"oklch(0.66 0.02 285)", purpose:"3-in-1 blend: BPC-157 + TB-500 + GHK-Cu. Same as Klow minus KPV. Healing, recovery, skin/collagen. Original version before switching to Klow."},
+  {id:"glow",  name:"Glow",              sub:"BPC + TB + GHK", components:["bpc157","tb500","ghkcu"],         color:"oklch(0.66 0.02 285)", purpose:"3-in-1 blend: BPC-157 + TB-500 + GHK-Cu. Same as Klow minus KPV. Healing, recovery, skin/collagen. Original version before switching to Klow."},
 ];
+
+/* Display labels for blend component peptides (used by the overlap-aware
+   break flag — see sharedActiveComponents in bcq-math). */
+export const COMPONENT_LABELS = {
+  bpc157:"BPC-157", tb500:"TB-500", ghkcu:"GHK-Cu", kpv:"KPV",
+  cjc1295:"CJC-1295", ipamorelin:"Ipamorelin", semax:"Semax", selank:"Selank",
+};
 
 /* ═══ DEFAULT_STACK ═══
    First-boot seed for the per-user peptide_stack table. The app inserts these

@@ -316,7 +316,7 @@ function DashboardInner(){
   };
   const isPeptideUpcoming = (p) => p.status === "starting" && p.startDate && p.startDate > day;
 
-  const duePeptides=userPeps.filter(p=>isPeptideLive(p)&&p.schedule.includes(todayDow));
+  const duePeptides=userPeps.filter(p=>isPeptideLive(p)&&p.schedule.includes(todayDow)&&!RECONSTITUTION[p.id]?.topical);
   const notDue=userPeps.filter(p=>!duePeptides.includes(p));
   const checkedCount=duePeptides.filter(p=>pepData.checks[p.id]).length;
 
@@ -692,6 +692,13 @@ function DashboardInner(){
   const [supply,setSupply]=useState([]);
   useEffect(()=>{if(tab!=="peptides")return;(async()=>{const rows=await db.listShared("peptide_supply",200,"created_at");setSupply(rows||[]);})();},[tab,db]);
   const supplyFor=pepId=>supply.filter(s=>s.peptide_id===pepId&&s.quantity>0).reduce((sum,s)=>sum+s.quantity,0);
+  /* ═══ TITRATION LADDER — planned dose ramp steps (titration_steps table) ═══ */
+  const [titrationSteps,setTitrationSteps]=useState([]);
+  useEffect(()=>{if(tab!=="peptides"&&tab!=="overview")return;(async()=>{const rows=await db.listShared("titration_steps",200,"created_at");setTitrationSteps(rows||[]);})();},[tab,db]);
+  const nextStepFor=pepId=>{const steps=titrationSteps.filter(s=>s.peptide_id===pepId&&!s.completed).sort((a,b)=>a.step_order-b.step_order);return steps[0]||null;};
+  const currentStepFor=pepId=>{const steps=titrationSteps.filter(s=>s.peptide_id===pepId&&s.completed).sort((a,b)=>b.step_order-a.step_order);return steps[0]||null;};
+  const ladderFor=pepId=>titrationSteps.filter(s=>s.peptide_id===pepId).sort((a,b)=>a.step_order-b.step_order);
+  const daysUntilBump=pepId=>{const next=nextStepFor(pepId);if(!next||!next.planned_date)return null;const d=Math.ceil((new Date(next.planned_date+"T00:00:00")-new Date(todayKey()+"T00:00:00"))/(86400000));return d;};
   /* Helper bridges to the pure math module — wrap to inject closure-local state */
   const batchStatus = b => batchStatus_pure(b);
   const currentBatchFor = pepId => currentBatchFor_pure(pepId, batches);
@@ -1554,6 +1561,19 @@ function DashboardInner(){
             </div>);})}</div>);
           })()}
 
+          {/* Titration alerts — "Time to bump" for peptides with dose ladders */}
+          {(()=>{
+            const alerts=userPeps.filter(p=>isPeptideLive(p)).map(p=>{const d=daysUntilBump(p.id);const next=nextStepFor(p.id);const cur=currentStepFor(p.id);if(d===null||d>14)return null;return{peptide:p,days:d,nextDose:next?.dose,curDose:cur?.dose,nextDate:next?.planned_date};}).filter(Boolean).sort((a,b)=>a.days-b.days);
+            if(alerts.length===0)return null;
+            return(<div style={{marginBottom:16}}>{alerts.map(({peptide:p,days,nextDose,curDose,nextDate})=>{const ready=days<=0;const color=ready?"var(--accent)":"var(--c-info,#60a5fa)";return(<div key={p.id} className="rise" style={{background:`color-mix(in oklch, ${color} 10%, var(--elev-1))`,borderLeft:`3px solid ${color}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:color}}><Icon n="trending-up" s={15} c={color} sw={2}/> {p.name}</span>
+                <span className="mono" style={{fontSize:11.5,fontWeight:600,color:color}}>{ready?"Ready now":`${days}d to bump`}</span>
+              </div>
+              <div style={{fontSize:11,color:"var(--t-3)",marginTop:4}}>{curDose} → <span style={{color:"var(--accent)",fontWeight:600}}>{nextDose}</span>{nextDate?` · planned ${new Date(nextDate+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}`:""}</div>
+            </div>);})}</div>);
+          })()}
+
           {/* Streak + progress */}
           <div className="rise" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -1821,6 +1841,14 @@ function DashboardInner(){
                 <div className="hbar" style={{height:3}}><i style={{width:`${Math.min(100,(daysSupply||0)/30*100)}%`,background:supplyColor,opacity:.55}}/></div>
                 <div style={{fontSize:10.5,color:"var(--t-4)",marginTop:5,fontStyle:"italic"}}>{supplyNote}</div>
               </div>)}
+              {/* ═══ Titration ladder — show dose ramp progress ═══ */}
+              {(()=>{const ladder=ladderFor(p.id);if(ladder.length===0)return null;const cur=currentStepFor(p.id);const next=nextStepFor(p.id);const d=daysUntilBump(p.id);return(<div style={{marginTop:10}}>
+                <div className="mono" style={{display:"flex",justifyContent:"space-between",fontSize:9.5,color:"var(--t-3)",marginBottom:6,letterSpacing:".06em",textTransform:"uppercase"}}><span>Titration</span>{d!==null&&<span style={{color:d<=0?"var(--accent)":d<=7?"var(--c-warn)":"var(--t-3)",fontWeight:600}}>{d<=0?"Ready to bump":`${d}d to next`}</span>}</div>
+                <div style={{display:"flex",gap:3,alignItems:"center"}}>{ladder.map((s,j)=>{const done=s.completed;const isCurrent=cur&&s.step_order===cur.step_order;const isNext=next&&s.step_order===next.step_order;return(<div key={j} style={{flex:1,position:"relative"}}>
+                  <div style={{height:4,borderRadius:2,background:done?"var(--accent)":isNext?`color-mix(in oklch, var(--accent) 30%, var(--elev-2))`:"var(--elev-2)"}}/>
+                  {(isCurrent||isNext||j===0||j===ladder.length-1)&&<div className="mono" style={{fontSize:8,color:isCurrent?"var(--accent)":isNext?"var(--c-warn)":"var(--t-4)",textAlign:"center",marginTop:2,fontWeight:isCurrent?700:400}}>{s.dose}</div>}
+                </div>);})}</div>
+              </div>);})()}
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:9}}>
                 {daysSupply!=null&&daysSupply<=21&&<button onClick={()=>setReorderModal({...p,daysSupply,dosesLeft,supplyNote})} className="touch" style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${supplyColor}`,background:`color-mix(in oklch, ${supplyColor} 12%, transparent)`,color:supplyColor,fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={11} c={supplyColor} sw={1.7}/> Reorder</button>}
                 {RECONSTITUTION[p.id]&&<button onClick={()=>setReconGuide(p)} className="touch" style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${p.color}`,background:`color-mix(in oklch, ${p.color} 10%, transparent)`,color:p.color,fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={11} c={p.color} sw={1.7}/> Recon guide</button>}

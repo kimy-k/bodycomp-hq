@@ -87,7 +87,7 @@ function DashboardInner(){
   const goalPct=userConfig?.goalBf||30;
   const fatToLose=data.length>0?+(last.fatMass-(last.leanMass/(1-goalPct/100))*goalPct/100).toFixed(1):0;
   const pctDone=(()=>{if(data.length===0)return 0;const denom=first.fatPct-goalPct;if(!denom||denom<=0)return 100;const v=+(((first.fatPct-last.fatPct)/denom)*100).toFixed(0);return Math.max(0,Math.min(100,isFinite(v)?v:0));})();
-  const {scenarios,projections}=useMemo(()=>buildProj(last),[last]);
+  const {scenarios,projections}=useMemo(()=>buildProj(last, data),[last, data]);
   /* Find the first month each scenario's projected body fat drops to/below the user's goal */
   const etaMonths=scenarios.map(s=>{const h=projections.find(p=>p[s.name]<=goalPct);return{...s,months:h?h.month:">12"};});
 

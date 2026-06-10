@@ -100,6 +100,85 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
         severity: delta > 0.5 ? 2 : 0,
       });
     }
+
+    /* 3b. Muscle loss detection — flag when muscle drops between consecutive scans */
+    const prev = scans[scans.length - 2];
+    if (last.muscle && prev.muscle) {
+      const muscleDelta = +(last.muscle - prev.muscle).toFixed(1);
+      const daysBetween = Math.round((new Date(last.date) - new Date(prev.date)) / 86400000);
+      if (muscleDelta < -0.3) {
+        out.push({
+          id: "muscle-loss",
+          icon: "warn",
+          title: "Muscle loss detected",
+          body: `Muscle dropped ${Math.abs(muscleDelta)} kg in ${daysBetween} days (${prev.muscle} → ${last.muscle} kg). Consider: increasing protein, adding resistance training, or reducing deficit. Losing muscle makes your body fat % goal harder to reach.`,
+          color: "var(--c-danger)",
+          severity: 3,
+        });
+      } else if (muscleDelta > 0.3) {
+        out.push({
+          id: "muscle-gain",
+          icon: "trending-up",
+          title: "Muscle gain",
+          body: `Muscle up ${muscleDelta} kg in ${daysBetween} days (${prev.muscle} → ${last.muscle} kg). Good recomp signal — keep it up.`,
+          color: "var(--c-success)",
+          severity: 0,
+        });
+      }
+    }
+
+    /* 3c. Recomp ratio — fat lost vs lean mass lost over recent scans */
+    if (baseline) {
+      const fatLost = +(baseline.fatMass - last.fatMass).toFixed(1);
+      const leanLost = +(baseline.leanMass - last.leanMass).toFixed(1);
+      if (Math.abs(fatLost) > 0.5 || Math.abs(leanLost) > 0.5) {
+        const ratio = leanLost > 0.2 && fatLost > 0.2 ? +(fatLost / leanLost).toFixed(1) : null;
+        const isGoodRecomp = fatLost > 0 && leanLost <= 0.3;  /* losing fat, keeping/gaining lean */
+        const isBadRecomp = leanLost > 0.5 && fatLost < leanLost;  /* losing more lean than fat */
+        if (isBadRecomp) {
+          out.push({
+            id: "recomp-ratio",
+            icon: "scale",
+            title: "Recomp warning",
+            body: `Lost ${leanLost > 0 ? leanLost + "kg lean" : ""} ${fatLost > 0 ? "but only " + fatLost + "kg fat" : "and gained " + Math.abs(fatLost) + "kg fat"} since ${baseline.label}. ${ratio ? `Ratio: ${ratio}:1 (want >3:1).` : ""} Weight is dropping but body composition isn't improving. Deficit may be too aggressive or training insufficient.`,
+            color: "var(--c-danger)",
+            severity: 3,
+          });
+        } else if (isGoodRecomp) {
+          out.push({
+            id: "recomp-ratio",
+            icon: "target",
+            title: "Good recomp",
+            body: `Lost ${fatLost}kg fat while ${leanLost <= 0 ? "gaining " + Math.abs(leanLost) + "kg lean" : "preserving lean mass"} since ${baseline.label}. This is the trajectory to ${goalBf}%.`,
+            color: "var(--c-success)",
+            severity: 0,
+          });
+        }
+      }
+    }
+
+    /* 3d. Protein adequacy check — are you hitting the minimum for muscle preservation? */
+    if (macroHist && macroHist.length >= 5 && last.leanMass) {
+      const last7Macros = macroHist.filter(d => inLast(d.date, 7));
+      if (last7Macros.length >= 3) {
+        const avgProtein = Math.round(last7Macros.reduce((s, d) => {
+          let p = 0; (d.meals || []).forEach(m => p += (+m.protein || 0));
+          if (d.whey !== false && whey?.enabled) p += whey.protein;
+          return s + p;
+        }, 0) / last7Macros.length);
+        const minProtein = Math.round(last.leanMass * 2.2);  /* 2.2g/kg lean mass minimum for muscle preservation during cut */
+        if (avgProtein < minProtein) {
+          out.push({
+            id: "protein-muscle",
+            icon: "warn",
+            title: "Protein below muscle-preservation threshold",
+            body: `Averaging ${avgProtein}g protein/day. At ${last.leanMass}kg lean mass, minimum is ~${minProtein}g (2.2g/kg lean) to prevent muscle loss during a deficit. Target: ${TARGETS?.protein || minProtein}g.`,
+            color: "var(--c-warn)",
+            severity: 2,
+          });
+        }
+      }
+    }
   }
 
   /* 4. Recovery week-over-week */

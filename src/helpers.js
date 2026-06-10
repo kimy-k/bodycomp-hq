@@ -23,13 +23,40 @@ export const addDays = (date, n) => {
 };
 
 /** Build 12-month body-fat projections under conservative / on-track / aggressive scenarios.
- *  Takes the most recent enriched scan; returns {scenarios, projections}. */
-export const buildProj = last => {
+ *  Uses actual observed fat-loss rate when ≥3 scans spanning ≥14 days exist.
+ *  Takes enriched scans array + the most recent scan; returns {scenarios, projections}. */
+export const buildProj = (last, allScans) => {
+  /* Try to compute actual observed monthly fat-loss rate from scan history */
+  let actualRate = null;
+  if (allScans && allScans.length >= 3) {
+    /* Find a scan 21-60 days ago as baseline */
+    const now = new Date(last.date + "T12:00:00");
+    let baseline = null;
+    for (let i = allScans.length - 2; i >= 0; i--) {
+      const d = (now - new Date(allScans[i].date + "T12:00:00")) / 86400000;
+      if (d >= 14 && d <= 60) { baseline = allScans[i]; break; }
+    }
+    if (baseline) {
+      const days = (now - new Date(baseline.date + "T12:00:00")) / 86400000;
+      const fatLost = baseline.fatMass - last.fatMass;  /* positive = lost fat */
+      actualRate = +(fatLost / days * 30).toFixed(2);   /* kg fat lost per month */
+    }
+  }
+
   const sc = [
     {name: "Conservative", rate: 0.6, color: "oklch(0.80 0.15 75)"},
     {name: "On Track",     rate: 1.0, color: "oklch(0.76 0.16 295)"},
     {name: "Aggressive",   rate: 1.4, color: "oklch(0.76 0.18 155)"},
   ];
+  /* Insert actual observed rate as the primary scenario when available */
+  if (actualRate !== null && isFinite(actualRate)) {
+    sc.unshift({
+      name: "Actual Pace",
+      rate: Math.max(actualRate, -1),  /* cap reverse at -1 to keep chart readable */
+      color: actualRate > 0 ? "oklch(0.78 0.20 170)" : "oklch(0.70 0.20 25)",
+    });
+  }
+
   const p = [];
   for (let m = 0; m <= 12; m++) {
     const dt = new Date(last.date);

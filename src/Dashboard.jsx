@@ -688,6 +688,10 @@ function DashboardInner(){
   const [newBatch,setNewBatch]=useState({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:"",cost:"",currency:"PHP",vendor:""});
   const [editingBatch,setEditingBatch]=useState(null);
   useEffect(()=>{if(tab!=="peptides")return;(async()=>{setBatchesLoading(true);const rows=await db.listShared("peptide_batches",100,"date_recon");setBatches(rows||[]);setBatchesLoading(false);})();},[tab,db]);
+  /* ═══ SEALED SUPPLY — unreconstituted vial inventory (peptide_supply table) ═══ */
+  const [supply,setSupply]=useState([]);
+  useEffect(()=>{if(tab!=="peptides")return;(async()=>{const rows=await db.listShared("peptide_supply",200,"created_at");setSupply(rows||[]);})();},[tab,db]);
+  const supplyFor=pepId=>supply.filter(s=>s.peptide_id===pepId&&s.quantity>0).reduce((sum,s)=>sum+s.quantity,0);
   /* Helper bridges to the pure math module — wrap to inject closure-local state */
   const batchStatus = b => batchStatus_pure(b);
   const currentBatchFor = pepId => currentBatchFor_pure(pepId, batches);
@@ -1531,12 +1535,12 @@ function DashboardInner(){
       {/* ═══ PEPTIDES ═══ */}
       {tab==="peptides"&&pepLoading&&<SkelTab/>}
       {tab==="peptides"&&!pepLoading&&(<>
-        <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{[["today","Today"],["all","Stack"],["batches","Batches"],["history","History"]].map(([k,l])=>(<TabBtn key={k} active={pepSub===k} onClick={()=>setPepSub(k)}>{l}</TabBtn>))}</div>
+        <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{[["today","Today"],["all","Stack"],["batches","Batches"],["supply","Supply"],["history","History"]].map(([k,l])=>(<TabBtn key={k} active={pepSub===k} onClick={()=>setPepSub(k)}>{l}</TabBtn>))}</div>
 
         {pepSub==="today"&&(<>
           {/* Supply alerts — use live inventory from shared batches when available, else hardcoded supplyNote */}
           {(()=>{
-            const enriched=userPeps.filter(p=>isPeptideLive(p)).map(p=>{const inv=inventoryFor(p);return{peptide:p,daysSupply:inv?.daysSupply,dosesRemaining:inv?.dosesRemaining,liveNote:inv?`${inv.dosesRemaining}/${inv.totalDosesInVial} doses left in current vial`:null,isLive:!!inv};}).filter(x=>x.daysSupply!=null&&x.daysSupply<=14).sort((a,b)=>a.daysSupply-b.daysSupply);
+            const enriched=userPeps.filter(p=>isPeptideLive(p)).map(p=>{const inv=inventoryFor(p);const sealed=supplyFor(p.id);return{peptide:p,daysSupply:inv?.daysSupply,dosesRemaining:inv?.dosesRemaining,sealedVials:sealed,liveNote:inv?`${inv.dosesRemaining}/${inv.totalDosesInVial} doses left in current vial${sealed?` · ${sealed} sealed`:""}`:`${sealed?sealed+" sealed vials":"No batch"}`,isLive:!!inv};}).filter(x=>x.daysSupply!=null&&x.daysSupply<=14&&x.sealedVials===0).sort((a,b)=>a.daysSupply-b.daysSupply);
             if(enriched.length===0)return null;
             return(<div style={{marginBottom:16}}>{enriched.map(({peptide:p,daysSupply,dosesRemaining,liveNote,isLive})=>{const urgent=daysSupply<=7;return(<div key={p.id} className="rise" style={{background:urgent?"color-mix(in oklch, var(--c-danger) 10%, var(--elev-1))":"color-mix(in oklch, var(--c-warn) 8%, var(--elev-1))",borderLeft:`3px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -2078,9 +2082,63 @@ function DashboardInner(){
             });})()}
           </>)}
         </>)}
+
+        {pepSub==="supply"&&(<>
+          <H2 sub="Sealed vials in your fridge">Unreconstituted Supply</H2>
+          {supply.filter(s=>s.quantity>0).length===0?<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="vial" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No sealed vials tracked yet</div></div>:(<>
+            {(()=>{
+              /* Group by peptide_id, merge rows */
+              const grouped={};
+              supply.filter(s=>s.quantity>0).forEach(s=>{
+                if(!grouped[s.peptide_id])grouped[s.peptide_id]={pepId:s.peptide_id,rows:[],totalQty:0};
+                grouped[s.peptide_id].rows.push(s);
+                grouped[s.peptide_id].totalQty+=s.quantity;
+              });
+              const pepLookup=Object.fromEntries(userPeps.map(p=>[p.id,p]));
+              return Object.values(grouped).sort((a,b)=>a.pepId.localeCompare(b.pepId)).map(g=>{
+                const pep=pepLookup[g.pepId];
+                const pepName=pep?.name||g.pepId;
+                const pepColor=pep?.color||"var(--accent)";
+                return(<div key={g.pepId} className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",marginBottom:10,overflow:"hidden"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid var(--line-soft)"}}>
+                    <span style={{fontSize:14,fontWeight:600,color:pepColor}}>{pepName}</span>
+                    <span className="mono" style={{fontSize:22,fontWeight:700,color:"var(--t-1)"}}>{g.totalQty}<span style={{fontSize:11,color:"var(--t-4)",marginLeft:2}}>vials</span></span>
+                  </div>
+                  {g.rows.map(s=>(<div key={s.id} style={{padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid var(--line-soft)"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                        <span className="mono" style={{fontSize:11,color:"var(--t-2)"}}>{s.quantity}× {s.mg_per_vial}mg</span>
+                        {s.vendor&&<span className="mono" style={{fontSize:9.5,color:"var(--accent)",background:"var(--accent-soft)",padding:"1px 7px",borderRadius:999,letterSpacing:".04em"}}>{s.vendor}</span>}
+                      </div>
+                      <div style={{display:"flex",gap:10,marginTop:3}}>
+                        {s.cost_per_vial&&<span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>₱{Number(s.cost_per_vial).toLocaleString()}/vial</span>}
+                        {s.purchase_date&&<span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>{new Date(s.purchase_date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>}
+                      </div>
+                    </div>
+                    <button onClick={async()=>{
+                      if(!window.confirm(`Open 1 ${pepName} vial from ${s.vendor||"stock"}?\n\nThis will:\n• Subtract 1 from sealed supply\n• Create a new batch (you'll set reconstitution details)`))return;
+                      /* Decrement supply quantity */
+                      const newQty=s.quantity-1;
+                      const res=await fetch(`${SB}/peptide_supply?id=eq.${s.id}&user_id=eq.${s.user_id}`,{method:"PATCH",headers:{...hdr,Prefer:"return=minimal"},body:JSON.stringify({quantity:newQty})}).catch(()=>null);
+                      if(res&&res.ok){
+                        setSupply(supply.map(x=>x.id===s.id?{...x,quantity:newQty}:x));
+                        /* Pre-fill the new batch form */
+                        setNewBatch({peptide_id:g.pepId,date_recon:todayKey(),mg_total:String(s.mg_per_vial),ml_bac:"",storage:"",expiry_date:"",notes:`From ${s.vendor||"stock"} supply`,cost:s.cost_per_vial?String(s.cost_per_vial):"",currency:s.currency||"PHP",vendor:s.vendor||""});
+                        setPepSub("batches");setAddingBatch(true);
+                        showToast(`Opened 1 ${pepName} vial · fill in reconstitution details`,"success");
+                      }else{showToast("Couldn't update supply","error");}
+                    }} className="touch" style={{padding:"6px 12px",borderRadius:999,border:"1px solid var(--accent)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5,flexShrink:0}}><Icon n="vial" s={11} c="var(--accent)" sw={1.7}/> Open Vial</button>
+                  </div>))}
+                </div>);
+              });
+            })()}
+            <div className="mono" style={{fontSize:10,color:"var(--t-4)",textAlign:"center",marginTop:12,letterSpacing:".03em"}}>
+              Total: {supply.filter(s=>s.quantity>0).reduce((sum,s)=>sum+s.quantity,0)} sealed vials · ₱{supply.filter(s=>s.quantity>0).reduce((sum,s)=>sum+(s.quantity*Number(s.cost_per_vial||0)),0).toLocaleString()} invested
+            </div>
+          </>)}
+        </>)}
       </>)}
 
-      {/* ═══ PROJECTION ═══ */}
       {tab==="projection"&&(<>
         <H2 sub="3 scenarios from your current scan">Timeline to {goalPct}%</H2>
         <div style={{display:"flex",gap:8,marginBottom:22,flexWrap:"wrap"}}>{etaMonths.map((s,i)=>(<div key={i} className="rise" style={{animationDelay:`${i*0.06}s`,flex:"1 1 92px",background:"var(--elev-1)",borderLeft:`3px solid ${s.color}`,borderRadius:"var(--r-sm)",padding:"14px 12px",textAlign:"center"}}>

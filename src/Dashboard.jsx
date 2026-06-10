@@ -329,8 +329,29 @@ function DashboardInner(){
   const isPeptideUpcoming = (p) => p.status === "starting" && p.startDate && p.startDate > pepDate;
 
   const pepDateDow=new Date(pepDate+"T12:00:00").getDay();
-  const duePeptides=userPeps.filter(p=>isPeptideLive(p)&&p.schedule.includes(pepDateDow)&&!RECONSTITUTION[p.id]?.topical);
-  const notDue=userPeps.filter(p=>!duePeptides.includes(p));
+  /* Recency check: if a peptide was taken within its minimum spacing window,
+     suppress from due list even if today is a scheduled day. */
+  const recentlyTaken = (pepId, schedule) => {
+    if (!pepHist || pepHist.length === 0) return null;
+    const gapH = minSpacingHours(schedule);
+    if (gapH < 48) return null; /* daily peptides don't need recency suppression */
+    const gapDays = Math.max(1, Math.floor(gapH / 24) - 1); /* check N-1 days back */
+    const pepDateObj = new Date(pepDate + "T12:00:00");
+    for (let d = 1; d <= gapDays; d++) {
+      const checkDate = new Date(pepDateObj);
+      checkDate.setDate(checkDate.getDate() - d);
+      const checkKey = checkDate.toISOString().slice(0, 10);
+      const dayLog = pepHist.find(h => h.date === checkKey);
+      if (dayLog?.checks?.[pepId]) {
+        const dName = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+        return { daysAgo: d, dayName: dName[checkDate.getDay()] };
+      }
+    }
+    return null;
+  };
+  const duePeptides=userPeps.filter(p=>isPeptideLive(p)&&p.schedule.includes(pepDateDow)&&!RECONSTITUTION[p.id]?.topical&&!recentlyTaken(p.id,p.schedule));
+  const skippedDue=userPeps.filter(p=>isPeptideLive(p)&&p.schedule.includes(pepDateDow)&&!RECONSTITUTION[p.id]?.topical&&recentlyTaken(p.id,p.schedule)).map(p=>({...p,recent:recentlyTaken(p.id,p.schedule)}));
+  const notDue=userPeps.filter(p=>!duePeptides.includes(p)&&!skippedDue.find(s=>s.id===p.id));
   /* Off-schedule loggable: active injectable peptides NOT due on pepDate */
   const offScheduleLoggable=notDue.filter(p=>isPeptideLive(p)&&!RECONSTITUTION[p.id]?.topical);
   const checkedCount=duePeptides.filter(p=>pepData.checks[p.id]).length;
@@ -1816,6 +1837,17 @@ function DashboardInner(){
             </div>
             {pepData.sideEffects.length>0&&<div style={{fontSize:11,color:"var(--c-danger)",marginTop:8,fontStyle:"italic"}}>Logged: {pepData.sideEffects.join(", ")}</div>}
           </div>
+
+          {/* Recently taken — scheduled today but already dosed within spacing window */}
+          {skippedDue.length>0&&(<div style={{marginTop:12}}>
+            {skippedDue.map(p=>(<div key={p.id} className="rise" style={{background:"color-mix(in oklch, var(--accent) 6%, var(--elev-1))",borderLeft:"3px solid var(--accent)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:600,color:"var(--accent)"}}>{p.name}</div>
+                <div style={{fontSize:11,color:"var(--t-3)",marginTop:2}}>Scheduled today but taken {p.recent.dayName} ({p.recent.daysAgo}d ago) — skipping to maintain spacing</div>
+              </div>
+              <Icon n="check" s={16} c="var(--accent)"/>
+            </div>))}
+          </div>)}
 
           {/* Off-schedule — always visible, tappable chips */}
           {offScheduleLoggable.length>0&&(<div style={{marginTop:14}}>

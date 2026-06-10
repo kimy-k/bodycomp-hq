@@ -968,29 +968,33 @@ function DashboardInner(){
               <Line yAxisId="kg" type="monotone" dataKey="muscle" stroke="var(--c-danger)" strokeWidth={2} name="Muscle" dot={{r:2.5,fill:"var(--c-danger)",stroke:"#000",strokeWidth:1}} activeDot={{r:4.5,fill:"var(--c-danger)",stroke:"#000",strokeWidth:2}}/>
             </LineChart>
           </ResponsiveContainer>
-          {/* Muscle trend strip — separate from the weight axis so it's not crushed */}
+          {/* Muscle · Lean · Fat summary strip */}
           {data.length>=2&&(()=>{
             const latest=data[data.length-1];
             const prev=data[data.length-2];
             const first=data[0];
             const mDelta=latest.muscle&&prev.muscle?+(latest.muscle-prev.muscle).toFixed(1):null;
-            const mTotal=latest.muscle&&first.muscle?+(latest.muscle-first.muscle).toFixed(1):null;
+            const lmDelta=latest.leanMass&&first.leanMass?+(latest.leanMass-first.leanMass).toFixed(1):null;
+            const fmDelta=first.fatMass?+(latest.fatMass-first.fatMass).toFixed(1):null;
             const lm=latest.leanMass;
-            return(<div style={{display:"flex",gap:8,marginTop:8,padding:"8px 4px 4px",borderTop:"1px solid var(--line-soft)"}}>
+            /* Delta colors: muscle/lean up=good, fat down=good */
+            const goodBad=(val,upIsGood)=>val>0?(upIsGood?"var(--c-success)":"var(--c-danger)"):(val<0?(upIsGood?"var(--c-danger)":"var(--c-success)"):"var(--t-4)");
+            const arrow=(val)=>val>0?"▲":val<0?"▼":"";
+            return(<div style={{display:"flex",gap:6,marginTop:8,padding:"8px 2px 4px",borderTop:"1px solid var(--line-soft)"}}>
               <div style={{flex:1,textAlign:"center"}}>
-                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".08em",textTransform:"uppercase",marginBottom:2}}>Muscle</div>
-                <div className="serif tabular" style={{fontSize:20,color:"var(--c-danger)",fontStyle:"italic",lineHeight:1}}>{latest.muscle}<span style={{fontSize:11,color:"var(--t-4)"}}>kg</span></div>
-                {mDelta!==null&&<div className="mono" style={{fontSize:9,color:mDelta>0?"var(--c-success)":mDelta<0?"var(--c-danger)":"var(--t-4)",marginTop:2}}>{mDelta>0?"+":""}{mDelta} last scan</div>}
+                <div className="mono" style={{fontSize:9,color:"var(--c-danger)",letterSpacing:".08em",textTransform:"uppercase",marginBottom:2,fontWeight:600,opacity:0.7}}>Muscle</div>
+                <div className="serif tabular" style={{fontSize:20,color:"var(--c-danger)",fontStyle:"italic",lineHeight:1}}>{latest.muscle}<span style={{fontSize:10,color:"var(--c-danger)",opacity:0.5}}>kg</span></div>
+                {mDelta!==null&&<div className="mono" style={{fontSize:9,color:"var(--t-3)",marginTop:3}}><span style={{color:goodBad(mDelta,true)}}>{arrow(mDelta)}</span> {mDelta>0?"+":""}{mDelta}</div>}
               </div>
               <div style={{flex:1,textAlign:"center"}}>
-                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".08em",textTransform:"uppercase",marginBottom:2}}>Lean mass</div>
-                <div className="serif tabular" style={{fontSize:20,color:"var(--t-2)",fontStyle:"italic",lineHeight:1}}>{lm}<span style={{fontSize:11,color:"var(--t-4)"}}>kg</span></div>
-                {mTotal!==null&&<div className="mono" style={{fontSize:9,color:mTotal>0?"var(--c-success)":mTotal<0?"var(--c-danger)":"var(--t-4)",marginTop:2}}>{mTotal>0?"+":""}{mTotal} overall</div>}
+                <div className="mono" style={{fontSize:9,color:"var(--accent)",letterSpacing:".08em",textTransform:"uppercase",marginBottom:2,fontWeight:600,opacity:0.7}}>Lean</div>
+                <div className="serif tabular" style={{fontSize:20,color:"var(--accent)",fontStyle:"italic",lineHeight:1}}>{lm}<span style={{fontSize:10,color:"var(--accent)",opacity:0.5}}>kg</span></div>
+                {lmDelta!==null&&<div className="mono" style={{fontSize:9,color:"var(--t-3)",marginTop:3}}><span style={{color:goodBad(lmDelta,true)}}>{arrow(lmDelta)}</span> {lmDelta>0?"+":""}{lmDelta}</div>}
               </div>
               <div style={{flex:1,textAlign:"center"}}>
-                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".08em",textTransform:"uppercase",marginBottom:2}}>Fat mass</div>
-                <div className="serif tabular" style={{fontSize:20,color:"var(--c-fat)",fontStyle:"italic",lineHeight:1}}>{latest.fatMass}<span style={{fontSize:11,color:"var(--t-4)"}}>kg</span></div>
-                {first.fatMass&&<div className="mono" style={{fontSize:9,color:latest.fatMass<first.fatMass?"var(--c-success)":"var(--c-danger)",marginTop:2}}>{latest.fatMass<first.fatMass?"":" +"}{+(latest.fatMass-first.fatMass).toFixed(1)} overall</div>}
+                <div className="mono" style={{fontSize:9,color:"var(--c-fat)",letterSpacing:".08em",textTransform:"uppercase",marginBottom:2,fontWeight:600,opacity:0.7}}>Fat</div>
+                <div className="serif tabular" style={{fontSize:20,color:"var(--c-fat)",fontStyle:"italic",lineHeight:1}}>{latest.fatMass}<span style={{fontSize:10,color:"var(--c-fat)",opacity:0.5}}>kg</span></div>
+                {fmDelta!==null&&<div className="mono" style={{fontSize:9,color:"var(--t-3)",marginTop:3}}><span style={{color:goodBad(fmDelta,false)}}>{arrow(fmDelta)}</span> {fmDelta>0?"+":""}{fmDelta}</div>}
               </div>
             </div>);
           })()}

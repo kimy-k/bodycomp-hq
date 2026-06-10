@@ -4,7 +4,7 @@
    Env vars required: GEMINI_API_KEY
 */
 
-const MODEL = "gemini-2.5-flash-preview-05-20";
+const MODEL = "gemini-flash-latest";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 export default async function handler(req, res) {

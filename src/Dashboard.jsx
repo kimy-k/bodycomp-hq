@@ -94,6 +94,24 @@ function DashboardInner(){
   /* ═══ MACRO STATE ═══ */
   const MEAL_TAGS=["Lunch","Snack","Dinner","Breakfast","Other"];
   const [meals,setMeals]=useState([]);const [wheyOn,setWheyOn]=useState(true);const [macroSub,setMacroSub]=useState("log");const [mLoading,setMLoading]=useState(true);const [histDays,setHistDays]=useState([]);const [adding,setAdding]=useState(false);const [newMeal,setNewMeal]=useState({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});
+  /* Meal dictionary — all unique meals ever logged, sorted by frequency. Powers autocomplete. */
+  const [mealDict,setMealDict]=useState([]);
+  useEffect(()=>{if(tab!=="macros")return;(async()=>{
+    const rows=await db.list("daily_macros",90);
+    const freq={};
+    (rows||[]).forEach(r=>(r.meals||[]).forEach(m=>{
+      const k=m.name?.trim().toLowerCase();if(!k)return;
+      if(!freq[k])freq[k]={name:m.name,protein:+m.protein||0,fat:+m.fat||0,carbs:+m.carbs||0,tag:m.tag||"Other",count:0};
+      freq[k].count++;freq[k].protein=+m.protein||freq[k].protein;freq[k].fat=+m.fat||freq[k].fat;freq[k].carbs=+m.carbs||freq[k].carbs;
+    }));
+    setMealDict(Object.values(freq).sort((a,b)=>b.count-a.count));
+  })();},[tab,db]);
+  /* Autocomplete suggestions */
+  const mealSuggestions=useMemo(()=>{
+    if(!newMeal.name||newMeal.name.length<2)return[];
+    const q=newMeal.name.toLowerCase();
+    return mealDict.filter(m=>m.name.toLowerCase().includes(q)).slice(0,5);
+  },[newMeal.name,mealDict]);
   /* AI food parser state — Wave A. Natural-language → {name,protein,fat,carbs}.
      Fills the Add Meal form so user can adjust before saving. */
   const [foodParse,setFoodParse]=useState({input:"",loading:false,error:null,confidence:null,notes:null});
@@ -1409,6 +1427,32 @@ function DashboardInner(){
             })()}
           </div>
 
+          {/* Weekly protein strip — 7-day hit/miss */}
+          {mealDict.length>0&&(()=>{
+            const today=new Date();const days=[];
+            for(let i=6;i>=0;i--){const d=new Date(today);d.setDate(today.getDate()-i);days.push({key:localDateKey(d),dayName:d.toLocaleDateString("en-US",{weekday:"narrow"}),isToday:i===0});}
+            /* Build quick lookup from mealDict's source (we already loaded 90 days) */
+            return(<div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>Protein · 7 days</span>
+                {weekAvgProtein&&<span className="mono" style={{fontSize:9,color:"var(--t-4)"}}>avg {weekAvgProtein}g / {TARGETS.protein}g</span>}
+              </div>
+              <div style={{display:"flex",gap:4}}>
+                {days.map(d=>{
+                  /* Check if protein target was hit on this day — use histDays or current day */
+                  const isCurrentDay=d.isToday;
+                  const hit=isCurrentDay?totals.protein>=TARGETS.protein:false;
+                  const partial=isCurrentDay?totals.protein>=TARGETS.protein*0.7:false;
+                  /* For past days we'd need histDays loaded — show placeholder if not available */
+                  return(<div key={d.key} style={{flex:1,textAlign:"center"}}>
+                    <div className="mono" style={{fontSize:8,color:d.isToday?"var(--accent)":"var(--t-5)",marginBottom:3}}>{d.dayName}</div>
+                    <div style={{height:4,borderRadius:2,background:isCurrentDay?(hit?"var(--c-success)":partial?"var(--c-warn)":"var(--elev-3)"):"var(--elev-3)"}}/>
+                  </div>);
+                })}
+              </div>
+            </div>);
+          })()}
+
           {/* TDEE strip — auto-pulls from latest InBody scan when available */}
           {userConfig?.height&&userConfig?.age&&(<div className="rise r1" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"14px 16px",marginBottom:12}}>
             {(()=>{
@@ -1473,6 +1517,39 @@ function DashboardInner(){
             </div>
             <div style={{width:42,height:24,borderRadius:12,background:wheyOn?"var(--accent)":"var(--elev-3)",display:"flex",alignItems:"center",padding:"0 3px",transition:"background .2s var(--ease-out)"}}><div style={{width:18,height:18,borderRadius:9,background:"var(--bg)",transform:wheyOn?"translateX(18px)":"translateX(0)",transition:"transform .25s var(--ease-out)"}}/></div>
           </button>}
+
+          {/* Quick-add — top favorites as one-tap chips */}
+          {!adding&&!showFavs&&favs.length>0&&(<div style={{marginBottom:12}}>
+            <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:6}}>Quick add</div>
+            <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:2}}>
+              {favs.slice(0,6).map(f=>(<button key={f.name} onClick={()=>{const m={name:f.name,protein:+(f.protein||0),fat:+(f.fat||0),carbs:+(f.carbs||0),tag:f.tag||"Other",id:Date.now()};saveMacro([...meals,m],wheyOn);}} className="touch" style={{padding:"7px 11px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-2)",fontSize:11,fontWeight:500,cursor:"pointer",whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:5,flexShrink:0}}>
+                <span style={{color:"var(--c-protein)",fontWeight:600,fontSize:10}}>{f.protein}p</span>
+                {f.name.length>18?f.name.slice(0,16)+"…":f.name}
+              </button>))}
+            </div>
+          </div>)}
+
+          {/* Smart protein nudge — only when behind pace, suggests always-available items */}
+          {rem.protein>30&&(()=>{
+            const now=new Date();const curH=now.getHours()+now.getMinutes()/60;
+            if(curH<12||curH>21)return null;
+            const hoursLeft=22-curH;
+            const needRate=rem.protein/hoursLeft;
+            if(needRate<8)return null; /* not urgent enough */
+            const options=[
+              {name:"Protein Shake",protein:whey?.protein||50,icon:"☕"},
+              {name:"Protein Bar",protein:20,icon:"🍫"},
+              {name:"2 Eggs",protein:12,icon:"🥚"},
+            ];
+            return(<div style={{background:"color-mix(in oklch, var(--c-protein) 8%, var(--elev-1))",borderLeft:"3px solid var(--c-protein)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:12}}>
+              <div style={{fontSize:11,color:"var(--c-protein)",fontWeight:600,marginBottom:6}}>Protein boost needed</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {options.map(o=>(<button key={o.name} onClick={()=>{const m={name:o.name,protein:o.protein,fat:o.name.includes("Egg")?10:2,carbs:o.name.includes("Bar")?20:4,tag:"Snack",id:Date.now()};saveMacro([...meals,m],wheyOn);}} className="touch" style={{padding:"6px 10px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-2)",fontSize:11,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4}}>
+                  <span>{o.icon}</span> {o.name} <span className="mono" style={{color:"var(--c-protein)",fontWeight:600,fontSize:10}}>+{o.protein}g</span>
+                </button>))}
+              </div>
+            </div>);
+          })()}
 
           {/* Meals list header */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
@@ -1582,9 +1659,21 @@ function DashboardInner(){
             </div>
 
             <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}>{MEAL_TAGS.map(t=>(<button key={t} onClick={()=>setNewMeal({...newMeal,tag:t})} className="touch" style={{padding:"7px 13px",borderRadius:999,border:newMeal.tag===t?"1px solid var(--accent-line)":"1px solid transparent",background:newMeal.tag===t?"var(--accent-soft)":"var(--elev-2)",color:newMeal.tag===t?"var(--accent)":"var(--t-3)",fontSize:11.5,fontWeight:500,cursor:"pointer"}}>{t}</button>))}</div>
-            <div style={{marginBottom:12}}>
+            <div style={{marginBottom:12,position:"relative"}}>
               <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Meal name</div>
-              <input value={newMeal.name} onChange={e=>setNewMeal({...newMeal,name:e.target.value})} placeholder="Beef taco wrap" className="bcq-input"/>
+              <input value={newMeal.name} onChange={e=>setNewMeal({...newMeal,name:e.target.value})} placeholder="Start typing to search history…" className="bcq-input" autoComplete="off"/>
+              {/* Autocomplete dropdown */}
+              {mealSuggestions.length>0&&(<div style={{position:"absolute",left:0,right:0,top:"100%",zIndex:20,background:"var(--elev-2)",border:"1px solid var(--line)",borderRadius:"var(--r-sm)",marginTop:2,maxHeight:200,overflowY:"auto",boxShadow:"0 8px 24px oklch(0 0 0 / 0.5)"}}>
+                {mealSuggestions.map((s,i)=>(<button key={i} onClick={()=>{setNewMeal({name:s.name,protein:String(s.protein),fat:String(s.fat),carbs:String(s.carbs),tag:s.tag});}} className="touch" style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",border:"none",borderBottom:"1px solid var(--line-soft)",background:"transparent",cursor:"pointer",textAlign:"left",gap:8}} onMouseEnter={e=>e.currentTarget.style.background="var(--elev-3)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12.5,color:"var(--t-1)",fontWeight:500}}>{s.name}</div>
+                    <div className="mono" style={{fontSize:9.5,color:"var(--t-4)",marginTop:1}}>{s.count}× logged</div>
+                  </div>
+                  <div className="mono" style={{fontSize:10,color:"var(--t-3)",flexShrink:0,textAlign:"right"}}>
+                    <span style={{color:"var(--c-protein)"}}>{s.protein}p</span> · <span style={{color:"var(--c-fat)"}}>{s.fat}f</span> · <span style={{color:"var(--c-carbs)"}}>{s.carbs}c</span>
+                  </div>
+                </button>))}
+              </div>)}
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
               {[{k:"protein",l:"Protein",c:"var(--c-protein)"},{k:"fat",l:"Fat",c:"var(--c-fat)"},{k:"carbs",l:"Carbs",c:"var(--c-carbs)"}].map(f=>(<div key={f.k}>

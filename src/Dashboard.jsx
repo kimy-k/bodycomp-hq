@@ -21,7 +21,7 @@ import {
   PRODUCT_FOR_PEPTIDE, PRICES,
   PG_SLUG_FOR_PEPTIDE, PG_BASE, PG_DIRECTORY, pgUrlFor,
   reorderOptionsFor, RECONSTITUTION, PHARMACOKINETICS, recommendedReconFor,
-  COMPONENT_LABELS,
+  COMPONENT_LABELS, CYCLING,
 } from "./data.js";
 import {todayKey, localDateKey, addDays, buildProj, calcMonthly, compressImage} from "./helpers.js";
 import {computeInsights} from "./insights.js";
@@ -1836,6 +1836,8 @@ function DashboardInner(){
                 <div className="mono" style={{display:"flex",justifyContent:"space-between",fontSize:9.5,color:"var(--t-3)",marginBottom:4,letterSpacing:".06em",textTransform:"uppercase"}}><span>Cycle</span><span>{daysToEnd!==null?`${daysToEnd}d left`:""}</span></div>
                 <div className="hbar" style={{height:3}}><i style={{width:`${cyclePct}%`,background:p.color,opacity:.6}}/></div>
               </div>)}
+              {/* Cycle intelligence — continuous vs cycle-off guidance */}
+              {(()=>{const cyc=CYCLING[p.id];if(!cyc)return null;const dte=p.cycleEnd?Math.round((new Date(p.cycleEnd)-new Date())/(86400000)):null;if(cyc.type==="continuous"){return(<div className="mono" style={{fontSize:9.5,color:"var(--c-success)",marginTop:6,display:"flex",alignItems:"center",gap:5}}><Icon n="check-circle" s={11} c="var(--c-success)" sw={1.8}/> Continuous — no cycle-off needed</div>);}if(cyc.type==="cycle"&&dte!==null&&dte<0){const overdue=Math.abs(dte);return(<div style={{marginTop:6,background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",borderRadius:"var(--r-sm)",padding:"6px 10px"}}><div className="mono" style={{fontSize:10,color:"var(--c-warn)",fontWeight:600,display:"flex",alignItems:"center",gap:5}}><Icon n="warn" s={11} c="var(--c-warn)" sw={2}/> Cycle ended {overdue}d ago — {cyc.offWeeks}-week break recommended</div><div style={{fontSize:9.5,color:"var(--t-4)",marginTop:2,fontStyle:"italic"}}>{cyc.note}</div></div>);}if(cyc.type==="cycle"&&dte!==null&&dte<=7){return(<div className="mono" style={{fontSize:9.5,color:"var(--c-warn)",marginTop:6,display:"flex",alignItems:"center",gap:5}}><Icon n="clock" s={11} c="var(--c-warn)" sw={1.8}/> Cycle ends in {dte}d — plan {cyc.offWeeks}-week break</div>);}return null;})()}
               {inv&&(<div style={{marginTop:8}}>
                 <div className="mono" style={{display:"flex",justifyContent:"space-between",fontSize:9.5,color:"var(--t-3)",marginBottom:4,letterSpacing:".06em",textTransform:"uppercase"}}><span>Supply</span><span style={{color:supplyColor,fontWeight:600}}>{dosesLeft} doses · {daysSupply}d</span></div>
                 <div className="hbar" style={{height:3}}><i style={{width:`${Math.min(100,(daysSupply||0)/30*100)}%`,background:supplyColor,opacity:.55}}/></div>

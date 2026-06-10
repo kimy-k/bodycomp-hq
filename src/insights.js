@@ -154,10 +154,16 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
     }
   }
 
-  /* 6. Generalized peptide × Whoop correlations (replaces hardcoded Klow detector).
-        For each live peptide with ≥5 logged days AND ≥5 rest days that overlap with
-        Whoop data, tests 5 metrics × 2 lag timings. Strict thresholds prevent
-        over-interpretation. Outputs ranked top-5 cards; preliminary tag when n<8. */
+  /* 6. Peptide × Whoop correlations — v2 (smarter metric selection + lag logic).
+        Changes from v1:
+        - Removed strain (user-controlled, not peptide-affected)
+        - Added RHR (lower = better, genuinely influenced by recovery peptides)
+        - Bedtime peptides: lag=1 only (next-morning reflects dose effect)
+        - Morning peptides: lag=0 only (same-day reading reflects dose)
+        - Weekly peptides (reta): 3-day post-dose window
+        - Excluded topicals (snap8) — no Whoop signal expected
+        - Minimum 7 data points (was 5) to reduce noise
+        - Confounder flag when two peptides overlap >80% of days */
   if (whoopHist && whoopHist.length >= 10 && pepHist && pepHist.length >= 7 && userPeps && userPeps.length > 0) {
     const addDay = (dateStr, days) => {
       const d = new Date(dateStr + "T12:00:00");
@@ -167,28 +173,41 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
     const METRICS = [
       {key: "recovery",         label: "recovery",        threshold: 5,   higherBetter: true,  fmt: v => `${Math.round(v)}%`},
       {key: "hrv_ms",           label: "HRV",             threshold: 3,   higherBetter: true,  fmt: v => `${Math.round(v)}ms`},
+      {key: "rhr",              label: "resting HR",      threshold: 2,   higherBetter: false, fmt: v => `${Math.round(v)}bpm`},
       {key: "sleep_hours",      label: "sleep",           threshold: 0.3, higherBetter: true,  fmt: v => `${v.toFixed(1)}h`},
       {key: "sleep_efficiency", label: "sleep efficiency",threshold: 3,   higherBetter: true,  fmt: v => `${Math.round(v)}%`},
-      {key: "strain",           label: "strain",          threshold: 1,   higherBetter: false, fmt: v => v.toFixed(1)},
     ];
-    const LAGS = [
-      {days: 0, suffix: ""},
-      {days: 1, suffix: " (next morning)"},
-    ];
-    /* Set of dates with any peptide log entry — used to distinguish "rest day" from "untracked" */
+    /* Smart lag: bedtime peptides show effect next morning; AM peptides show same-day */
+    const BEDTIME_PEPS = new Set(["cjcipa"]);
+    const WEEKLY_PEPS = new Set(["reta"]);
+    const TOPICAL_PEPS = new Set(["snap8"]);
+
     const loggedDates = new Set(pepHist.map(d => d.date));
     const findings = [];
+    const considered = userPeps.filter(p =>
+      (p.status === "active" || p.status === "prn" || p.status === "starting") &&
+      !TOPICAL_PEPS.has(p.id)
+    );
 
-    /* Iterate every live peptide (active/prn/starting). For "starting" we don't bother
-       checking start_date — if there's enough overlap data it's already running. */
-    const considered = userPeps.filter(p => p.status === "active" || p.status === "prn" || p.status === "starting");
+    /* Build per-peptide date sets for confounder detection */
+    const pepDateSets = {};
+    for (const pep of considered) {
+      pepDateSets[pep.id] = new Set(pepHist.filter(d => (d.checks || {})[pep.id]).map(d => d.date));
+    }
 
     for (const pep of considered) {
-      const pepDates = new Set(pepHist.filter(d => (d.checks || {})[pep.id]).map(d => d.date));
+      const pepDates = pepDateSets[pep.id];
       if (pepDates.size < 5) continue;
 
+      /* Choose lag strategy based on dosing time */
+      const lags = BEDTIME_PEPS.has(pep.id)
+        ? [{days: 1, suffix: " (next morning)"}]                /* Bedtime → next-morning only */
+        : WEEKLY_PEPS.has(pep.id)
+          ? [{days: 0, suffix: ""}, {days: 1, suffix: " (+1d)"}, {days: 2, suffix: " (+2d)"}]  /* Weekly → 3-day window */
+          : [{days: 0, suffix: ""}];                             /* Morning/default → same-day only */
+
       for (const metric of METRICS) {
-        for (const lag of LAGS) {
+        for (const lag of lags) {
           const taken = [], rest = [];
 
           for (const w of whoopHist) {
@@ -197,44 +216,44 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
             const val = Number(raw);
             if (!isFinite(val)) continue;
 
-            /* For lag=0, whoop date = pep date.
-               For lag=1, whoop date = pep date + 1 (next morning reading reflects last night's pep dose). */
             const checkDate = lag.days === 0 ? w.date : addDay(w.date, -lag.days);
-            if (!loggedDates.has(checkDate)) continue;  /* Skip days with no pep-log data */
+            if (!loggedDates.has(checkDate)) continue;
 
             if (pepDates.has(checkDate)) taken.push(val);
             else rest.push(val);
           }
 
-          if (taken.length < 5 || rest.length < 5) continue;
+          if (taken.length < 7 || rest.length < 5) continue;
 
           const meanT = taken.reduce((s, v) => s + v, 0) / taken.length;
           const meanR = rest.reduce((s, v) => s + v, 0) / rest.length;
           const diff = meanT - meanR;
           if (Math.abs(diff) < metric.threshold) continue;
 
-          const preliminary = taken.length < 8 || rest.length < 8;
+          const preliminary = taken.length < 10 || rest.length < 8;
           const direction = diff > 0;
-          /* For strain, higher = worse; for everything else, higher = better */
           const isGood = metric.higherBetter ? direction : !direction;
+
+          /* Detect confounders: other peptides with >80% date overlap */
+          const confounders = considered.filter(other => {
+            if (other.id === pep.id) return false;
+            const otherDates = pepDateSets[other.id];
+            if (!otherDates || otherDates.size < 5) return false;
+            const overlap = [...pepDates].filter(d => otherDates.has(d)).length;
+            return overlap / pepDates.size > 0.8;
+          }).map(c => c.name);
 
           findings.push({
             pep, metric, lag, meanT, meanR, diff,
             nT: taken.length, nR: rest.length,
-            preliminary, isGood,
-            /* Score = effect-size normalized by threshold × ln(total sample) */
+            preliminary, isGood, confounders,
             score: (Math.abs(diff) / metric.threshold) * Math.log(taken.length + rest.length + 1),
           });
         }
       }
     }
 
-    /* Rank by effect-size × sample-size, cap output at 5 cards */
     findings.sort((a, b) => b.score - a.score);
-    /* Dedupe: keep only the best-scoring lag per peptide×metric so the same
-       correlation (e.g. CJC+Ipamorelin × Recovery) can't appear twice — once for
-       same-day and once for next-morning. findings is already score-sorted, so the
-       first occurrence of each pep×metric is the strongest. */
     const seenPepMetric = new Set();
     const topFindings = [];
     for (const f of findings) {
@@ -242,14 +261,17 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
       if (seenPepMetric.has(key)) continue;
       seenPepMetric.add(key);
       topFindings.push(f);
-      if (topFindings.length >= 5) break;
+      if (topFindings.length >= 6) break;
     }
     for (const f of topFindings) {
+      const confounderNote = f.confounders.length > 0
+        ? ` ⚠ overlaps with ${f.confounders.join(", ")} — can't isolate effect.`
+        : "";
       out.push({
         id: `pep-whoop-${f.pep.id}-${f.metric.key}-${f.lag.days}`,
         icon: "vial",
         title: `${f.pep.name} × ${f.metric.label}${f.lag.suffix}`,
-        body: `Averages ${f.metric.fmt(f.meanT)} on ${f.pep.name} days (n=${f.nT}) vs ${f.metric.fmt(f.meanR)} on rest days (n=${f.nR}). ${f.isGood ? "Positive signal" : "Worth a closer look"}${f.preliminary ? " · preliminary" : ""}.`,
+        body: `Averages ${f.metric.fmt(f.meanT)} on ${f.pep.name} days (n=${f.nT}) vs ${f.metric.fmt(f.meanR)} on rest days (n=${f.nR}). ${f.isGood ? "Positive signal" : "Worth a closer look"}${f.preliminary ? " · preliminary" : ""}.${confounderNote}`,
         color: f.isGood ? "var(--c-success)" : "var(--c-warn)",
         severity: f.preliminary ? 0 : 1,
       });

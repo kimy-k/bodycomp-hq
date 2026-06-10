@@ -914,22 +914,47 @@ function DashboardInner(){
         <div className="rise" style={{background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"14px 14px 6px",marginBottom:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10,padding:"0 2px"}}>
             <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Body composition · trend</span>
-            <span className="mono" style={{fontSize:10,color:"var(--accent)",letterSpacing:".10em",fontWeight:600}}>{goalPct}% target</span>
+            <span className="mono" style={{fontSize:10,color:"var(--c-fat)",letterSpacing:".10em",fontWeight:600}}>{goalPct}% target</span>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={data} margin={{top:6,right:10,left:4,bottom:0}}>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={data} margin={{top:6,right:8,left:2,bottom:0}}>
               <CartesianGrid strokeDasharray="2 5" stroke="rgba(255,255,255,0.06)" vertical={false}/>
-              <XAxis dataKey="labelYr" tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono",letterSpacing:"0.04em"}} axisLine={false} tickLine={false} interval={data.length>8?1:0}/>
-              <YAxis yAxisId="pct" domain={[Math.min(goalPct-2,28),48]} allowDecimals={false} tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={26} label={{value:"%",position:"insideTopLeft",fill:"var(--t-4)",fontSize:8,fontFamily:"Geist Mono",offset:-4}}/>
-              <YAxis yAxisId="kg" orientation="right" domain={['auto','auto']} allowDecimals={false} tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={30} label={{value:"kg",position:"insideTopRight",fill:"var(--t-4)",fontSize:8,fontFamily:"Geist Mono",offset:-4}}/>
+              <XAxis dataKey="label" tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} interval={data.length>10?2:data.length>6?1:0}/>
+              <YAxis yAxisId="pct" domain={[Math.min(goalPct-2,28),48]} allowDecimals={false} tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={26}/>
+              <YAxis yAxisId="kg" orientation="right" domain={['dataMin-1','dataMax+1']} allowDecimals={false} tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={28}/>
               <Tooltip content={<Tip/>}/>
               <Legend iconType="circle" iconSize={6} wrapperStyle={{fontSize:10,color:"var(--t-3)",fontFamily:"Geist Mono",paddingTop:6}}/>
-              <ReferenceLine yAxisId="pct" y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.5}/>
-              <Line yAxisId="pct" type="monotone" dataKey="fatPct" stroke="var(--accent)" strokeWidth={2.2} name="Fat %" dot={{r:2.5,fill:"var(--accent)",stroke:"#000",strokeWidth:0}} activeDot={{r:4.5,fill:"var(--accent)",stroke:"#000",strokeWidth:2}}/>
-              <Line yAxisId="kg" type="monotone" dataKey="weight" stroke="var(--c-weight)" strokeWidth={1.5} name="Weight" dot={{r:2,fill:"var(--c-weight)",stroke:"#000",strokeWidth:0}} strokeDasharray="4 2"/>
-              <Line yAxisId="kg" type="monotone" dataKey="muscle" stroke="var(--c-success)" strokeWidth={1.5} name="Muscle" dot={{r:2,fill:"var(--c-success)",stroke:"#000",strokeWidth:0}} strokeDasharray="6 3"/>
+              <ReferenceLine yAxisId="pct" y={goalPct} stroke="var(--c-fat)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.4}/>
+              <Line yAxisId="pct" type="monotone" dataKey="fatPct" stroke="var(--c-fat)" strokeWidth={2.2} name="Fat %" dot={{r:3,fill:"var(--c-fat)",stroke:"#000",strokeWidth:1}} activeDot={{r:5,fill:"var(--c-fat)",stroke:"#000",strokeWidth:2}}/>
+              <Line yAxisId="kg" type="monotone" dataKey="weight" stroke="var(--accent)" strokeWidth={2} name="Weight (kg)" dot={{r:2.5,fill:"var(--accent)",stroke:"#000",strokeWidth:1}} activeDot={{r:4.5,fill:"var(--accent)",stroke:"#000",strokeWidth:2}}/>
             </LineChart>
           </ResponsiveContainer>
+          {/* Muscle trend strip — separate from the weight axis so it's not crushed */}
+          {data.length>=2&&(()=>{
+            const latest=data[data.length-1];
+            const prev=data[data.length-2];
+            const first=data[0];
+            const mDelta=latest.muscle&&prev.muscle?+(latest.muscle-prev.muscle).toFixed(1):null;
+            const mTotal=latest.muscle&&first.muscle?+(latest.muscle-first.muscle).toFixed(1):null;
+            const lm=latest.leanMass;
+            return(<div style={{display:"flex",gap:8,marginTop:8,padding:"8px 4px 4px",borderTop:"1px solid var(--line-soft)"}}>
+              <div style={{flex:1,textAlign:"center"}}>
+                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".08em",textTransform:"uppercase",marginBottom:2}}>Muscle</div>
+                <div className="serif tabular" style={{fontSize:20,color:"var(--c-danger)",fontStyle:"italic",lineHeight:1}}>{latest.muscle}<span style={{fontSize:11,color:"var(--t-4)"}}>kg</span></div>
+                {mDelta!==null&&<div className="mono" style={{fontSize:9,color:mDelta>0?"var(--c-success)":mDelta<0?"var(--c-danger)":"var(--t-4)",marginTop:2}}>{mDelta>0?"+":""}{mDelta} last scan</div>}
+              </div>
+              <div style={{flex:1,textAlign:"center"}}>
+                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".08em",textTransform:"uppercase",marginBottom:2}}>Lean mass</div>
+                <div className="serif tabular" style={{fontSize:20,color:"var(--t-2)",fontStyle:"italic",lineHeight:1}}>{lm}<span style={{fontSize:11,color:"var(--t-4)"}}>kg</span></div>
+                {mTotal!==null&&<div className="mono" style={{fontSize:9,color:mTotal>0?"var(--c-success)":mTotal<0?"var(--c-danger)":"var(--t-4)",marginTop:2}}>{mTotal>0?"+":""}{mTotal} overall</div>}
+              </div>
+              <div style={{flex:1,textAlign:"center"}}>
+                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".08em",textTransform:"uppercase",marginBottom:2}}>Fat mass</div>
+                <div className="serif tabular" style={{fontSize:20,color:"var(--c-fat)",fontStyle:"italic",lineHeight:1}}>{latest.fatMass}<span style={{fontSize:11,color:"var(--t-4)"}}>kg</span></div>
+                {first.fatMass&&<div className="mono" style={{fontSize:9,color:latest.fatMass<first.fatMass?"var(--c-success)":"var(--c-danger)",marginTop:2}}>{latest.fatMass<first.fatMass?"":" +"}{+(latest.fatMass-first.fatMass).toFixed(1)} overall</div>}
+              </div>
+            </div>);
+          })()}
         </div>
 
         {/* ─── AI Weekly Summary — Concept C clinical card ─── */}

@@ -180,7 +180,7 @@ function DashboardInner(){
 
   useEffect(()=>{if(macroSub!=="history"||tab!=="macros")return;(async()=>{
     const rows=await db.list("daily_macros",14);
-    const res=rows.map(md=>{let t={cal:0,protein:0,fat:0,carbs:0};(md.meals||[]).forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});t.cal=calcCal(t.protein,t.fat,t.carbs);if(md.whey!==false&&whey.enabled){t.protein+=whey.protein;t.fat+=whey.fat;t.carbs+=whey.carbs;t.cal+=calcCal(whey.protein,whey.fat,whey.carbs);}return{date:md.date,...t};});
+    const res=rows.map(md=>{let t={cal:0,protein:0,fat:0,carbs:0};(md.meals||[]).forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});t.cal=calcCal(t.protein,t.fat,t.carbs);if(md.whey!==false&&whey.enabled){t.protein+=whey.protein;t.fat+=whey.fat;t.carbs+=whey.carbs;t.cal+=calcCal(whey.protein,whey.fat,whey.carbs);}return{date:md.date,...t,meals:md.meals||[]};});
     setHistDays(res);
   })();},[macroSub,tab]);
   const totals=useMemo(()=>{let t={protein:0,fat:0,carbs:0};meals.forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});if(wheyOn&&whey.enabled){t.protein+=whey.protein;t.fat+=whey.fat;t.carbs+=whey.carbs;}t.cal=calcCal(t.protein,t.fat,t.carbs);return t;},[meals,wheyOn,whey]);
@@ -1802,26 +1802,90 @@ function DashboardInner(){
         </>)}
 
         {macroSub==="history"&&(<>
-          {weekAvgProtein&&<div className="rise" style={{background:"var(--elev-1)",borderLeft:"3px solid var(--c-protein)",borderRadius:"var(--r-md)",padding:"14px 18px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-            <div>
-              <div style={{fontSize:10.5,color:"var(--c-protein)",letterSpacing:".10em",fontWeight:600,textTransform:"uppercase"}}>7-day protein average</div>
-              <div className="mono" style={{fontSize:11,color:"var(--t-3)",marginTop:2}}>vs {TARGETS.protein}g target</div>
-            </div>
-            <span className="serif tabular" style={{fontSize:38,color:weekAvgProtein>=TARGETS.protein?"var(--c-success)":"var(--c-protein)",fontStyle:"italic",lineHeight:1}}>{weekAvgProtein}<span style={{fontSize:18,color:"var(--t-3)"}}>g</span></span>
-          </div>}
-          {histDays.length===0?<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="calendar" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No history yet</div></div>:histDays.map((d,i)=>{const lb=new Date(d.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});const ph=d.protein>=TARGETS.protein;return(<div key={i} className="rise" style={{animationDelay:`${i*0.04}s`,background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"14px 16px",marginBottom:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <span style={{fontSize:13,fontWeight:600,color:"var(--t-1)"}}>{lb}</span>
-              {ph&&<span style={{fontSize:9.5,background:"color-mix(in oklch, var(--c-success) 14%, transparent)",color:"var(--c-success)",padding:"3px 10px",borderRadius:999,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase"}}>Protein ✓</span>}
-            </div>
-            <div className="mono" style={{display:"flex",gap:14,fontSize:11.5,letterSpacing:".01em"}}>
-              <span style={{color:"var(--c-cal)"}}>{d.cal}</span>
-              <span style={{color:"var(--c-protein)",fontWeight:ph?700:500}}>{Math.round(d.protein)}P</span>
-              <span style={{color:"var(--c-fat)"}}>{Math.round(d.fat)}F</span>
-              <span style={{color:"var(--c-carbs)"}}>{Math.round(d.carbs)}C</span>
-            </div>
-            <div className="hbar" style={{marginTop:8,height:3}}><i style={{width:`${Math.min(100,d.protein/TARGETS.protein*100)}%`,background:ph?"var(--c-success)":"var(--c-protein)"}}/></div>
-          </div>);})}
+          {/* Weekly summary strip */}
+          {histDays.length>0&&(()=>{
+            const last7=histDays.slice(0,7);
+            const avgCal=Math.round(last7.reduce((s,d)=>s+d.cal,0)/last7.length);
+            const avgProtein=Math.round(last7.reduce((s,d)=>s+d.protein,0)/last7.length);
+            const proteinHits=last7.filter(d=>d.protein>=TARGETS.protein).length;
+            const latestScan=data.length>0?data[data.length-1]:null;
+            const lm=latestScan?.leanMass||null;
+            const bmr=lm?370+21.6*lm:(userConfig?.gender==="male"?10*(userConfig?.weight||55)+6.25*(userConfig?.height||155)-5*(userConfig?.age||30)+5:10*(userConfig?.weight||55)+6.25*(userConfig?.height||155)-5*(userConfig?.age||30)-161);
+            const tdee=Math.round(bmr*({sedentary:1.2,light:1.375,moderate:1.55,active:1.725}[userConfig?.activity]||1.375));
+            const avgDeficit=tdee-avgCal;
+            return(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,marginBottom:14}}>
+              {[
+                {label:"Avg cal",value:avgCal,color:avgCal<=TARGETS.cal?"var(--c-success)":"var(--c-warn)"},
+                {label:"Avg deficit",value:avgDeficit>0?`−${avgDeficit}`:`+${Math.abs(avgDeficit)}`,color:avgDeficit>0?"var(--c-success)":"var(--c-danger)"},
+                {label:"Protein",value:`${proteinHits}/7`,color:proteinHits>=5?"var(--c-success)":proteinHits>=3?"var(--c-warn)":"var(--c-danger)"},
+                {label:"Logged",value:`${last7.length}/7`,color:last7.length>=6?"var(--c-success)":"var(--c-warn)"},
+              ].map((s,i)=>(<div key={i} style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 8px",textAlign:"center"}}>
+                <div className="mono" style={{fontSize:8,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:3}}>{s.label}</div>
+                <div className="serif tabular" style={{fontSize:18,color:s.color,fontStyle:"italic",lineHeight:1}}>{s.value}</div>
+              </div>))}
+            </div>);
+          })()}
+          {/* Day-by-day list with deficit + expandable meals */}
+          {histDays.length===0?<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="calendar" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No history yet</div></div>:(()=>{
+            /* Build a list of last 14 days, showing gaps */
+            const today=new Date();const daysList=[];
+            for(let i=0;i<14;i++){const d=new Date(today);d.setDate(today.getDate()-i);daysList.push(localDateKey(d));}
+            const latestScan=data.length>0?data[data.length-1]:null;
+            const lm=latestScan?.leanMass||null;
+            const bmr=lm?370+21.6*lm:(userConfig?.gender==="male"?10*(userConfig?.weight||55)+6.25*(userConfig?.height||155)-5*(userConfig?.age||30)+5:10*(userConfig?.weight||55)+6.25*(userConfig?.height||155)-5*(userConfig?.age||30)-161);
+            const tdee=Math.round(bmr*({sedentary:1.2,light:1.375,moderate:1.55,active:1.725}[userConfig?.activity]||1.375));
+            return daysList.map((dk,i)=>{
+              const hd=histDays.find(h=>h.date===dk);
+              const dateObj=new Date(dk+"T12:00:00");
+              const lb=dateObj.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+              const isToday=dk===todayKey();
+              if(!hd){return(<div key={dk} style={{display:"flex",alignItems:"center",padding:"10px 14px",background:"var(--elev-1)",borderRadius:"var(--r-sm)",marginBottom:4,opacity:0.4}}>
+                <span style={{fontSize:12,color:"var(--t-4)",flex:1}}>{lb}{isToday&&<span className="mono" style={{marginLeft:6,fontSize:9,color:"var(--accent)"}}>today</span>}</span>
+                <span className="mono" style={{fontSize:10,color:"var(--t-5)"}}>not logged</span>
+              </div>);}
+              const cal=hd.cal;const deficit=tdee-cal;
+              const ph=hd.protein>=TARGETS.protein;
+              const calPct=Math.min(100,(cal/TARGETS.cal)*100);
+              const overTarget=cal>TARGETS.cal;
+              const expanded=expandedBatch===("hist-"+dk); /* reuse expandedBatch state */
+              return(<div key={dk} onClick={()=>setExpandedBatch(expanded?null:"hist-"+dk)} style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:4,cursor:"pointer"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:12,fontWeight:600,color:"var(--t-1)"}}>{lb}</span>
+                    {isToday&&<span className="mono" style={{fontSize:9,color:"var(--accent)"}}>today</span>}
+                    {ph&&<span style={{fontSize:8,background:"color-mix(in oklch, var(--c-success) 14%, transparent)",color:"var(--c-success)",padding:"2px 6px",borderRadius:999,fontWeight:600}}>P✓</span>}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span className="mono" style={{fontSize:11,color:deficit>0?"var(--c-success)":"var(--c-danger)",fontWeight:600}}>{deficit>0?"−":"+"}{ Math.abs(deficit)}</span>
+                    <Icon n={expanded?"chevUp":"chevDown"} s={12} c="var(--t-4)"/>
+                  </div>
+                </div>
+                {/* Cal vs target bar */}
+                <div style={{height:3,background:"var(--elev-3)",borderRadius:2,marginBottom:4,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${calPct}%`,background:overTarget?"var(--c-danger)":"var(--accent)",borderRadius:2}}/>
+                </div>
+                <div className="mono" style={{display:"flex",gap:10,fontSize:10.5}}>
+                  <span style={{color:"var(--c-cal)"}}>{cal}</span>
+                  <span style={{color:"var(--c-protein)",fontWeight:ph?700:500}}>{Math.round(hd.protein)}P</span>
+                  <span style={{color:"var(--c-fat)"}}>{Math.round(hd.fat)}F</span>
+                  <span style={{color:"var(--c-carbs)"}}>{Math.round(hd.carbs)}C</span>
+                  <span style={{color:"var(--t-5)",marginLeft:"auto"}}>{hd.meals?.length||0} meals</span>
+                </div>
+                {/* Expanded: individual meals */}
+                {expanded&&hd.meals&&hd.meals.length>0&&(<div onClick={e=>e.stopPropagation()} style={{marginTop:8,paddingTop:8,borderTop:"1px solid var(--line-soft)"}}>
+                  {hd.meals.map((m,mi)=>(<div key={mi} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,minWidth:0,flex:1}}>
+                      {m.tag&&<span style={{fontSize:8.5,color:"var(--t-4)",background:"var(--elev-2)",padding:"1px 6px",borderRadius:999}}>{m.tag}</span>}
+                      <span style={{color:"var(--t-2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.name}</span>
+                    </div>
+                    <div className="mono" style={{fontSize:10,color:"var(--t-3)",flexShrink:0,marginLeft:8}}>
+                      <span style={{color:"var(--c-protein)"}}>{m.protein}P</span> · <span style={{color:"var(--c-fat)"}}>{m.fat}F</span> · <span style={{color:"var(--c-carbs)"}}>{m.carbs}C</span>
+                    </div>
+                  </div>))}
+                </div>)}
+              </div>);
+            });
+          })()}
         </>)}
       </>)}
 

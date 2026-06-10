@@ -1356,57 +1356,55 @@ function DashboardInner(){
         <div style={{display:"flex",gap:6,marginBottom:16}}>{[["log","Today"],["history","History"]].map(([k,l])=>(<TabBtn key={k} active={macroSub===k} onClick={()=>setMacroSub(k)}>{l}</TabBtn>))}</div>
 
         {macroSub==="log"&&(<>
-          {/* P18: Date selector — lets you back-log macros for a past day */}
+          {/* Date nav — same arrows as Peps tab */}
           {(()=>{
             const todayK=todayKey();
             const isToday=macroDate===todayK;
             const dateObj=new Date(macroDate+"T12:00:00");
-            const minDate=(()=>{const d=new Date();d.setDate(d.getDate()-30);return localDateKey(d);})();
-            const friendly=isToday?"Today":dateObj.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"});
+            const dayLabel=isToday?"Today":dateObj.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+            const goBack=()=>{const d=new Date(dateObj);d.setDate(d.getDate()-1);const k=d.toISOString().slice(0,10);const min=new Date();min.setDate(min.getDate()-30);if(d>=min)setMacroDate(k);};
+            const goFwd=()=>{const d=new Date(dateObj);d.setDate(d.getDate()+1);const k=d.toISOString().slice(0,10);if(k<=todayK)setMacroDate(k);};
             return(<>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:isToday?16:10,flexWrap:"wrap"}}>
-                <span className="mono" style={{fontSize:10.5,color:"var(--t-3)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600}}>Logging for</span>
-                <input type="date" value={macroDate} min={minDate} max={todayK} onChange={e=>setMacroDate(e.target.value||todayK)} className="bcq-input" style={{colorScheme:"dark",padding:"5px 8px",fontSize:12,maxWidth:170}}/>
-                {!isToday&&<button onClick={()=>setMacroDate(todayK)} className="touch" style={{padding:"5px 10px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:11,fontWeight:600,cursor:"pointer"}}>← Today</button>}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:isToday?12:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <button onClick={goBack} className="touch" style={{background:"var(--elev-2)",border:"1px solid var(--line-soft)",borderRadius:8,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",padding:0}}><Icon n="chevLeft" s={16} c="var(--t-3)"/></button>
+                  <div style={{textAlign:"center",minWidth:90}}>
+                    <h3 className="serif" style={{fontSize:isToday?20:16,margin:0,color:isToday?"var(--t-1)":"var(--accent)",fontStyle:"italic",fontWeight:400}}>{dayLabel}</h3>
+                    {!isToday&&<div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:1}}>editing past day</div>}
+                  </div>
+                  <button onClick={goFwd} className="touch" disabled={isToday} style={{background:isToday?"transparent":"var(--elev-2)",border:isToday?"1px solid transparent":"1px solid var(--line-soft)",borderRadius:8,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",cursor:isToday?"default":"pointer",padding:0,opacity:isToday?0.3:1}}><Icon n="chevRight" s={16} c="var(--t-3)"/></button>
+                  {!isToday&&<button onClick={()=>setMacroDate(todayK)} className="touch" style={{background:"var(--accent-soft)",border:"1px solid var(--accent-line)",borderRadius:999,padding:"4px 10px",fontSize:10,fontWeight:600,color:"var(--accent)",cursor:"pointer",marginLeft:4}}>Today</button>}
+                </div>
               </div>
-              {!isToday&&<div style={{padding:"10px 14px",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",borderLeft:"3px solid var(--c-warn)",borderRadius:"var(--r-sm)",fontSize:12,color:"var(--t-2)",marginBottom:16,lineHeight:1.5,display:"flex",alignItems:"center",gap:8}}><Icon n="warn" s={14} c="var(--c-warn)"/> <span>Editing <strong>{friendly}</strong> — changes save to that day's record, not today.</span></div>}
+              {!isToday&&<div style={{padding:"8px 14px",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",borderLeft:"3px solid var(--c-warn)",borderRadius:"var(--r-sm)",fontSize:11,color:"var(--t-2)",marginBottom:12,display:"flex",alignItems:"center",gap:8}}><Icon n="warn" s={13} c="var(--c-warn)"/> Editing <strong style={{margin:"0 3px"}}>{dayLabel}</strong></div>}
             </>);
           })()}
-          {/* Protein hero — the gasping moment */}
-          <div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-lg)",padding:"20px 22px 22px",marginBottom:12,borderLeft:"3px solid var(--c-protein)",position:"relative",overflow:"hidden"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
-              <div>
-                <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}>
-                  <Icon n="muscle" s={15} c="var(--c-protein)" sw={1.7}/>
-                  <span style={{fontSize:10.5,color:"var(--c-protein)",letterSpacing:".12em",fontWeight:600,textTransform:"uppercase"}}>Protein</span>
-                </div>
-                <div style={{fontSize:11,color:"var(--t-3)",letterSpacing:".01em"}}>The number that matters most</div>
+          {/* Protein — compact featured card */}
+          <div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"12px 16px",marginBottom:10,borderLeft:"3px solid var(--c-protein)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+                <span className="mono" style={{fontSize:9.5,color:"var(--c-protein)",letterSpacing:".10em",fontWeight:600,textTransform:"uppercase"}}>Protein</span>
+                {weekAvgProtein&&<span className="mono" style={{fontSize:9,color:"var(--t-4)"}}>7d avg {weekAvgProtein}g</span>}
               </div>
-              {weekAvgProtein&&<div className="mono" style={{fontSize:10.5,color:"var(--t-3)",background:"var(--elev-2)",padding:"4px 10px",borderRadius:999,letterSpacing:".02em"}}>7d avg {weekAvgProtein}g</div>}
+              <span className="mono" style={{fontSize:10,color:rem.protein>0?"var(--t-3)":"var(--c-success)"}}>{rem.protein>0?`${Math.round(rem.protein)}g left`:"✓ hit"}</span>
             </div>
-            <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:12}}>
-              <span className="serif tabular" style={{fontSize:72,color:totals.protein>=TARGETS.protein?"var(--c-success)":"var(--t-1)",fontStyle:"italic",lineHeight:.95,letterSpacing:"-0.03em"}}>{Math.round(totals.protein)}</span>
-              <span className="serif" style={{fontSize:24,color:"var(--t-3)",fontStyle:"italic"}}>/ {TARGETS.protein}<span style={{fontSize:14}}>g</span></span>
+            <div style={{display:"flex",alignItems:"baseline",gap:5,marginBottom:6}}>
+              <span className="serif tabular" style={{fontSize:36,color:totals.protein>=TARGETS.protein?"var(--c-success)":"var(--c-protein)",fontStyle:"italic",lineHeight:1,letterSpacing:"-0.02em"}}>{Math.round(totals.protein)}</span>
+              <span className="serif" style={{fontSize:16,color:"var(--t-4)",fontStyle:"italic"}}>/ {TARGETS.protein}g</span>
             </div>
-            <div className="hbar" style={{marginBottom:8}}><i style={{width:`${Math.min(100,totals.protein/TARGETS.protein*100)}%`,background:totals.protein>=TARGETS.protein?"var(--c-success)":"var(--c-protein)"}}/></div>
-            <div className="mono" style={{fontSize:11,color:rem.protein>0?"var(--t-3)":"var(--c-success)",letterSpacing:".01em"}}>{rem.protein>0?`${Math.round(rem.protein)}g remaining`:"✓ Target hit"}</div>
-            {/* Smart projection — Wave A. Anchors current pace against time-of-day.
-                Hidden when target is hit, or when too early/late for meaningful pace. */}
+            <div className="hbar" style={{marginBottom:0}}><i style={{width:`${Math.min(100,totals.protein/TARGETS.protein*100)}%`,background:totals.protein>=TARGETS.protein?"var(--c-success)":"var(--c-protein)"}}/></div>
             {rem.protein>0&&(()=>{
               const now=new Date();
-              const startH=7, endH=22;  /* eating window: 7am to 10pm */
+              const startH=7, endH=22;
               const curH=now.getHours()+now.getMinutes()/60;
-              if(curH<startH+1||curH>endH-0.5)return null;  /* too early or too late */
-              const hoursIn=curH-startH;
+              if(curH<startH+1||curH>endH-0.5)return null;
               const hoursLeft=endH-curH;
-              const pace=totals.protein/hoursIn;
+              const pace=totals.protein/(curH-startH);
               const projected=Math.round(totals.protein+pace*hoursLeft);
               const onPace=projected>=TARGETS.protein;
               const needRate=Math.round(rem.protein/hoursLeft);
-              return(<div className="mono" style={{fontSize:10.5,color:onPace?"var(--c-success)":"var(--t-4)",letterSpacing:".01em",marginTop:4,lineHeight:1.5}}>
-                {onPace
-                  ? `On pace for ${projected}g by ${endH-12} PM.`
-                  : `Behind pace · need ${needRate}g/hr to hit target by ${endH-12} PM.`}
+              return(<div className="mono" style={{fontSize:9.5,color:onPace?"var(--c-success)":"var(--t-4)",marginTop:4}}>
+                {onPace?`On pace for ${projected}g by ${endH-12} PM`:`Behind pace · need ${needRate}g/hr to hit target by ${endH-12} PM.`}
               </div>);
             })()}
           </div>

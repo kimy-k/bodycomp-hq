@@ -68,14 +68,14 @@ export const COMPONENT_LABELS = {
      initial values for the user's stack entry. Schedule is Sun=0..Sat=6.
      status: "active" | "starting" | "break" | "prn" */
 export const DEFAULT_STACK = {
-  reta:   {users:["kim"],                dose:"4.5mg weekly",    schedule:[2],             time:"AM",       status:"active",   start_date:"2026-03-10", total_weeks:24, cycle_end:"2026-08-24", note:"Titrating per TRIUMPH · next bump 6mg ~Jul 8"},
+  reta:   {users:["kim"],                dose:"4.5mg weekly",    schedule:[2],             time:"AM",       status:"active",   start_date:"2026-03-10", total_weeks:0,  cycle_end:null,         note:"Titrating per TRIUMPH · next bump 6mg ~Jul 8"},
   klow:   {users:["kim","bernadette"],   dose:"40u (10.7mg)",    schedule:[],              time:"—",        status:"break",    start_date:"2026-05-01", total_weeks:4,  cycle_end:"2026-05-25", note:"Stopped May 25 · 5 GB vials in supply · resume when ready"},
   nad:    {users:["kim","bernadette"],   dose:"50mg (30u)",      schedule:[1,3],           time:"AM",       status:"active",   start_date:"2026-04-06", total_weeks:12, cycle_end:"2026-06-29", note:"Mon/Wed"},
   ta1:    {users:["kim","bernadette"],   dose:"1.5mg (15u)",     schedule:[1,4],           time:"AM",       status:"active",   start_date:"2026-05-16", total_weeks:8,  cycle_end:"2026-07-11", note:"Mon/Thu · Just started"},
   amino:  {users:["kim","bernadette"],   dose:"2.5mg (25u) QD",  schedule:[0,1,2,3,4,5,6], time:"Bedtime",  status:"active",   start_date:"2026-05-16", total_weeks:8,  cycle_end:"2026-07-11", note:"Daily QD before bed"},
   snap8:  {users:["kim","bernadette"],   dose:"Topical AM+PM",   schedule:[0,1,2,3,4,5,6], time:"AM+PM",    status:"active",   start_date:"2026-05-16", total_weeks:12, cycle_end:"2026-08-08", note:"Topical"},
   cjcipa: {users:["kim","bernadette"],   dose:"15u (0.15mL · 500mcg)", schedule:[1,2,3,4,5],     time:"Bedtime",  status:"active",   start_date:"2026-05-17", total_weeks:12, cycle_end:"2026-08-09", note:"Increased to 15u Jun 9 · 5on/2off"},
-  tesa:   {users:["kim","bernadette"],   dose:"2mg (20u)",       schedule:[1,3,5],         time:"AM",       status:"active",   start_date:"2026-04-01", total_weeks:12, cycle_end:"2026-06-22", note:"Mon/Wed/Fri"},
+  tesa:   {users:["kim","bernadette"],   dose:"2mg (20u)",       schedule:[1,3,5],         time:"AM",       status:"active",   start_date:"2026-04-01", total_weeks:8,  cycle_end:"2026-05-27", note:"8-week cycle · GHRH analog · break recommended"},
   semax:  {users:["kim","bernadette"],   dose:"200mcg x2 daily", schedule:[1,2,3,4,5],     time:"AM+Lunch", status:"prn",      start_date:"2026-04-20", total_weeks:0,  cycle_end:null,         note:"PRN for focus"},
   motsc:  {users:["kim","bernadette"],   dose:"1.5mg (30u)",     schedule:[1,3,5],         time:"AM",       status:"active",   start_date:"2026-06-10", total_weeks:5,  cycle_end:"2026-07-15", note:"Cycle 2 · Mon/Wed/Fri"},
   glow:   {users:["kim","bernadette"],   dose:"30u (7mg)",       schedule:[],              time:"—",        status:"completed",start_date:"2026-03-12", total_weeks:8,  cycle_end:"2026-05-07", note:"Cycle 1 complete · resume when ready"},
@@ -441,6 +441,29 @@ export const PHARMACOKINETICS = {
   tesa:   {halfLifeNote: "~26 min plasma",                         halfLifeHours: 0.4,  dosingImplication: "Very short — daily injection required for visceral-fat effect"},
   semax:  {halfLifeNote: "~5–15 min (intranasal)",                 halfLifeHours: 0.25, dosingImplication: "BDNF effects persist much longer than plasma t½"},
   motsc:  {halfLifeNote: "~hours (poorly characterized)",          halfLifeHours: null, dosingImplication: "Effects on mitochondria last beyond plasma t½"},
+};
+
+/* ═══ CYCLING PROTOCOLS ═══
+   Encodes whether each peptide is continuous or cycle-based, and what the
+   app should do when cycle_end approaches or passes.
+   
+   type: "continuous" — no cycle-off needed, titrate and maintain
+         "cycle"      — defined on/off pattern, prompt break when cycle ends
+         "prn"        — as-needed, no cycle tracking
+   
+   Sources: clinical trials (GLP-1s), PeptideGuidesPH, community consensus */
+export const CYCLING = {
+  reta:   {type:"continuous", note:"GLP-1 class — no cycling. TRIUMPH ran 48 weeks. Titrate up, maintain until goal, then taper to maintenance dose. Cycling off causes weight regain."},
+  klow:   {type:"cycle",      onWeeks:4, offWeeks:3, note:"4–6 weeks on / 2–4 weeks off. BPC+TB receptors downregulate with continuous use."},
+  glow:   {type:"cycle",      onWeeks:6, offWeeks:3, note:"Similar to Klow. 6–8 weeks on / 2–4 weeks off."},
+  nad:    {type:"continuous", note:"No cycling needed. Maintenance dosing indefinitely. Some do loading phases (daily × 2wk then 2×/wk)."},
+  ta1:    {type:"continuous", note:"Continuous use typical. Some practitioners do 8-week cycles but evidence supports ongoing immune modulation."},
+  amino:  {type:"cycle",      onWeeks:8, offWeeks:4, note:"8 weeks on / 4 weeks off. NNMT inhibition may plateau with continuous use."},
+  snap8:  {type:"continuous", note:"Topical — continuous daily use. No receptor downregulation concern."},
+  cjcipa: {type:"cycle",      onWeeks:12, offWeeks:4, note:"12 weeks on / 4 weeks off. GH-axis peptides benefit from cycling to prevent pituitary desensitization."},
+  tesa:   {type:"cycle",      onWeeks:8, offWeeks:6, note:"GHRH analog — 8–12 weeks on / 4–8 weeks off. Pituitary receptor sensitivity degrades with continuous use. 5on/2off weekly within cycle. Monitor IGF-1 on extended use."},
+  semax:  {type:"prn",       note:"As-needed for focus/cognition. Can be used daily for 2–4 week courses or PRN."},
+  motsc:  {type:"cycle",      onWeeks:5, offWeeks:4, note:"4–5 weeks on / 4 weeks off. Mitochondrial peptide — cycling preserves sensitivity."},
 };
 
 /* Helper: get recommended reconstitution option for a peptide */

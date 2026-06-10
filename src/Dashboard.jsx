@@ -112,6 +112,10 @@ function DashboardInner(){
     const q=newMeal.name.toLowerCase();
     return mealDict.filter(m=>m.name.toLowerCase().includes(q)).slice(0,5);
   },[newMeal.name,mealDict]);
+  /* Library search */
+  const [libSearch,setLibSearch]=useState("");
+  /* Menu upload state */
+  const [menuPlan,setMenuPlan]=useState(null);const [menuLoading,setMenuLoading]=useState(false);const [menuError,setMenuError]=useState(null);
   /* AI food parser state — Wave A. Natural-language → {name,protein,fat,carbs}.
      Fills the Add Meal form so user can adjust before saving. */
   const [foodParse,setFoodParse]=useState({input:"",loading:false,error:null,confidence:null,notes:null});
@@ -1371,7 +1375,7 @@ function DashboardInner(){
       {/* ═══ MACROS ═══ */}
       {tab==="macros"&&mLoading&&<SkelTab/>}
       {tab==="macros"&&!mLoading&&(<>
-        <div style={{display:"flex",gap:6,marginBottom:16}}>{[["log","Today"],["history","History"]].map(([k,l])=>(<TabBtn key={k} active={macroSub===k} onClick={()=>setMacroSub(k)}>{l}</TabBtn>))}</div>
+        <div style={{display:"flex",gap:6,marginBottom:16}}>{[["log","Today"],["library","Library"],["menu","Menu"],["history","History"]].map(([k,l])=>(<TabBtn key={k} active={macroSub===k} onClick={()=>setMacroSub(k)}>{l}</TabBtn>))}</div>
 
         {macroSub==="log"&&(<>
           {/* Date nav — same arrows as Peps tab */}
@@ -1687,6 +1691,91 @@ function DashboardInner(){
               <span style={{fontSize:11,color:"var(--t-3)",marginLeft:4}}>kcal</span>
             </div>)}
             <button onClick={()=>{addMeal();resetFoodParse();}} disabled={!newMeal.name} className="touch" style={{width:"100%",padding:"14px",borderRadius:"var(--r-md)",border:"none",background:newMeal.name?"var(--t-1)":"var(--elev-2)",color:newMeal.name?"var(--bg)":"var(--t-4)",fontSize:14,fontWeight:600,cursor:newMeal.name?"pointer":"default",transition:"all .2s var(--ease-out)"}}>Add meal</button>
+          </div>)}
+        </>)}
+
+        {/* ═══ LIBRARY — all meals ever logged, searchable, tap to log ═══ */}
+        {macroSub==="library"&&(<>
+          <div style={{marginBottom:12}}>
+            <input value={libSearch} onChange={e=>setLibSearch(e.target.value)} placeholder="Search meals…" className="bcq-input" style={{fontSize:13,padding:"10px 14px"}}/>
+          </div>
+          {mealDict.length===0?<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}>No meals logged yet. Start logging on the Today tab.</div>:(
+            <div>
+              <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",marginBottom:8,fontWeight:600}}>{mealDict.length} UNIQUE MEALS · sorted by frequency</div>
+              {mealDict.filter(m=>!libSearch||m.name.toLowerCase().includes(libSearch.toLowerCase())).map((m,i)=>(<div key={i} style={{display:"flex",alignItems:"center",padding:"10px 0",borderBottom:"1px solid var(--line-soft)",gap:10}}>
+                <div onClick={()=>{const meal={name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag,id:Date.now()};saveMacro([...meals,meal],wheyOn);setMacroSub("log");showToast(`${m.name} added`,"success");}} style={{flex:1,minWidth:0,cursor:"pointer"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
+                    <span style={{fontSize:13,color:"var(--t-1)",fontWeight:500}}>{m.name}</span>
+                    <span className="mono" style={{fontSize:9,color:"var(--t-4)"}}>{m.count}×</span>
+                  </div>
+                  <div className="mono" style={{display:"flex",gap:10,fontSize:10.5}}>
+                    <span style={{color:"var(--c-cal)"}}>{calcCal(m.protein,m.fat,m.carbs)}</span>
+                    <span style={{color:"var(--c-protein)",fontWeight:600}}>{m.protein}P</span>
+                    <span style={{color:"var(--c-fat)"}}>{m.fat}F</span>
+                    <span style={{color:"var(--c-carbs)"}}>{m.carbs}C</span>
+                  </div>
+                </div>
+                <button onClick={()=>{const meal={name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag,id:Date.now()};saveMacro([...meals,meal],wheyOn);showToast(`${m.name} added`,"success");}} className="touch" style={{padding:"6px 12px",borderRadius:999,border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:10,fontWeight:600,cursor:"pointer",flexShrink:0}}>+ Log</button>
+              </div>))}
+              {mealDict.filter(m=>!libSearch||m.name.toLowerCase().includes(libSearch.toLowerCase())).length===0&&<div style={{textAlign:"center",padding:"32px 0",color:"var(--t-4)",fontSize:13}}>No matches for "{libSearch}"</div>}
+            </div>
+          )}
+        </>)}
+
+        {/* ═══ MENU — upload Smartfitchen image, parse into weekly meal plan ═══ */}
+        {macroSub==="menu"&&(<>
+          <H2 sub="Upload your weekly menu image">Meal plan</H2>
+          {!menuPlan&&(<div style={{marginBottom:16}}>
+            <div style={{border:"2px dashed var(--accent-line)",borderRadius:"var(--r-md)",padding:"32px 20px",textAlign:"center",cursor:"pointer",background:"var(--accent-soft)"}} onClick={()=>document.getElementById("menuUpload")?.click()}>
+              <Icon n="plus" s={28} c="var(--accent)"/>
+              <div style={{fontSize:14,color:"var(--accent)",fontWeight:600,marginTop:8}}>Upload menu image</div>
+              <div style={{fontSize:11,color:"var(--t-3)",marginTop:4}}>Photo of your Smartfitchen weekly menu</div>
+              <input id="menuUpload" type="file" accept="image/*" style={{display:"none"}} onChange={async(e)=>{
+                const file=e.target.files?.[0];if(!file)return;
+                setMenuLoading(true);setMenuError(null);
+                try{
+                  const base64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej(new Error("Read failed"));r.readAsDataURL(file);});
+                  const mediaType=file.type||"image/jpeg";
+                  const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:mediaType,data:base64}},{type:"text",text:`Extract the weekly meal plan from this menu image. Return ONLY valid JSON with no other text: {"days":[{"day":"Monday","meals":[{"slot":"Breakfast","name":"Meal name here"},{"slot":"Lunch","name":"Meal name"},{"slot":"Dinner","name":"Meal name"},{"slot":"Snack","name":"Snack name"}]}]} Include all days visible. Use exact meal names as printed. If a slot is not visible, omit it.`}]}]})});
+                  const data=await resp.json();
+                  const text=data.content?.map(c=>c.text||"").join("")||"";
+                  const clean=text.replace(/```json|```/g,"").trim();
+                  const parsed=JSON.parse(clean);
+                  /* Match meals against library */
+                  parsed.days.forEach(d=>d.meals.forEach(m=>{
+                    const match=mealDict.find(h=>h.name.toLowerCase()===m.name.toLowerCase()||h.name.toLowerCase().includes(m.name.toLowerCase())||m.name.toLowerCase().includes(h.name.toLowerCase()));
+                    if(match){m.protein=match.protein;m.fat=match.fat;m.carbs=match.carbs;m.matched=true;}
+                  }));
+                  setMenuPlan(parsed);
+                }catch(err){setMenuError(err.message||"Failed to parse menu");}
+                setMenuLoading(false);e.target.value="";
+              }}/>
+            </div>
+            {menuLoading&&<div style={{textAlign:"center",padding:"24px 0",color:"var(--accent)",fontSize:13}}><div className="mono" style={{letterSpacing:".10em"}}>Reading menu…</div></div>}
+            {menuError&&<div style={{padding:"10px 14px",background:"color-mix(in oklch, var(--c-danger) 10%, var(--elev-1))",borderLeft:"3px solid var(--c-danger)",borderRadius:"var(--r-sm)",fontSize:12,color:"var(--c-danger)",marginTop:10}}>{menuError}</div>}
+          </div>)}
+
+          {menuPlan&&(<div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>Parsed {menuPlan.days?.length||0} days</div>
+              <button onClick={()=>setMenuPlan(null)} className="touch" style={{fontSize:10,color:"var(--t-3)",background:"none",border:"none",cursor:"pointer",padding:4}}>Upload new</button>
+            </div>
+            {(menuPlan.days||[]).map((d,di)=>(<div key={di} style={{marginBottom:12}}>
+              <div className="mono" style={{fontSize:10,color:"var(--accent)",letterSpacing:".08em",fontWeight:600,marginBottom:6}}>{d.day}</div>
+              {d.meals.map((m,mi)=>(<div key={mi} style={{display:"flex",alignItems:"center",padding:"8px 12px",background:"var(--elev-1)",borderRadius:"var(--r-sm)",marginBottom:3,gap:8}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span className="mono" style={{fontSize:9,color:"var(--t-4)",width:48,flexShrink:0}}>{m.slot}</span>
+                    <span style={{fontSize:12,color:"var(--t-1)",fontWeight:500}}>{m.name}</span>
+                  </div>
+                  {m.matched&&<div className="mono" style={{fontSize:10,color:"var(--t-3)",marginTop:2,marginLeft:54}}>
+                    <span style={{color:"var(--c-protein)"}}>{m.protein}P</span> · <span style={{color:"var(--c-fat)"}}>{m.fat}F</span> · <span style={{color:"var(--c-carbs)"}}>{m.carbs}C</span>
+                  </div>}
+                </div>
+                {m.matched?<span className="mono" style={{fontSize:9,color:"var(--c-success)",background:"color-mix(in oklch, var(--c-success) 10%, transparent)",padding:"2px 7px",borderRadius:999,fontWeight:600}}>KNOWN</span>
+                :<span className="mono" style={{fontSize:9,color:"var(--c-warn)",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",padding:"2px 7px",borderRadius:999,fontWeight:600}}>NEW</span>}
+              </div>))}
+            </div>))}
           </div>)}
         </>)}
 

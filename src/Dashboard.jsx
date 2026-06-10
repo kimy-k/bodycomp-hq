@@ -2255,7 +2255,31 @@ function DashboardInner(){
                 </div>)}
               </div>
 
-              {/* ── Section 3: Cost summary ── */}
+              {/* ── Section 3: Reserve supply (break/upcoming with sealed vials) ── */}
+              {(()=>{
+                const reserves=userPeps.filter(p=>!isPeptideLive(p)).map(p=>{
+                  const sealed=supplyFor(p.id);
+                  if(!sealed||sealed<=0)return null;
+                  const cat=PEPTIDES.find(c=>c.id===p.id);
+                  return{p,sealed,status:p.status,color:cat?.color||"var(--t-4)"};
+                }).filter(Boolean);
+                if(reserves.length===0)return null;
+                return(<div style={{marginBottom:16}}>
+                  <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Reserve supply</div>
+                  {reserves.map(r=>(<div key={r.p.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px",background:"var(--elev-1)",borderRadius:"var(--r-sm)",marginBottom:3}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:5,height:5,borderRadius:3,background:r.color,opacity:0.6}}/>
+                      <span style={{fontSize:12,color:"var(--t-3)"}}>{r.p.name}</span>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <span className="serif tabular" style={{fontSize:15,color:"var(--t-2)",fontStyle:"italic"}}>{r.sealed}</span>
+                      <span className="mono" style={{fontSize:9,color:r.status==="break"?"var(--c-warn)":"var(--t-4)",background:r.status==="break"?"color-mix(in oklch, var(--c-warn) 10%, transparent)":"var(--elev-2)",padding:"2px 8px",borderRadius:999,letterSpacing:".06em",fontWeight:600}}>{r.status}</span>
+                    </div>
+                  </div>))}
+                </div>);
+              })()}
+
+              {/* ── Section 4: Cost summary ── */}
               {totalCost>0&&(<div style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"14px 16px",marginBottom:16}}>
                 <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Cost snapshot</div>
                 <div style={{display:"flex",justifyContent:"space-around",textAlign:"center"}}>

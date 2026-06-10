@@ -910,22 +910,25 @@ function DashboardInner(){
           </div>
         </div>
 
-        {/* ─── Body fat trend chart ─── */}
+        {/* ─── Body composition trend chart ─── */}
         <div className="rise" style={{background:"#0a0a0a",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"14px 14px 6px",marginBottom:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10,padding:"0 2px"}}>
-            <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Body fat · trend</span>
+            <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Body composition · trend</span>
             <span className="mono" style={{fontSize:10,color:"var(--accent)",letterSpacing:".10em",fontWeight:600}}>{goalPct}% target</span>
           </div>
-          <ResponsiveContainer width="100%" height={180}>
-            <AreaChart data={data} margin={{top:6,right:10,left:4,bottom:0}}>
-              <defs><linearGradient id="bfAreaV2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--accent)" stopOpacity={0.34}/><stop offset="100%" stopColor="var(--accent)" stopOpacity={0.02}/></linearGradient></defs>
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={data} margin={{top:6,right:10,left:4,bottom:0}}>
               <CartesianGrid strokeDasharray="2 5" stroke="rgba(255,255,255,0.06)" vertical={false}/>
-              <XAxis dataKey="labelYr" tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono",letterSpacing:"0.04em"}} axisLine={false} tickLine={false} interval={1}/>
-              <YAxis domain={[Math.min(goalPct-2,28),48]} allowDecimals={false} tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={26}/>
+              <XAxis dataKey="labelYr" tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono",letterSpacing:"0.04em"}} axisLine={false} tickLine={false} interval={data.length>8?1:0}/>
+              <YAxis yAxisId="pct" domain={[Math.min(goalPct-2,28),48]} allowDecimals={false} tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={26} label={{value:"%",position:"insideTopLeft",fill:"var(--t-4)",fontSize:8,fontFamily:"Geist Mono",offset:-4}}/>
+              <YAxis yAxisId="kg" orientation="right" domain={['auto','auto']} allowDecimals={false} tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} width={30} label={{value:"kg",position:"insideTopRight",fill:"var(--t-4)",fontSize:8,fontFamily:"Geist Mono",offset:-4}}/>
               <Tooltip content={<Tip/>}/>
-              <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.5}/>
-              <Area type="monotone" dataKey="fatPct" stroke="var(--accent)" strokeWidth={2.2} fill="url(#bfAreaV2)" name="Body Fat" dot={{r:2.5,fill:"var(--accent)",stroke:"#000",strokeWidth:0}} activeDot={{r:4.5,fill:"var(--accent)",stroke:"#000",strokeWidth:2}}/>
-            </AreaChart>
+              <Legend iconType="circle" iconSize={6} wrapperStyle={{fontSize:10,color:"var(--t-3)",fontFamily:"Geist Mono",paddingTop:6}}/>
+              <ReferenceLine yAxisId="pct" y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.5}/>
+              <Line yAxisId="pct" type="monotone" dataKey="fatPct" stroke="var(--accent)" strokeWidth={2.2} name="Fat %" dot={{r:2.5,fill:"var(--accent)",stroke:"#000",strokeWidth:0}} activeDot={{r:4.5,fill:"var(--accent)",stroke:"#000",strokeWidth:2}}/>
+              <Line yAxisId="kg" type="monotone" dataKey="weight" stroke="var(--c-weight)" strokeWidth={1.5} name="Weight" dot={{r:2,fill:"var(--c-weight)",stroke:"#000",strokeWidth:0}} strokeDasharray="4 2"/>
+              <Line yAxisId="kg" type="monotone" dataKey="muscle" stroke="var(--c-success)" strokeWidth={1.5} name="Muscle" dot={{r:2,fill:"var(--c-success)",stroke:"#000",strokeWidth:0}} strokeDasharray="6 3"/>
+            </LineChart>
           </ResponsiveContainer>
         </div>
 
@@ -1339,16 +1342,27 @@ function DashboardInner(){
             })()}
           </div>
 
-          {/* TDEE strip */}
-          {userConfig?.weight&&userConfig?.height&&userConfig?.age&&(<div className="rise r1" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"14px 16px",marginBottom:12}}>
+          {/* TDEE strip — auto-pulls from latest InBody scan when available */}
+          {userConfig?.height&&userConfig?.age&&(<div className="rise r1" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"14px 16px",marginBottom:12}}>
             {(()=>{
-              const w=userConfig.weight,h=userConfig.height,a=userConfig.age;
-              const bmr=userConfig.gender==="male"?10*w+6.25*h-5*a+5:10*w+6.25*h-5*a-161;
+              const latestScan=data.length>0?data[data.length-1]:null;
+              const w=latestScan?.weight||userConfig.weight;
+              const lm=latestScan?.leanMass||null;
+              const h=userConfig.height,a=userConfig.age;
+              const scanDate=latestScan?.date?new Date(latestScan.date+"T12:00:00"):null;
+              const scanAge=scanDate?Math.round((Date.now()-scanDate)/86400000):null;
+              const scanStale=scanAge!==null&&scanAge>14;
+              /* Katch-McArdle (uses lean mass) is more accurate than Mifflin when InBody data exists */
+              const bmrKM=lm?370+21.6*lm:null;
+              const bmrMSJ=userConfig.gender==="male"?10*w+6.25*h-5*a+5:10*w+6.25*h-5*a-161;
+              const bmr=bmrKM||bmrMSJ;
+              const bmrLabel=bmrKM?"Katch-McArdle":"Mifflin-St Jeor";
               const mult={sedentary:1.2,light:1.375,moderate:1.55,active:1.725}[userConfig.activity]||1.375;
               const tdee=Math.round(bmr*mult);
               const deficit=tdee-TARGETS.cal;
               const defPct=Math.round(deficit/tdee*100);
-              return(<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+              return(<>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
                 {[["BMR",Math.round(bmr),"var(--c-carbs)"],["TDEE",tdee,"var(--c-weight)"],["Target",TARGETS.cal,"var(--t-1)"],[deficit>0?"Deficit":"Surplus",deficit>0?`−${deficit}`:`+${Math.abs(deficit)}`,deficit>0?"var(--c-success)":"var(--c-danger)",defPct]].map(([l,v,c,p],i)=>(
                   <div key={i} style={{textAlign:"center",flex:1}}>
                     <div style={{fontSize:9.5,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:2}}>{l}</div>
@@ -1356,7 +1370,12 @@ function DashboardInner(){
                     {p&&<div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:1}}>{p}%</div>}
                   </div>
                 ))}
-              </div>);
+              </div>
+              <div className="mono" style={{fontSize:9,color:scanStale?"var(--c-warn)":"var(--t-4)",marginTop:8,textAlign:"center",letterSpacing:".02em"}}>
+                {latestScan?`${bmrLabel} · ${w}kg from ${latestScan.label} scan${lm?` · ${lm}kg lean`:""}`:`${bmrLabel} · ${w}kg from settings`}
+                {scanStale&&` · ⚠ scan is ${scanAge}d old`}
+              </div>
+              </>);
             })()}
           </div>)}
 

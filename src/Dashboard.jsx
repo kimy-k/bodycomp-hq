@@ -119,6 +119,11 @@ function DashboardInner(){
   const [favs,setFavs]=useState([]);const [showFavs,setShowFavs]=useState(false);
   const [editId,setEditId]=useState(null);const [editMeal,setEditMeal]=useState({name:"",protein:"",fat:"",carbs:"",tag:""});
   const day=todayKey();
+  /* pepDate: navigable date for the peptide checklist. Defaults to today,
+     user can go back to log missed doses or review past days. */
+  const [pepDate,setPepDate]=useState(todayKey());
+  /* Reset pepDate to today when switching to peps tab */
+  useEffect(()=>{if(tab==="peps")setPepDate(todayKey());},[tab]);
   /* Whey config derived from userConfig (Settings). Sensible defaults match the original constant (25g protein/scoop × 2 scoops). */
   const whey=useMemo(()=>{const perScoop=+(userConfig?.wheyProtein||25);const scoops=+(userConfig?.wheyScoops||2);return{protein:perScoop*scoops,fat:+(scoops*0.5).toFixed(1),carbs:scoops*2,scoops,perScoop,enabled:perScoop>0&&scoops>0,label:scoops>0?`Whey · ${scoops} scoop${scoops!==1?"s":""}`:"Whey"};},[userConfig]);
 
@@ -195,12 +200,12 @@ function DashboardInner(){
   const [offSchedDone,setOffSchedDone]=useState(null);
 
   useEffect(()=>{setPepData({checks:{},sideEffects:[]});setPepLoading(true);(async()=>{
-    const row=await db.get("daily_peptides",day);
+    const row=await db.get("daily_peptides",pepDate);
     if(row){setPepData({checks:row.checks||{},sideEffects:row.side_effects||[]});}
     setPepLoading(false);
-  })();},[day,db]);
+  })();},[pepDate,db]);
 
-  const savePep=useCallback((nd)=>{setPepData(nd);db.upsert("daily_peptides",{date:day,checks:nd.checks,side_effects:nd.sideEffects});},[day]);
+  const savePep=useCallback((nd)=>{setPepData(nd);db.upsert("daily_peptides",{date:pepDate,checks:nd.checks,side_effects:nd.sideEffects});},[pepDate]);
 
   const togglePep=(id,defaultDose)=>{const nc={...pepData.checks};if(nc[id]){delete nc[id];}else{nc[id]={time:new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),dose:defaultDose||""};}savePep({...pepData,checks:nc});};
   const updateDose=(id,dose)=>{const nc={...pepData.checks};if(nc[id])nc[id]={...nc[id],dose};savePep({...pepData,checks:nc});};
@@ -318,13 +323,16 @@ function DashboardInner(){
      start_date → camelCase startDate at line 297, so we read startDate here. */
   const isPeptideLive = (p) => {
     if (p.status === "active" || p.status === "prn") return true;
-    if (p.status === "starting" && p.startDate && p.startDate <= day) return true;
+    if (p.status === "starting" && p.startDate && p.startDate <= pepDate) return true;
     return false;
   };
-  const isPeptideUpcoming = (p) => p.status === "starting" && p.startDate && p.startDate > day;
+  const isPeptideUpcoming = (p) => p.status === "starting" && p.startDate && p.startDate > pepDate;
 
-  const duePeptides=userPeps.filter(p=>isPeptideLive(p)&&p.schedule.includes(todayDow)&&!RECONSTITUTION[p.id]?.topical);
+  const pepDateDow=new Date(pepDate+"T12:00:00").getDay();
+  const duePeptides=userPeps.filter(p=>isPeptideLive(p)&&p.schedule.includes(pepDateDow)&&!RECONSTITUTION[p.id]?.topical);
   const notDue=userPeps.filter(p=>!duePeptides.includes(p));
+  /* Off-schedule loggable: active injectable peptides NOT due on pepDate */
+  const offScheduleLoggable=notDue.filter(p=>isPeptideLive(p)&&!RECONSTITUTION[p.id]?.topical);
   const checkedCount=duePeptides.filter(p=>pepData.checks[p.id]).length;
 
   /* ═══ P18: BACKDATED DOSE EDITING ═══
@@ -1626,15 +1634,30 @@ function DashboardInner(){
             </div>);})}</div>);
           })()}
 
-          {/* Streak + progress */}
-          <div className="rise" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <h3 className="serif" style={{fontSize:24,margin:0,color:"var(--t-1)",fontStyle:"italic",fontWeight:400,letterSpacing:"-0.015em"}}>{new Date().toLocaleDateString("en-US",{weekday:"long"})}</h3>
-              {streak>0&&<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:"var(--c-streak)",background:"color-mix(in oklch, var(--c-streak) 12%, transparent)",padding:"4px 10px",borderRadius:999,letterSpacing:".02em"}}><Icon n="flame" s={12} c="var(--c-streak)" sw={2}/> {streak}d</span>}
-            </div>
-            <div className="mono" style={{fontSize:13,fontWeight:600,color:checkedCount===duePeptides.length&&duePeptides.length>0?"var(--c-success)":"var(--t-3)"}}>{checkedCount}<span style={{color:"var(--t-4)"}}>/{duePeptides.length}</span></div>
-          </div>
-          {duePeptides.length>0&&<div className="hbar" style={{marginBottom:18}}><i style={{width:`${checkedCount/duePeptides.length*100}%`,background:checkedCount===duePeptides.length?"var(--c-success)":`linear-gradient(90deg, var(--accent), var(--c-streak))`}}/></div>}
+          {/* Streak + date nav */}
+          {(()=>{
+            const pepDateObj=new Date(pepDate+"T12:00:00");
+            const isToday=pepDate===todayKey();
+            const dayLabel=isToday?"Today":pepDateObj.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+            const goBack=()=>{const d=new Date(pepDateObj);d.setDate(d.getDate()-1);setPepDate(d.toISOString().slice(0,10));};
+            const goFwd=()=>{const d=new Date(pepDateObj);d.setDate(d.getDate()+1);const k=d.toISOString().slice(0,10);if(k<=todayKey())setPepDate(k);};
+            return(<div className="rise" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <button onClick={goBack} className="touch" style={{background:"var(--elev-2)",border:"1px solid var(--line-soft)",borderRadius:8,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",padding:0}}><Icon n="chevLeft" s={16} c="var(--t-3)"/></button>
+                <div style={{textAlign:"center",minWidth:90}}>
+                  <h3 className="serif" style={{fontSize:isToday?22:17,margin:0,color:isToday?"var(--t-1)":"var(--accent)",fontStyle:"italic",fontWeight:400,letterSpacing:"-0.015em"}}>{dayLabel}</h3>
+                  {!isToday&&<div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:1}}>editing past day</div>}
+                </div>
+                <button onClick={goFwd} className="touch" disabled={isToday} style={{background:isToday?"transparent":"var(--elev-2)",border:isToday?"1px solid transparent":"1px solid var(--line-soft)",borderRadius:8,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",cursor:isToday?"default":"pointer",padding:0,opacity:isToday?0.3:1}}><Icon n="chevRight" s={16} c="var(--t-3)"/></button>
+                {!isToday&&<button onClick={()=>setPepDate(todayKey())} className="touch" style={{background:"var(--accent-soft)",border:"1px solid var(--accent-line)",borderRadius:999,padding:"4px 10px",fontSize:10,fontWeight:600,color:"var(--accent)",cursor:"pointer",marginLeft:4}}>Today</button>}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {streak>0&&isToday&&<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:"var(--c-streak)",background:"color-mix(in oklch, var(--c-streak) 12%, transparent)",padding:"4px 10px",borderRadius:999,letterSpacing:".02em"}}><Icon n="flame" s={12} c="var(--c-streak)" sw={2}/> {streak}d</span>}
+                <div className="mono" style={{fontSize:13,fontWeight:600,color:checkedCount===duePeptides.length&&duePeptides.length>0?"var(--c-success)":"var(--t-3)"}}>{checkedCount}<span style={{color:"var(--t-4)"}}>/{duePeptides.length}</span></div>
+              </div>
+            </div>);
+          })()}
+          {duePeptides.length>0&&<div className="hbar" style={{marginBottom:14}}><i style={{width:`${checkedCount/duePeptides.length*100}%`,background:checkedCount===duePeptides.length?"var(--c-success)":`linear-gradient(90deg, var(--accent), var(--c-streak))`}}/></div>}
 
           {/* Checklist */}
           {duePeptides.map((p,i)=>{const check=pepData.checks[p.id];const checked=!!check;const time=check?.time||"";const dose=check?.dose||"";const isEditing=editingDose===p.id;const curBatch=currentBatchFor(p.id);const batchStat=curBatch?batchStatus(curBatch):null;const ds=dueState(p,checked);const pillColor=ds?ds.color:p.color;const pillLabel=ds?ds.label:p.time;return(
@@ -1794,27 +1817,32 @@ function DashboardInner(){
             {pepData.sideEffects.length>0&&<div style={{fontSize:11,color:"var(--c-danger)",marginTop:8,fontStyle:"italic"}}>Logged: {pepData.sideEffects.join(", ")}</div>}
           </div>
 
-          {/* Other peptides */}
-          {(notDue.length>0)&&(<div style={{marginTop:18}}>
-            <button onClick={()=>setShowOther(!showOther)} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",fontSize:11.5,cursor:"pointer",padding:"6px 0",display:"inline-flex",alignItems:"center",gap:6}}>
-              {notDue.filter(p=>p.status!=="break"&&!isPeptideUpcoming(p)).length} not due · {notDue.filter(p=>p.status==="break").length} on break · {notDue.filter(p=>isPeptideUpcoming(p)).length} upcoming
-              <Icon n={showOther?"chevUp":"chevDown"} s={14}/>
-            </button>
-            {showOther&&(<div className="sheet" style={{marginTop:8}}>
-              {notDue.map(p=>{
-                const isLoggable=isPeptideLive(p)&&!RECONSTITUTION[p.id]?.topical;
+          {/* Off-schedule — always visible, tappable chips */}
+          {offScheduleLoggable.length>0&&(<div style={{marginTop:14}}>
+            <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Off-schedule · tap to log</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {offScheduleLoggable.map(p=>{
                 const alreadyLogged=!!pepData.checks[p.id];
-                return(<div key={p.id} onClick={()=>{if(isLoggable&&!alreadyLogged)setOffSchedPep(p);}} style={{padding:"8px 0",fontSize:11.5,color:isLoggable?"var(--t-2)":"var(--t-4)",borderBottom:"1px solid var(--line-soft)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,cursor:isLoggable?"pointer":"default"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    {p.status==="break"?<Icon n="pause" s={11} c="var(--t-4)"/>:p.status==="starting"?<Icon n="calendar" s={11} c="var(--t-4)"/>:null}
-                    <span>{p.name}</span><span style={{color:"var(--t-5)"}}>· {p.note}</span>
-                  </div>
-                  {isLoggable&&!alreadyLogged&&<span className="mono" style={{fontSize:9,color:"var(--accent)",background:"var(--accent-soft)",padding:"2px 8px",borderRadius:999,letterSpacing:".04em",fontWeight:600,flexShrink:0}}>LOG</span>}
-                  {alreadyLogged&&<Icon n="check" s={12} c="var(--c-success)" sw={2.5}/>}
-                </div>);
+                return(<button key={p.id} onClick={()=>{if(!alreadyLogged)setOffSchedPep(p);}} className="touch" style={{display:"inline-flex",alignItems:"center",gap:5,padding:"7px 12px",borderRadius:999,border:`1px solid ${alreadyLogged?"var(--c-success)":p.color}`,background:alreadyLogged?"color-mix(in oklch, var(--c-success) 10%, var(--elev-1))":"var(--elev-1)",color:alreadyLogged?"var(--c-success)":"var(--t-2)",fontSize:12,fontWeight:500,cursor:alreadyLogged?"default":"pointer",opacity:alreadyLogged?0.7:1}}>
+                  {alreadyLogged?<Icon n="check" s={12} c="var(--c-success)" sw={2.5}/>:<span style={{width:6,height:6,borderRadius:3,background:p.color,flexShrink:0}}/>}
+                  {p.name}
+                </button>);
               })}
-            </div>)}
+            </div>
           </div>)}
+          {/* Break / upcoming — slim collapsed */}
+          {(()=>{const breakPeps=notDue.filter(p=>p.status==="break"||isPeptideUpcoming(p));if(breakPeps.length===0)return null;return(<div style={{marginTop:14}}>
+            <button onClick={()=>setShowOther(!showOther)} className="touch" style={{background:"none",border:"none",color:"var(--t-4)",fontSize:10.5,cursor:"pointer",padding:"4px 0",display:"inline-flex",alignItems:"center",gap:5}}>
+              {breakPeps.filter(p=>p.status==="break").length} on break · {breakPeps.filter(p=>isPeptideUpcoming(p)).length} upcoming
+              <Icon n={showOther?"chevUp":"chevDown"} s={12}/>
+            </button>
+            {showOther&&(<div className="sheet" style={{marginTop:6}}>
+              {breakPeps.map(p=>(<div key={p.id} style={{padding:"6px 0",fontSize:11,color:"var(--t-4)",borderBottom:"1px solid var(--line-soft)",display:"flex",alignItems:"center",gap:8}}>
+                <Icon n={p.status==="break"?"pause":"calendar"} s={10} c="var(--t-5)"/>
+                <span>{p.name}</span><span style={{color:"var(--t-5)"}}>· {p.note}</span>
+              </div>))}
+            </div>)}
+          </div>);})()}
         </>)}
 
         {pepSub==="all"&&(<>
@@ -2575,44 +2603,44 @@ function DashboardInner(){
       {/* Off-schedule dose confirmation */}
       {offSchedPep&&(()=>{
         const p=offSchedPep;
-        const todayDowName=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()];
-        const schedDays=p.schedule.map(d=>["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d]).join(", ");
+        const pepDateObj=new Date(pepDate+"T12:00:00");
+        const dName=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+        const pepDow=pepDateObj.getDay();
+        const pepDowName=dName[pepDow];
+        const isBackdate=pepDate!==todayKey();
+        const schedDays=p.schedule.map(d=>dName[d]).join(", ");
         const typicalGapH=minSpacingHours(p.schedule);
-        const todayDow=new Date().getDay();
-        /* Find next scheduled day */
         const sorted=[...p.schedule].sort((a,b)=>a-b);
-        let nextSchedDay=sorted.find(d=>d>todayDow);
-        if(nextSchedDay===undefined)nextSchedDay=sorted[0]; /* wrap to next week */
-        const daysToNext=nextSchedDay>todayDow?nextSchedDay-todayDow:7-todayDow+nextSchedDay;
-        const nextDayName=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][nextSchedDay];
+        let nextSchedDay=sorted.find(d=>d>pepDow);
+        if(nextSchedDay===undefined)nextSchedDay=sorted[0];
+        const daysToNext=nextSchedDay>pepDow?nextSchedDay-pepDow:7-pepDow+nextSchedDay;
+        const nextDayName=dName[nextSchedDay];
         const gapTooClose=daysToNext===1&&typicalGapH>=48;
-        /* Find previous scheduled day for context */
-        let prevSchedDay=[...sorted].reverse().find(d=>d<todayDow);
+        let prevSchedDay=[...sorted].reverse().find(d=>d<pepDow);
         if(prevSchedDay===undefined)prevSchedDay=sorted[sorted.length-1];
-        const daysSincePrev=todayDow>=prevSchedDay?todayDow-prevSchedDay:7-prevSchedDay+todayDow;
-        const prevDayName=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][prevSchedDay];
-        /* Suggest adjusted next dose */
+        const daysSincePrev=pepDow>=prevSchedDay?pepDow-prevSchedDay:7-prevSchedDay+pepDow;
+        const prevDayName=dName[prevSchedDay];
         const suggestSkipNext=gapTooClose;
-        const suggestDay=suggestSkipNext?["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][(nextSchedDay+1)%7]:null;
+        const suggestDay=suggestSkipNext?dName[(nextSchedDay+1)%7]:null;
 
         return(<div onClick={()=>setOffSchedPep(null)} style={{position:"fixed",inset:0,zIndex:150,background:"oklch(0.05 0 0 / 0.78)",backdropFilter:"blur(10px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"20px"}}>
           <div onClick={e=>e.stopPropagation()} className="sheet" style={{background:"var(--bg)",border:"1px solid var(--line)",borderRadius:"var(--r-lg)",padding:18,maxWidth:420,width:"100%"}}>
             <div style={{width:34,height:4,background:"var(--elev-3)",borderRadius:2,margin:"0 auto 14px"}}/>
-            <h3 className="serif" style={{fontSize:22,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",marginBottom:6}}>Log {p.name} off-schedule?</h3>
+            <h3 className="serif" style={{fontSize:22,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",marginBottom:6}}>Log {p.name}{isBackdate?" (backdate)":""}?</h3>
             <div style={{fontSize:12,color:"var(--t-3)",marginBottom:14}}>
-              It's {todayDowName} — {p.name} is scheduled {schedDays}.
-              {daysSincePrev>0&&` Last scheduled dose was ${prevDayName} (${daysSincePrev}d ago).`}
+              {isBackdate?`Logging for ${pepDowName} ${pepDateObj.toLocaleDateString("en-US",{month:"short",day:"numeric"})}.`:`It's ${pepDowName}.`} {p.name} is scheduled {schedDays}.
+              {daysSincePrev>0&&` Last scheduled dose was ${prevDayName} (${daysSincePrev}d before).`}
             </div>
-            {suggestSkipNext&&(<div style={{background:"color-mix(in oklch, var(--c-warn) 10%, var(--elev-1))",borderLeft:"3px solid var(--c-warn)",borderRadius:"var(--r-sm)",padding:"10px 12px",marginBottom:12}}>
+            {suggestSkipNext&&!isBackdate&&(<div style={{background:"color-mix(in oklch, var(--c-warn) 10%, var(--elev-1))",borderLeft:"3px solid var(--c-warn)",borderRadius:"var(--r-sm)",padding:"10px 12px",marginBottom:12}}>
               <div style={{fontSize:11,color:"var(--c-warn)",fontWeight:600,marginBottom:3}}>Spacing advice</div>
-              <div style={{fontSize:11,color:"var(--t-3)"}}>Next dose is {nextDayName} — only {daysToNext*24}h gap (typical spacing: {typicalGapH}h). Consider skipping {nextDayName} and taking it {suggestDay} instead.</div>
+              <div style={{fontSize:11,color:"var(--t-3)"}}>Next dose is {nextDayName} — only {daysToNext*24}h gap (typical: {typicalGapH}h). Consider skipping {nextDayName} and taking it {suggestDay} instead.</div>
             </div>)}
-            {!suggestSkipNext&&daysToNext<=2&&(<div style={{background:"color-mix(in oklch, var(--c-success) 8%, var(--elev-1))",borderLeft:"3px solid var(--c-success)",borderRadius:"var(--r-sm)",padding:"10px 12px",marginBottom:12}}>
+            {!suggestSkipNext&&daysToNext<=2&&!isBackdate&&(<div style={{background:"color-mix(in oklch, var(--c-success) 8%, var(--elev-1))",borderLeft:"3px solid var(--c-success)",borderRadius:"var(--r-sm)",padding:"10px 12px",marginBottom:12}}>
               <div style={{fontSize:11,color:"var(--c-success)"}}>Spacing is fine — {daysToNext*24}h to next dose ({nextDayName}). No adjustment needed.</div>
             </div>)}
             <div style={{display:"flex",gap:8,marginTop:6}}>
               <button onClick={()=>setOffSchedPep(null)} className="touch" style={{flex:1,padding:"10px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",fontSize:12,fontWeight:600,cursor:"pointer"}}>Cancel</button>
-              <button onClick={()=>{togglePep(p.id,p.dose);setOffSchedPep(null);setOffSchedDone(p);setTimeout(()=>setOffSchedDone(null),4000);showToast(`${p.name} logged off-schedule`,"success");}} className="touch" style={{flex:1,padding:"10px",borderRadius:999,border:"1px solid var(--accent)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12,fontWeight:600,cursor:"pointer"}}>Log dose</button>
+              <button onClick={()=>{togglePep(p.id,p.dose);setOffSchedPep(null);showToast(`${p.name} logged${isBackdate?" for "+pepDowName:""}`,isBackdate?"info":"success");}} className="touch" style={{flex:1,padding:"10px",borderRadius:999,border:"1px solid var(--accent)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12,fontWeight:600,cursor:"pointer"}}>Log dose</button>
             </div>
           </div>
         </div>);

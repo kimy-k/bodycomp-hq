@@ -2049,7 +2049,7 @@ function DashboardInner(){
 
         {pepSub==="batches"&&(<>
           <div className="rise" style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14}}>
-            <div><h2 className="serif" style={{fontSize:24,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>Reconstitution log</h2><p className="mono" style={{fontSize:11,color:"var(--t-3)",margin:"2px 0 0"}}>{batches.length} vial{batches.length!==1?"s":""} · shared with household</p></div>
+            <div><h2 className="serif" style={{fontSize:24,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>Active vials</h2><p className="mono" style={{fontSize:11,color:"var(--t-3)",margin:"2px 0 0"}}>{batches.filter(b=>!b.exhausted).length} open · shared with household</p></div>
             {!addingBatch&&<button onClick={()=>setAddingBatch(true)} className="touch" style={{padding:"9px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12.5,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={14}/> New batch</button>}
           </div>
 
@@ -2162,7 +2162,6 @@ function DashboardInner(){
           {/* Empty state */}
           {!batchesLoading&&batches.length===0&&!addingBatch&&<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="vial" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No batches logged</div><div style={{fontSize:11,color:"var(--t-5)",marginTop:3,maxWidth:300,marginLeft:"auto",marginRight:"auto"}}>Track each vial's concentration and expiry. Today's checklist shows active batch info inline.</div></div>}
 
-          {/* Batch list — compact cards, tap to expand */}
           {!batchesLoading&&batches.length>0&&(()=>{
             const toggleBatch=id=>setExpandedBatch(expandedBatch===id?null:id);
             const activeBatches=batches.filter(b=>!b.exhausted);
@@ -2172,23 +2171,39 @@ function DashboardInner(){
               const creatorName=PROFILES[b.user_id]?.name||b.user_id;const isCreator=b.user_id===userId;
               const liveInv=(()=>{const mgPerDose=mgFromDoseStr(p.dose);if(!mgPerDose||!b.mg_total)return null;const totalDoses=Math.floor(b.mg_total/mgPerDose);const used=sharedDoseLog.filter(d=>d.date>=b.date_recon&&(!b.exhausted||d.date<=(b.exhausted_date||"9999"))&&d.checks&&d.checks[p.id]).length;return{total:totalDoses,used,remaining:Math.max(0,totalDoses-used)};})();
               const cpd=(()=>{if(b.cost==null)return null;const pep=PEPTIDES.find(x=>x.id===b.peptide_id);return pep?costPerDose(b,p):null;})();
-              return(<div key={b.id} onClick={()=>toggleBatch(b.id)} style={{background:"var(--elev-1)",borderLeft:`3px solid ${stat.color}`,borderRadius:"var(--r-sm)",padding:open?"14px 14px 10px":"10px 14px",marginBottom:5,cursor:"pointer",opacity:b.exhausted?0.5:1,transition:"all .2s var(--ease-out)"}}>
-                {/* Compact row — always visible */}
+              const isEmpty=liveInv&&liveInv.remaining<=0&&!b.exhausted;
+              /* Days until empty based on dosing frequency */
+              const dosesPerWeek=p.schedule?p.schedule.length:0;
+              const daysUntilEmpty=liveInv&&dosesPerWeek>0?Math.round(liveInv.remaining/(dosesPerWeek/7)):null;
+              const daysToExpiry=b.expiry_date?Math.max(0,Math.round((new Date(b.expiry_date+"T23:59:59")-new Date())/(86400000))):null;
+              /* Whichever comes first: running out or expiring */
+              const limitingFactor=daysUntilEmpty!=null&&daysToExpiry!=null?(daysUntilEmpty<daysToExpiry?"empty":"expiry"):daysToExpiry!=null?"expiry":daysUntilEmpty!=null?"empty":null;
+              const pctUsed=liveInv?(liveInv.used/liveInv.total)*100:0;
+              const barColor=isEmpty?"var(--c-danger)":pctUsed>75?"var(--c-warn)":"var(--accent)";
+
+              return(<div key={b.id} onClick={()=>toggleBatch(b.id)} style={{background:"var(--elev-1)",borderLeft:`3px solid ${isEmpty?"var(--c-danger)":p.color}`,borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:6,cursor:"pointer",opacity:b.exhausted?0.5:1,transition:"all .2s var(--ease-out)"}}>
+                {/* Empty vial alert */}
+                {isEmpty&&(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,padding:"6px 10px",background:"color-mix(in oklch, var(--c-danger) 12%, transparent)",borderRadius:6}}>
+                  <span style={{fontSize:11,color:"var(--c-danger)",fontWeight:600}}>Vial empty — mark exhausted?</span>
+                  <button onClick={e=>{e.stopPropagation();updateBatch(b,{exhausted:true});}} className="touch" style={{padding:"4px 12px",borderRadius:999,border:"1px solid var(--c-danger)",background:"transparent",color:"var(--c-danger)",fontSize:10,fontWeight:600,cursor:"pointer"}}>Done</button>
+                </div>)}
+                {/* Compact row */}
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
-                      <span style={{fontSize:13,fontWeight:600,color:p.color}}>{p.name}</span>
-                      {liveInv&&!b.exhausted&&<span className="mono" style={{fontSize:11,color:liveInv.remaining<=3?"var(--c-warn)":"var(--t-2)",fontWeight:600}}>{liveInv.remaining}/{liveInv.total} doses</span>}
-                      {b.exhausted&&<span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>exhausted</span>}
+                    <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+                      <span style={{fontSize:14,fontWeight:600,color:p.color}}>{p.name}</span>
+                      {liveInv&&!b.exhausted&&<span className="serif tabular" style={{fontSize:16,color:liveInv.remaining<=2?"var(--c-warn)":"var(--t-1)",fontStyle:"italic"}}>{liveInv.remaining}<span style={{fontSize:11,color:"var(--t-4)"}}>/{liveInv.total}</span></span>}
                     </div>
-                    <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:2}}>
-                      {new Date(b.date_recon+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}
-                      {isCreator?" · you":" · "+creatorName}
-                      {cpd!=null&&!b.exhausted&&` · ${fmtCost(cpd,b.currency||"USD")}/dose`}
+                    {/* Progress bar */}
+                    {liveInv&&!b.exhausted&&(<div style={{marginTop:5,height:4,background:"var(--elev-3)",borderRadius:2,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${Math.min(100,100-pctUsed)}%`,background:barColor,borderRadius:2,transition:"width .3s var(--ease-out)"}}/>
+                    </div>)}
+                    <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:4,display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {!b.exhausted&&limitingFactor==="empty"&&daysUntilEmpty!=null&&<span>{daysUntilEmpty}d until empty</span>}
+                      {!b.exhausted&&daysToExpiry!=null&&<span style={{color:daysToExpiry<=7?"var(--c-warn)":"var(--t-4)"}}>{daysToExpiry<=0?"expired":daysToExpiry+"d to expiry"}</span>}
+                      {cpd!=null&&!b.exhausted&&<span>{fmtCost(cpd,b.currency||"USD")}/dose</span>}
+                      <span>{new Date(b.date_recon+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}{isCreator?"":" · "+creatorName}</span>
                     </div>
-                  </div>
-                  <div style={{textAlign:"right",flexShrink:0}}>
-                    <div className="mono" style={{fontSize:10.5,color:stat.color,fontWeight:600}}>{stat.label}</div>
                   </div>
                   <Icon n={open?"chevUp":"chevDown"} s={14} c="var(--t-4)"/>
                 </div>
@@ -2199,16 +2214,15 @@ function DashboardInner(){
                   {b.cost!=null&&(()=>{const cpm=costPerMg(b);return(<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>
                     <span className="mono" style={{fontSize:10,color:"var(--t-2)",background:"var(--elev-2)",padding:"2px 7px",borderRadius:999,border:"1px solid var(--line-soft)",fontWeight:600}}>{fmtCost(b.cost,b.currency||"USD")}</span>
                     {cpm!=null&&<span className="mono" style={{fontSize:10,color:"var(--t-3)",background:"var(--elev-2)",padding:"2px 7px",borderRadius:999,border:"1px solid var(--line-soft)"}}>{fmtCost(cpm,b.currency||"USD")}/mg</span>}
-                    {cpd!=null&&<span className="mono" style={{fontSize:10,color:"var(--t-3)",background:"var(--elev-2)",padding:"2px 7px",borderRadius:999,border:"1px solid var(--line-soft)"}}>{fmtCost(cpd,b.currency||"USD")}/dose</span>}
-                    {b.vendor&&<span className="mono" style={{fontSize:10,color:"var(--t-4)"}}> via {b.vendor}</span>}
+                    {b.vendor&&<span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>via {b.vendor}</span>}
                   </div>);})()}
                   {b.notes&&<div style={{fontSize:11,color:"var(--t-4)",fontStyle:"italic",marginBottom:4}}>{b.notes.length>80?b.notes.slice(0,80)+"…":b.notes}</div>}
                   {!b.exhausted&&isPastPGStability(b)&&(()=>{const r=RECONSTITUTION[b.peptide_id];const days=daysSinceRecon(b);return(<div style={{marginBottom:6,padding:"6px 9px",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",borderLeft:"2px solid var(--c-warn)",borderRadius:6,fontSize:10.5,color:"var(--c-warn)"}}>
-                    ⚠ Past stability window ({days}d / {r.stabilityDays}d). Consider mixing fresh.
+                    ⚠ Past stability ({days}d / {r.stabilityDays}d). Mix fresh.
                   </div>);})()}
                   <div style={{display:"flex",gap:10,marginTop:6}}>
                     <button onClick={()=>updateBatch(b,{exhausted:!b.exhausted})} className="touch" style={{fontSize:11,color:b.exhausted?"var(--accent)":"var(--t-3)",background:"none",border:"none",cursor:"pointer",padding:"4px 0",display:"inline-flex",alignItems:"center",gap:4}}>
-                      <Icon n={b.exhausted?"plus":"check"} s={12}/> Mark {b.exhausted?"active":"exhausted"}
+                      <Icon n={b.exhausted?"plus":"check"} s={12}/> {b.exhausted?"Reactivate":"Mark exhausted"}
                     </button>
                     <button onClick={()=>deleteBatch(b)} className="touch" style={{fontSize:11,color:"var(--c-danger)",background:"none",border:"none",cursor:"pointer",padding:"4px 0",display:"inline-flex",alignItems:"center",gap:4}}>
                       <Icon n="trash" s={12}/> Delete
@@ -2218,18 +2232,13 @@ function DashboardInner(){
               </div>);
             };
             return(<>
-              {/* Active batches */}
-              {userPeps.map(p=>{const active=activeBatches.filter(b=>b.peptide_id===p.id);if(active.length===0)return null;return(<div key={p.id} style={{marginBottom:12}}>
-                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
-                  <div style={{width:5,height:5,borderRadius:3,background:p.color}}/>
-                  <span className="mono" style={{fontSize:10,color:"var(--t-3)",letterSpacing:".08em",textTransform:"uppercase",fontWeight:600}}>{p.name}</span>
-                </div>
+              {activeBatches.length===0&&<div style={{textAlign:"center",padding:"32px 0",color:"var(--t-4)",fontSize:13}}>No active vials. Open one from Supply or tap New batch.</div>}
+              {userPeps.map(p=>{const active=activeBatches.filter(b=>b.peptide_id===p.id);if(active.length===0)return null;return(<div key={p.id} style={{marginBottom:10}}>
                 {active.map(b=>renderBatch(b,p))}
               </div>);})}
-              {/* Exhausted — collapsed */}
-              {exhaustedBatches.length>0&&(<div style={{marginTop:16}}>
+              {exhaustedBatches.length>0&&(<div style={{marginTop:14}}>
                 <button onClick={()=>setShowExhausted(!showExhausted)} className="touch" style={{background:"none",border:"none",color:"var(--t-4)",fontSize:10.5,cursor:"pointer",padding:"4px 0",display:"inline-flex",alignItems:"center",gap:5}}>
-                  {exhaustedBatches.length} exhausted
+                  {exhaustedBatches.length} used up
                   <Icon n={showExhausted?"chevUp":"chevDown"} s={12}/>
                 </button>
                 {showExhausted&&exhaustedBatches.map(b=>{const p=userPeps.find(x=>x.id===b.peptide_id)||{name:b.peptide_id,color:"var(--t-4)"};return renderBatch(b,p);})}

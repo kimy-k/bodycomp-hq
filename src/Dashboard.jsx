@@ -1750,24 +1750,25 @@ function DashboardInner(){
                       const liveHist=pepHist.find(h=>h.date===d.key);
                       const taken=liveHist?!!(liveHist.checks||{})[p.id]:false;
                       const isFuture=new Date(d.key+"T23:59:59")>today&&d.key!==day;
-                      /* P18: allow tapping any non-future cell to edit. 30-day cap enforced. */
                       const daysBack=Math.round((today-new Date(d.key+"T12:00:00"))/(86400000));
                       const editable=!isFuture&&daysBack<=30;
+                      const offSched=taken&&!scheduled; /* dose logged on an unscheduled day */
                       let icon=null,bg="transparent";
                       if(isFuture){icon="";}
-                      else if(!scheduled){icon=<span style={{color:"var(--t-5)"}}>–</span>;}
+                      else if(taken&&offSched){/* Off-schedule dose — distinct visual */icon=<span style={{position:"relative"}}><Icon n="check" s={12} c="var(--c-warn)" sw={2.5}/><span style={{position:"absolute",top:-3,right:-5,width:5,height:5,borderRadius:3,background:"var(--c-warn)"}}></span></span>;bg="color-mix(in oklch, var(--c-warn) 12%, transparent)";}
                       else if(taken){icon=<Icon n="check" s={12} c="var(--c-success)" sw={2.5}/>;bg="color-mix(in oklch, var(--c-success) 14%, transparent)";}
-                      else if(d.isToday){/* today not over yet — pending, never "missed" */icon=<span className="mono" style={{fontSize:13,lineHeight:1,color:"var(--accent)"}}>·</span>;bg="color-mix(in oklch, var(--accent) 9%, transparent)";}
+                      else if(!scheduled){icon=<span style={{color:"var(--t-5)"}}>–</span>;}
+                      else if(d.isToday){icon=<span className="mono" style={{fontSize:13,lineHeight:1,color:"var(--accent)"}}>·</span>;bg="color-mix(in oklch, var(--accent) 9%, transparent)";}
                       else{icon=<Icon n="x" s={11} c="var(--c-danger)" sw={2.5}/>;bg="color-mix(in oklch, var(--c-danger) 10%, transparent)";}
-                      const cellProps=editable&&scheduled?{onClick:()=>setEditPastDose({peptideId:p.id,date:d.key}),style:{display:"flex",alignItems:"center",justifyContent:"center",padding:"7px 0",background:bg,borderBottom:"1px solid var(--line-soft)",cursor:"pointer",transition:"background .15s var(--ease-out)"},onMouseEnter:e=>{e.currentTarget.style.background="color-mix(in oklch, var(--accent) 12%, "+bg+")";},onMouseLeave:e=>{e.currentTarget.style.background=bg;}}:{style:{display:"flex",alignItems:"center",justifyContent:"center",padding:"7px 0",background:bg,borderBottom:"1px solid var(--line-soft)"}};
+                      const cellProps=editable?{onClick:()=>setEditPastDose({peptideId:p.id,date:d.key}),style:{display:"flex",alignItems:"center",justifyContent:"center",padding:"7px 0",background:bg,borderBottom:"1px solid var(--line-soft)",cursor:"pointer",transition:"background .15s var(--ease-out)"},onMouseEnter:e=>{e.currentTarget.style.background="color-mix(in oklch, var(--accent) 12%, "+bg+")";},onMouseLeave:e=>{e.currentTarget.style.background=bg;}}:{style:{display:"flex",alignItems:"center",justifyContent:"center",padding:"7px 0",background:bg,borderBottom:"1px solid var(--line-soft)"}};
                       return(<div key={d.key} {...cellProps}>{icon}</div>);
                     })}
                   </div>))}
                 </div>
                 <div style={{display:"flex",gap:14,justifyContent:"center",marginTop:10,flexWrap:"wrap"}}>
                   <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,color:"var(--t-3)"}}><Icon n="check" s={11} c="var(--c-success)" sw={2.5}/> taken</span>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,color:"var(--t-3)"}}><span style={{position:"relative",display:"inline-flex"}}><Icon n="check" s={11} c="var(--c-warn)" sw={2.5}/><span style={{position:"absolute",top:-2,right:-4,width:4,height:4,borderRadius:2,background:"var(--c-warn)"}}></span></span> off-sched</span>
                   <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,color:"var(--t-3)"}}><Icon n="x" s={10} c="var(--c-danger)" sw={2.5}/> missed</span>
-                  <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,color:"var(--t-3)"}}><span className="mono" style={{color:"var(--accent)",fontSize:13,lineHeight:1}}>·</span> today</span>
                   <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,color:"var(--t-3)"}}><span style={{color:"var(--t-5)"}}>–</span> not due</span>
                 </div>
                 <div style={{fontSize:10,color:"var(--t-4)",textAlign:"center",marginTop:6,fontStyle:"italic"}}>Tap any cell to log a missed dose or edit history</div>

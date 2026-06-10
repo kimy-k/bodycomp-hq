@@ -72,12 +72,12 @@ export const DEFAULT_STACK = {
   klow:   {users:["kim","bernadette"],   dose:"40u (10.7mg)",    schedule:[0,1,2,3,4,5,6], time:"PM",       status:"active",   start_date:"2026-05-01", total_weeks:4,  cycle_end:"2026-05-28", note:"Daily · Cycle ends May 28"},
   nad:    {users:["kim","bernadette"],   dose:"50mg (30u)",      schedule:[1,3],           time:"AM",       status:"active",   start_date:"2026-04-06", total_weeks:12, cycle_end:"2026-06-29", note:"Mon/Wed"},
   ta1:    {users:["kim","bernadette"],   dose:"1.5mg (15u)",     schedule:[1,4],           time:"AM",       status:"active",   start_date:"2026-05-16", total_weeks:8,  cycle_end:"2026-07-11", note:"Mon/Thu · Just started"},
-  amino:  {users:["kim","bernadette"],   dose:"2.5mg (25u) BID", schedule:[0,1,2,3,4,5,6], time:"AM+PM",    status:"active",   start_date:"2026-05-16", total_weeks:4,  cycle_end:"2026-06-13", note:"Daily BID · Just started"},
+  amino:  {users:["kim","bernadette"],   dose:"2.5mg (25u) QD",  schedule:[0,1,2,3,4,5,6], time:"Bedtime",  status:"active",   start_date:"2026-05-16", total_weeks:8,  cycle_end:"2026-07-11", note:"Daily QD before bed"},
   snap8:  {users:["kim","bernadette"],   dose:"Topical AM+PM",   schedule:[0,1,2,3,4,5,6], time:"AM+PM",    status:"active",   start_date:"2026-05-16", total_weeks:12, cycle_end:"2026-08-08", note:"Topical"},
-  cjcipa: {users:["kim","bernadette"],   dose:"100mcg ea (3u)",  schedule:[1,2,3,4,5],     time:"Bedtime",  status:"starting", start_date:"2026-05-17", total_weeks:12, cycle_end:"2026-08-09", note:"Starts May 17 · 5on/2off"},
+  cjcipa: {users:["kim","bernadette"],   dose:"15u (0.15mL · 500mcg)", schedule:[1,2,3,4,5],     time:"Bedtime",  status:"active",   start_date:"2026-05-17", total_weeks:12, cycle_end:"2026-08-09", note:"Increased to 15u Jun 9 · 5on/2off"},
   tesa:   {users:["kim","bernadette"],   dose:"2mg (20u)",       schedule:[1,3,5],         time:"AM",       status:"active",   start_date:"2026-04-01", total_weeks:12, cycle_end:"2026-06-22", note:"Mon/Wed/Fri"},
   semax:  {users:["kim","bernadette"],   dose:"200mcg x2 daily", schedule:[1,2,3,4,5],     time:"AM+Lunch", status:"prn",      start_date:"2026-04-20", total_weeks:0,  cycle_end:null,         note:"PRN for focus"},
-  motsc:  {users:["kim","bernadette"],   dose:"1.5mg (30u)",     schedule:[],              time:"—",        status:"break",    start_date:"2026-04-14", total_weeks:5,  cycle_end:null,         note:"Break until ~Jun 10 · 2 vials ready for Cycle 2"},
+  motsc:  {users:["kim","bernadette"],   dose:"1.5mg (30u)",     schedule:[1,3,5],         time:"AM",       status:"active",   start_date:"2026-06-10", total_weeks:5,  cycle_end:"2026-07-15", note:"Cycle 2 · Mon/Wed/Fri"},
   glow:   {users:["kim","bernadette"],   dose:"30u (7mg)",       schedule:[],              time:"—",        status:"break",    start_date:"2026-03-12", total_weeks:8,  cycle_end:null,         note:"Break until ~May 21"},
 };
 

@@ -21,7 +21,7 @@ import {
   PRODUCT_FOR_PEPTIDE, PRICES,
   PG_SLUG_FOR_PEPTIDE, PG_BASE, PG_DIRECTORY, pgUrlFor,
   reorderOptionsFor, RECONSTITUTION, PHARMACOKINETICS, recommendedReconFor,
-  COMPONENT_LABELS, CYCLING,
+  COMPONENT_LABELS, CYCLING, CHANGELOG, minSpacingHours,
 } from "./data.js";
 import {todayKey, localDateKey, addDays, buildProj, calcMonthly, compressImage} from "./helpers.js";
 import {computeInsights} from "./insights.js";
@@ -186,6 +186,13 @@ function DashboardInner(){
   const [pepHist,setPepHist]=useState([]);const [pepSub,setPepSub]=useState("today");
   const [showOther,setShowOther]=useState(false);
   const [editingDose,setEditingDose]=useState(null);const [doseVal,setDoseVal]=useState("");
+  /* What's New sheet — shows once per version per user */
+  const [showWhatsNew,setShowWhatsNew]=useState(false);
+  useEffect(()=>{if(!userConfig)return;const seen=userConfig.lastSeenVersion;const latest=CHANGELOG[0]?.v;if(latest&&seen!==latest)setShowWhatsNew(true);},[userConfig]);
+  const dismissWhatsNew=()=>{setShowWhatsNew(false);const latest=CHANGELOG[0]?.v;if(latest)db.upsert("config",{key:"profile",value:{...userConfig,lastSeenVersion:latest}});};
+  /* Off-schedule dose confirmation */
+  const [offSchedPep,setOffSchedPep]=useState(null);
+  const [offSchedDone,setOffSchedDone]=useState(null);
 
   useEffect(()=>{setPepData({checks:{},sideEffects:[]});setPepLoading(true);(async()=>{
     const row=await db.get("daily_peptides",day);
@@ -1794,10 +1801,18 @@ function DashboardInner(){
               <Icon n={showOther?"chevUp":"chevDown"} s={14}/>
             </button>
             {showOther&&(<div className="sheet" style={{marginTop:8}}>
-              {notDue.map(p=>(<div key={p.id} style={{padding:"7px 0",fontSize:11.5,color:"var(--t-4)",borderBottom:"1px solid var(--line-soft)",display:"flex",alignItems:"center",gap:8}}>
-                {p.status==="break"?<Icon n="pause" s={11} c="var(--t-4)"/>:p.status==="starting"?<Icon n="calendar" s={11} c="var(--t-4)"/>:null}
-                <span>{p.name}</span><span style={{color:"var(--t-5)"}}>· {p.note}</span>
-              </div>))}
+              {notDue.map(p=>{
+                const isLoggable=isPeptideLive(p)&&!RECONSTITUTION[p.id]?.topical;
+                const alreadyLogged=!!pepData.checks[p.id];
+                return(<div key={p.id} onClick={()=>{if(isLoggable&&!alreadyLogged)setOffSchedPep(p);}} style={{padding:"8px 0",fontSize:11.5,color:isLoggable?"var(--t-2)":"var(--t-4)",borderBottom:"1px solid var(--line-soft)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,cursor:isLoggable?"pointer":"default"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    {p.status==="break"?<Icon n="pause" s={11} c="var(--t-4)"/>:p.status==="starting"?<Icon n="calendar" s={11} c="var(--t-4)"/>:null}
+                    <span>{p.name}</span><span style={{color:"var(--t-5)"}}>· {p.note}</span>
+                  </div>
+                  {isLoggable&&!alreadyLogged&&<span className="mono" style={{fontSize:9,color:"var(--accent)",background:"var(--accent-soft)",padding:"2px 8px",borderRadius:999,letterSpacing:".04em",fontWeight:600,flexShrink:0}}>LOG</span>}
+                  {alreadyLogged&&<Icon n="check" s={12} c="var(--c-success)" sw={2.5}/>}
+                </div>);
+              })}
             </div>)}
           </div>)}
         </>)}
@@ -2556,6 +2571,71 @@ function DashboardInner(){
           );})}
         </div>
       </nav>
+
+      {/* Off-schedule dose confirmation */}
+      {offSchedPep&&(()=>{
+        const p=offSchedPep;
+        const todayDowName=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()];
+        const schedDays=p.schedule.map(d=>["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d]).join(", ");
+        const typicalGapH=minSpacingHours(p.schedule);
+        const todayDow=new Date().getDay();
+        /* Find next scheduled day */
+        const sorted=[...p.schedule].sort((a,b)=>a-b);
+        let nextSchedDay=sorted.find(d=>d>todayDow);
+        if(nextSchedDay===undefined)nextSchedDay=sorted[0]; /* wrap to next week */
+        const daysToNext=nextSchedDay>todayDow?nextSchedDay-todayDow:7-todayDow+nextSchedDay;
+        const nextDayName=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][nextSchedDay];
+        const gapTooClose=daysToNext===1&&typicalGapH>=48;
+        /* Find previous scheduled day for context */
+        let prevSchedDay=[...sorted].reverse().find(d=>d<todayDow);
+        if(prevSchedDay===undefined)prevSchedDay=sorted[sorted.length-1];
+        const daysSincePrev=todayDow>=prevSchedDay?todayDow-prevSchedDay:7-prevSchedDay+todayDow;
+        const prevDayName=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][prevSchedDay];
+        /* Suggest adjusted next dose */
+        const suggestSkipNext=gapTooClose;
+        const suggestDay=suggestSkipNext?["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][(nextSchedDay+1)%7]:null;
+
+        return(<div onClick={()=>setOffSchedPep(null)} style={{position:"fixed",inset:0,zIndex:150,background:"oklch(0.05 0 0 / 0.78)",backdropFilter:"blur(10px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"20px"}}>
+          <div onClick={e=>e.stopPropagation()} className="sheet" style={{background:"var(--bg)",border:"1px solid var(--line)",borderRadius:"var(--r-lg)",padding:18,maxWidth:420,width:"100%"}}>
+            <div style={{width:34,height:4,background:"var(--elev-3)",borderRadius:2,margin:"0 auto 14px"}}/>
+            <h3 className="serif" style={{fontSize:22,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",marginBottom:6}}>Log {p.name} off-schedule?</h3>
+            <div style={{fontSize:12,color:"var(--t-3)",marginBottom:14}}>
+              It's {todayDowName} — {p.name} is scheduled {schedDays}.
+              {daysSincePrev>0&&` Last scheduled dose was ${prevDayName} (${daysSincePrev}d ago).`}
+            </div>
+            {suggestSkipNext&&(<div style={{background:"color-mix(in oklch, var(--c-warn) 10%, var(--elev-1))",borderLeft:"3px solid var(--c-warn)",borderRadius:"var(--r-sm)",padding:"10px 12px",marginBottom:12}}>
+              <div style={{fontSize:11,color:"var(--c-warn)",fontWeight:600,marginBottom:3}}>Spacing advice</div>
+              <div style={{fontSize:11,color:"var(--t-3)"}}>Next dose is {nextDayName} — only {daysToNext*24}h gap (typical spacing: {typicalGapH}h). Consider skipping {nextDayName} and taking it {suggestDay} instead.</div>
+            </div>)}
+            {!suggestSkipNext&&daysToNext<=2&&(<div style={{background:"color-mix(in oklch, var(--c-success) 8%, var(--elev-1))",borderLeft:"3px solid var(--c-success)",borderRadius:"var(--r-sm)",padding:"10px 12px",marginBottom:12}}>
+              <div style={{fontSize:11,color:"var(--c-success)"}}>Spacing is fine — {daysToNext*24}h to next dose ({nextDayName}). No adjustment needed.</div>
+            </div>)}
+            <div style={{display:"flex",gap:8,marginTop:6}}>
+              <button onClick={()=>setOffSchedPep(null)} className="touch" style={{flex:1,padding:"10px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",fontSize:12,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+              <button onClick={()=>{togglePep(p.id,p.dose);setOffSchedPep(null);setOffSchedDone(p);setTimeout(()=>setOffSchedDone(null),4000);showToast(`${p.name} logged off-schedule`,"success");}} className="touch" style={{flex:1,padding:"10px",borderRadius:999,border:"1px solid var(--accent)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12,fontWeight:600,cursor:"pointer"}}>Log dose</button>
+            </div>
+          </div>
+        </div>);
+      })()}
+
+      {/* What's New sheet */}
+      {showWhatsNew&&(()=>{const c=CHANGELOG[0];if(!c)return null;return(
+        <div onClick={dismissWhatsNew} style={{position:"fixed",inset:0,zIndex:152,background:"oklch(0.05 0 0 / 0.78)",backdropFilter:"blur(10px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"20px"}}>
+          <div onClick={e=>e.stopPropagation()} className="sheet" style={{background:"var(--bg)",border:"1px solid var(--accent-line)",borderRadius:"var(--r-lg)",padding:18,maxWidth:440,width:"100%",maxHeight:"80vh",overflowY:"auto"}}>
+            <div style={{width:34,height:4,background:"var(--accent)",borderRadius:2,margin:"0 auto 14px",opacity:0.5}}/>
+            <div className="mono" style={{fontSize:9,color:"var(--accent)",letterSpacing:".15em",textTransform:"uppercase",fontWeight:700,marginBottom:4}}>What's new</div>
+            <h3 className="serif" style={{fontSize:22,fontWeight:400,color:"var(--t-1)",margin:"0 0 4px",fontStyle:"italic"}}>{c.title}</h3>
+            <div className="mono" style={{fontSize:9,color:"var(--t-4)",marginBottom:14,letterSpacing:".04em"}}>{c.date}</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {c.items.map((item,i)=>(<div key={i} className="rise" style={{animationDelay:`${i*0.04}s`,display:"flex",gap:10,alignItems:"flex-start",padding:"8px 10px",background:"var(--elev-1)",borderRadius:"var(--r-sm)"}}>
+                <Icon n={item.icon} s={14} c="var(--accent)" sw={1.8}/>
+                <span style={{fontSize:12,color:"var(--t-2)",lineHeight:1.4}}>{item.text}</span>
+              </div>))}
+            </div>
+            <button onClick={dismissWhatsNew} className="touch" style={{width:"100%",padding:"12px",borderRadius:999,border:"1px solid var(--accent)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:13,fontWeight:600,cursor:"pointer",marginTop:16}}>Got it</button>
+          </div>
+        </div>
+      );})()}
 
       {/* Reconstitution guide sheet — full per-peptide protocol */}
       {reconGuide&&(()=>{const r=RECONSTITUTION[reconGuide.id];if(!r)return null;const recommended=r.options.find(o=>o.recommended);const others=r.options.filter(o=>!o.recommended);return(

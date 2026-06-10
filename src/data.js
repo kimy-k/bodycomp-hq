@@ -472,3 +472,32 @@ export const recommendedReconFor = pepId => {
   if (!r) return null;
   return r.options.find(o => o.recommended) || r.options[0] || null;
 };
+
+/* ═══ CHANGELOG — shown in "What's New" sheet on first load after update ═══ */
+export const CHANGELOG = [
+  {v:"2026.06.10b", date:"2026-06-10", title:"Supply, Smart TDEE & Cycle Intelligence", items:[
+    {icon:"vial",  text:"Supply tab — track sealed vials, tap Open Vial to start a batch"},
+    {icon:"trending-up", text:"Titration alerts — app tells you when it's time to bump your dose"},
+    {icon:"target",text:"Smart TDEE — auto-recalculates from latest InBody scan using Katch-McArdle"},
+    {icon:"clock", text:"Cycle intelligence — knows which peptides need cycling off and when"},
+    {icon:"scale", text:"Body comp chart — fat %, weight, and muscle on one view"},
+    {icon:"vial",  text:"Off-schedule dosing — tap any not-due peptide to log with smart spacing advice"},
+    {icon:"warn",  text:"Muscle loss & recomp alerts — flags when you're losing lean mass"},
+    {icon:"tag",   text:"Pepmuse Group Buy pricing across all peptides"},
+  ]},
+];
+
+/* ═══ DOSE SPACING — minimum hours between doses, derived from schedule patterns ═══
+   Used by the off-schedule dosing feature to suggest schedule adjustments. */
+export const minSpacingHours = (schedule) => {
+  if (!schedule || schedule.length <= 1) return 24;
+  /* Sort schedule days and compute minimum gap between consecutive days */
+  const sorted = [...schedule].sort((a, b) => a - b);
+  let minGap = 7; /* max possible in a week */
+  for (let i = 1; i < sorted.length; i++) {
+    minGap = Math.min(minGap, sorted[i] - sorted[i - 1]);
+  }
+  /* Also check wrap-around (last day to first day of next week) */
+  minGap = Math.min(minGap, 7 - sorted[sorted.length - 1] + sorted[0]);
+  return minGap * 24; /* convert days to hours */
+};

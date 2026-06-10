@@ -979,6 +979,7 @@ function DashboardInner(){
             const lm=latest.leanMass;
             /* Delta colors: muscle/lean up=good, fat down=good */
             const goodBad=(val,upIsGood)=>val>0?(upIsGood?"var(--c-success)":"var(--c-danger)"):(val<0?(upIsGood?"var(--c-danger)":"var(--c-success)"):"var(--t-4)");
+            const goodBadFat=(val)=>val>0?"var(--c-danger)":val<0?"var(--c-fat)":"var(--t-4)"; /* fat arrows use yellow/red */
             const arrow=(val)=>val>0?"▲":val<0?"▼":"";
             return(<div style={{display:"flex",gap:6,marginTop:8,padding:"8px 2px 4px",borderTop:"1px solid var(--line-soft)"}}>
               <div style={{flex:1,textAlign:"center"}}>
@@ -994,7 +995,7 @@ function DashboardInner(){
               <div style={{flex:1,textAlign:"center"}}>
                 <div className="mono" style={{fontSize:9,color:"var(--c-fat)",letterSpacing:".08em",textTransform:"uppercase",marginBottom:2,fontWeight:600,opacity:0.7}}>Fat</div>
                 <div className="serif tabular" style={{fontSize:20,color:"var(--c-fat)",fontStyle:"italic",lineHeight:1}}>{latest.fatMass}<span style={{fontSize:10,color:"var(--c-fat)",opacity:0.5}}>kg</span></div>
-                {fmDelta!==null&&<div className="mono" style={{fontSize:9,color:"var(--t-3)",marginTop:3}}><span style={{color:goodBad(fmDelta,false)}}>{arrow(fmDelta)}</span> {fmDelta>0?"+":""}{fmDelta}</div>}
+                {fmDelta!==null&&<div className="mono" style={{fontSize:9,color:"var(--t-3)",marginTop:3}}><span style={{color:goodBadFat(fmDelta)}}>{arrow(fmDelta)}</span> {fmDelta>0?"+":""}{fmDelta}</div>}
               </div>
             </div>);
           })()}

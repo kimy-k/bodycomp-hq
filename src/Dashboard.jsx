@@ -2049,8 +2049,8 @@ function DashboardInner(){
 
         {pepSub==="batches"&&(<>
           <div className="rise" style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14}}>
-            <div><h2 className="serif" style={{fontSize:24,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>Active vials</h2><p className="mono" style={{fontSize:11,color:"var(--t-3)",margin:"2px 0 0"}}>{batches.filter(b=>!b.exhausted).length} open · shared with household</p></div>
-            {!addingBatch&&<button onClick={()=>setAddingBatch(true)} className="touch" style={{padding:"9px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12.5,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={14}/> New batch</button>}
+            <div><h2 className="serif" style={{fontSize:24,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>Inventory</h2><p className="mono" style={{fontSize:11,color:"var(--t-3)",margin:"2px 0 0"}}>vials · supply · costs</p></div>
+            {!addingBatch&&<button onClick={()=>setAddingBatch(true)} className="touch" style={{padding:"9px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12.5,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={14}/> Mix vial</button>}
           </div>
 
           {batchesLoading&&<SkelTab/>}
@@ -2160,88 +2160,135 @@ function DashboardInner(){
           </div>)}
 
           {/* Empty state */}
-          {!batchesLoading&&batches.length===0&&!addingBatch&&<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="vial" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No batches logged</div><div style={{fontSize:11,color:"var(--t-5)",marginTop:3,maxWidth:300,marginLeft:"auto",marginRight:"auto"}}>Track each vial's concentration and expiry. Today's checklist shows active batch info inline.</div></div>}
+          {!batchesLoading&&batches.length===0&&!addingBatch&&<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="vial" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No vials logged</div><div style={{fontSize:11,color:"var(--t-5)",marginTop:3,maxWidth:300,marginLeft:"auto",marginRight:"auto"}}>Tap "Mix vial" when you reconstitute a peptide. The app tracks doses, expiry, and costs.</div></div>}
 
           {!batchesLoading&&batches.length>0&&(()=>{
-            const toggleBatch=id=>setExpandedBatch(expandedBatch===id?null:id);
             const activeBatches=batches.filter(b=>!b.exhausted);
             const exhaustedBatches=batches.filter(b=>b.exhausted);
-            const renderBatch=(b,p)=>{
-              const stat=batchStatus(b);const conc=concentration(b);const open=expandedBatch===b.id;
-              const creatorName=PROFILES[b.user_id]?.name||b.user_id;const isCreator=b.user_id===userId;
-              const liveInv=(()=>{const mgPerDose=mgFromDoseStr(p.dose);if(!mgPerDose||!b.mg_total)return null;const totalDoses=Math.floor(b.mg_total/mgPerDose);const used=sharedDoseLog.filter(d=>d.date>=b.date_recon&&(!b.exhausted||d.date<=(b.exhausted_date||"9999"))&&d.checks&&d.checks[p.id]).length;return{total:totalDoses,used,remaining:Math.max(0,totalDoses-used)};})();
-              const cpd=(()=>{if(b.cost==null)return null;const pep=PEPTIDES.find(x=>x.id===b.peptide_id);return pep?costPerDose(b,p):null;})();
-              const isEmpty=liveInv&&liveInv.remaining<=0&&!b.exhausted;
-              /* Days until empty based on dosing frequency */
+            /* Build per-peptide inventory summary */
+            const inventory=userPeps.filter(p=>isPeptideLive(p)).map(p=>{
+              const active=activeBatches.filter(b=>b.peptide_id===p.id);
+              const b=active[0]; /* current vial */
+              const sealed=supplyFor(p.id);
+              const liveInv=b?(()=>{const mgPerDose=mgFromDoseStr(p.dose);if(!mgPerDose||!b.mg_total)return null;const totalDoses=Math.floor(b.mg_total/mgPerDose);const used=sharedDoseLog.filter(d=>d.date>=b.date_recon&&d.checks&&d.checks[p.id]).length;return{total:totalDoses,used,remaining:Math.max(0,totalDoses-used)};})():null;
               const dosesPerWeek=p.schedule?p.schedule.length:0;
               const daysUntilEmpty=liveInv&&dosesPerWeek>0?Math.round(liveInv.remaining/(dosesPerWeek/7)):null;
-              const daysToExpiry=b.expiry_date?Math.max(0,Math.round((new Date(b.expiry_date+"T23:59:59")-new Date())/(86400000))):null;
-              /* Whichever comes first: running out or expiring */
-              const limitingFactor=daysUntilEmpty!=null&&daysToExpiry!=null?(daysUntilEmpty<daysToExpiry?"empty":"expiry"):daysToExpiry!=null?"expiry":daysUntilEmpty!=null?"empty":null;
-              const pctUsed=liveInv?(liveInv.used/liveInv.total)*100:0;
-              const barColor=isEmpty?"var(--c-danger)":pctUsed>75?"var(--c-warn)":"var(--accent)";
+              const daysToExpiry=b?.expiry_date?Math.max(0,Math.round((new Date(b.expiry_date+"T23:59:59")-new Date())/(86400000))):null;
+              const conc=b?concentration(b):null;
+              const cpd=b&&b.cost!=null?costPerDose(b,p):null;
+              const isEmpty=liveInv&&liveInv.remaining<=0;
+              const isExpiringSoon=daysToExpiry!=null&&daysToExpiry<=7;
+              const needsMix=!b&&sealed>0;
+              return{p,b,sealed,liveInv,daysUntilEmpty,daysToExpiry,conc,cpd,isEmpty,isExpiringSoon,needsMix};
+            });
 
-              return(<div key={b.id} onClick={()=>toggleBatch(b.id)} style={{background:"var(--elev-1)",borderLeft:`3px solid ${isEmpty?"var(--c-danger)":p.color}`,borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:6,cursor:"pointer",opacity:b.exhausted?0.5:1,transition:"all .2s var(--ease-out)"}}>
-                {/* Empty vial alert */}
-                {isEmpty&&(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,padding:"6px 10px",background:"color-mix(in oklch, var(--c-danger) 12%, transparent)",borderRadius:6}}>
-                  <span style={{fontSize:11,color:"var(--c-danger)",fontWeight:600}}>Vial empty — mark exhausted?</span>
-                  <button onClick={e=>{e.stopPropagation();updateBatch(b,{exhausted:true});}} className="touch" style={{padding:"4px 12px",borderRadius:999,border:"1px solid var(--c-danger)",background:"transparent",color:"var(--c-danger)",fontSize:10,fontWeight:600,cursor:"pointer"}}>Done</button>
-                </div>)}
-                {/* Compact row */}
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-                      <span style={{fontSize:14,fontWeight:600,color:p.color}}>{p.name}</span>
-                      {liveInv&&!b.exhausted&&<span className="serif tabular" style={{fontSize:16,color:liveInv.remaining<=2?"var(--c-warn)":"var(--t-1)",fontStyle:"italic"}}>{liveInv.remaining}<span style={{fontSize:11,color:"var(--t-4)"}}>/{liveInv.total}</span></span>}
-                    </div>
-                    {/* Progress bar */}
-                    {liveInv&&!b.exhausted&&(<div style={{marginTop:5,height:4,background:"var(--elev-3)",borderRadius:2,overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${Math.min(100,100-pctUsed)}%`,background:barColor,borderRadius:2,transition:"width .3s var(--ease-out)"}}/>
-                    </div>)}
-                    <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:4,display:"flex",gap:8,flexWrap:"wrap"}}>
-                      {!b.exhausted&&limitingFactor==="empty"&&daysUntilEmpty!=null&&<span>{daysUntilEmpty}d until empty</span>}
-                      {!b.exhausted&&daysToExpiry!=null&&<span style={{color:daysToExpiry<=7?"var(--c-warn)":"var(--t-4)"}}>{daysToExpiry<=0?"expired":daysToExpiry+"d to expiry"}</span>}
-                      {cpd!=null&&!b.exhausted&&<span>{fmtCost(cpd,b.currency||"USD")}/dose</span>}
-                      <span>{new Date(b.date_recon+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}{isCreator?"":" · "+creatorName}</span>
-                    </div>
-                  </div>
-                  <Icon n={open?"chevUp":"chevDown"} s={14} c="var(--t-4)"/>
-                </div>
-                {/* Expanded detail */}
-                {open&&(<div onClick={e=>e.stopPropagation()} style={{marginTop:10,paddingTop:10,borderTop:"1px solid var(--line-soft)"}}>
-                  <div className="mono" style={{fontSize:11,color:"var(--t-3)",marginBottom:6}}>{conc} mg/mL · {b.mg_total}mg in {b.ml_bac}mL · 1u = {(conc/100).toFixed(3)}mg</div>
-                  {b.storage&&<div style={{fontSize:11,color:"var(--t-3)",marginBottom:4}}>📍 {b.storage}</div>}
-                  {b.cost!=null&&(()=>{const cpm=costPerMg(b);return(<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>
-                    <span className="mono" style={{fontSize:10,color:"var(--t-2)",background:"var(--elev-2)",padding:"2px 7px",borderRadius:999,border:"1px solid var(--line-soft)",fontWeight:600}}>{fmtCost(b.cost,b.currency||"USD")}</span>
-                    {cpm!=null&&<span className="mono" style={{fontSize:10,color:"var(--t-3)",background:"var(--elev-2)",padding:"2px 7px",borderRadius:999,border:"1px solid var(--line-soft)"}}>{fmtCost(cpm,b.currency||"USD")}/mg</span>}
-                    {b.vendor&&<span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>via {b.vendor}</span>}
-                  </div>);})()}
-                  {b.notes&&<div style={{fontSize:11,color:"var(--t-4)",fontStyle:"italic",marginBottom:4}}>{b.notes.length>80?b.notes.slice(0,80)+"…":b.notes}</div>}
-                  {!b.exhausted&&isPastPGStability(b)&&(()=>{const r=RECONSTITUTION[b.peptide_id];const days=daysSinceRecon(b);return(<div style={{marginBottom:6,padding:"6px 9px",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",borderLeft:"2px solid var(--c-warn)",borderRadius:6,fontSize:10.5,color:"var(--c-warn)"}}>
-                    ⚠ Past stability ({days}d / {r.stabilityDays}d). Mix fresh.
-                  </div>);})()}
-                  <div style={{display:"flex",gap:10,marginTop:6}}>
-                    <button onClick={()=>updateBatch(b,{exhausted:!b.exhausted})} className="touch" style={{fontSize:11,color:b.exhausted?"var(--accent)":"var(--t-3)",background:"none",border:"none",cursor:"pointer",padding:"4px 0",display:"inline-flex",alignItems:"center",gap:4}}>
-                      <Icon n={b.exhausted?"plus":"check"} s={12}/> {b.exhausted?"Reactivate":"Mark exhausted"}
-                    </button>
-                    <button onClick={()=>deleteBatch(b)} className="touch" style={{fontSize:11,color:"var(--c-danger)",background:"none",border:"none",cursor:"pointer",padding:"4px 0",display:"inline-flex",alignItems:"center",gap:4}}>
-                      <Icon n="trash" s={12}/> Delete
-                    </button>
-                  </div>
-                </div>)}
-              </div>);
-            };
+            /* Actions needed */
+            const actions=[];
+            inventory.forEach(i=>{
+              if(i.isEmpty)actions.push({color:"var(--c-danger)",icon:"warn",text:`${i.p.name} vial is empty`,sub:"Mark exhausted and open a new vial",action:()=>i.b&&updateBatch(i.b,{exhausted:true}),btn:"Done"});
+              if(i.isExpiringSoon&&!i.isEmpty)actions.push({color:"var(--c-warn)",icon:"clock",text:`${i.p.name} expires in ${i.daysToExpiry}d`,sub:i.liveInv?`${i.liveInv.remaining} doses left — use them or mix fresh`:""});
+              if(i.needsMix)actions.push({color:"var(--accent)",icon:"vial",text:`${i.p.name} — no open vial`,sub:`${i.sealed} sealed in supply. Reconstitute to start dosing.`});
+            });
+
+            /* Cost summary */
+            const totalCost=activeBatches.reduce((s,b)=>s+(+b.cost||0),0);
+            const totalDoses=inventory.reduce((s,i)=>s+(i.liveInv?i.liveInv.total:0),0);
+            const avgCpd=totalDoses>0?(totalCost/totalDoses):0;
+
             return(<>
-              {activeBatches.length===0&&<div style={{textAlign:"center",padding:"32px 0",color:"var(--t-4)",fontSize:13}}>No active vials. Open one from Supply or tap New batch.</div>}
-              {userPeps.map(p=>{const active=activeBatches.filter(b=>b.peptide_id===p.id);if(active.length===0)return null;return(<div key={p.id} style={{marginBottom:10}}>
-                {active.map(b=>renderBatch(b,p))}
-              </div>);})}
-              {exhaustedBatches.length>0&&(<div style={{marginTop:14}}>
+              {/* ── Section 1: Actions needed ── */}
+              {actions.length>0&&(<div style={{marginBottom:16}}>
+                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Needs attention</div>
+                {actions.map((a,i)=>(<div key={i} style={{background:`color-mix(in oklch, ${a.color} 8%, var(--elev-1))`,borderLeft:`3px solid ${a.color}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:5,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:600,color:a.color,display:"flex",alignItems:"center",gap:6}}><Icon n={a.icon} s={13} c={a.color}/> {a.text}</div>
+                    {a.sub&&<div style={{fontSize:10.5,color:"var(--t-3)",marginTop:2}}>{a.sub}</div>}
+                  </div>
+                  {a.action&&a.btn&&<button onClick={a.action} className="touch" style={{padding:"5px 12px",borderRadius:999,border:`1px solid ${a.color}`,background:"transparent",color:a.color,fontSize:10,fontWeight:600,cursor:"pointer",flexShrink:0}}>{a.btn}</button>}
+                </div>))}
+              </div>)}
+
+              {/* ── Section 2: Inventory at a glance ── */}
+              <div style={{marginBottom:16}}>
+                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Open vials</div>
+                {inventory.filter(i=>i.b).map(i=>{
+                  const pct=i.liveInv?(i.liveInv.remaining/i.liveInv.total)*100:0;
+                  const barColor=pct<=15?"var(--c-danger)":pct<=35?"var(--c-warn)":i.p.color;
+                  const limitLabel=i.daysUntilEmpty!=null&&i.daysToExpiry!=null?(i.daysUntilEmpty<i.daysToExpiry?`${i.daysUntilEmpty}d left`:`exp ${i.daysToExpiry}d`):i.daysToExpiry!=null?`exp ${i.daysToExpiry}d`:i.daysUntilEmpty!=null?`${i.daysUntilEmpty}d left`:"";
+                  return(<div key={i.p.id} onClick={()=>setExpandedBatch(expandedBatch===i.b.id?null:i.b.id)} style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:4,cursor:"pointer"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <div style={{width:5,height:5,borderRadius:3,background:i.p.color}}/>
+                        <span style={{fontSize:13,fontWeight:600,color:"var(--t-1)"}}>{i.p.name}</span>
+                        {i.liveInv&&<span className="mono" style={{fontSize:11,fontWeight:600,color:i.liveInv.remaining<=2?"var(--c-warn)":"var(--t-2)"}}>{i.liveInv.remaining}/{i.liveInv.total}</span>}
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        {limitLabel&&<span className="mono" style={{fontSize:10,color:i.isExpiringSoon?"var(--c-warn)":"var(--t-4)"}}>{limitLabel}</span>}
+                        {i.cpd!=null&&<span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>{fmtCost(i.cpd,i.b.currency||"USD")}/dose</span>}
+                      </div>
+                    </div>
+                    <div style={{height:4,background:"var(--elev-3)",borderRadius:2,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${Math.min(100,pct)}%`,background:barColor,borderRadius:2,transition:"width .3s var(--ease-out)"}}/>
+                    </div>
+                    {/* Expanded detail on tap */}
+                    {expandedBatch===i.b.id&&(<div onClick={e=>e.stopPropagation()} style={{marginTop:10,paddingTop:8,borderTop:"1px solid var(--line-soft)"}}>
+                      <div className="mono" style={{fontSize:10.5,color:"var(--t-3)",marginBottom:4}}>Mixed {new Date(i.b.date_recon+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})} · {i.conc}mg/mL · {i.b.mg_total}mg/{i.b.ml_bac}mL{i.b.vendor?` · ${i.b.vendor}`:""}</div>
+                      {i.sealed>0&&<div style={{fontSize:10.5,color:"var(--accent)",marginBottom:4}}>{i.sealed} sealed vial{i.sealed!==1?"s":""} in reserve</div>}
+                      {i.b.cost!=null&&<div className="mono" style={{fontSize:10.5,color:"var(--t-4)",marginBottom:4}}>Vial cost: {fmtCost(i.b.cost,i.b.currency||"USD")}{costPerMg(i.b)!=null?` · ${fmtCost(costPerMg(i.b),i.b.currency||"USD")}/mg`:""}</div>}
+                      <div style={{display:"flex",gap:10,marginTop:4}}>
+                        <button onClick={()=>updateBatch(i.b,{exhausted:true})} className="touch" style={{fontSize:10.5,color:"var(--t-3)",background:"none",border:"none",cursor:"pointer",padding:"3px 0",display:"inline-flex",alignItems:"center",gap:4}}><Icon n="check" s={11}/> Mark empty</button>
+                        <button onClick={()=>deleteBatch(i.b)} className="touch" style={{fontSize:10.5,color:"var(--c-danger)",background:"none",border:"none",cursor:"pointer",padding:"3px 0",display:"inline-flex",alignItems:"center",gap:4}}><Icon n="trash" s={11}/> Delete</button>
+                      </div>
+                    </div>)}
+                  </div>);
+                })}
+                {inventory.filter(i=>!i.b&&i.sealed>0).length>0&&(<div style={{marginTop:8}}>
+                  <div className="mono" style={{fontSize:9,color:"var(--t-5)",letterSpacing:".08em",marginBottom:6}}>No open vial</div>
+                  {inventory.filter(i=>!i.b&&i.sealed>0).map(i=>(<div key={i.p.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 14px",background:"var(--elev-1)",borderRadius:"var(--r-sm)",marginBottom:3}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:5,height:5,borderRadius:3,background:i.p.color,opacity:0.5}}/>
+                      <span style={{fontSize:12,color:"var(--t-3)"}}>{i.p.name}</span>
+                      <span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>{i.sealed} sealed</span>
+                    </div>
+                    <span className="mono" style={{fontSize:10,color:"var(--accent)"}}>needs mixing</span>
+                  </div>))}
+                </div>)}
+              </div>
+
+              {/* ── Section 3: Cost summary ── */}
+              {totalCost>0&&(<div style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"14px 16px",marginBottom:16}}>
+                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Cost snapshot</div>
+                <div style={{display:"flex",justifyContent:"space-around",textAlign:"center"}}>
+                  <div>
+                    <div className="serif tabular" style={{fontSize:20,color:"var(--t-1)",fontStyle:"italic"}}>₱{Math.round(totalCost).toLocaleString()}</div>
+                    <div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:2}}>open vials</div>
+                  </div>
+                  <div>
+                    <div className="serif tabular" style={{fontSize:20,color:"var(--accent)",fontStyle:"italic"}}>₱{Math.round(avgCpd)}</div>
+                    <div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:2}}>avg/dose</div>
+                  </div>
+                  <div>
+                    <div className="serif tabular" style={{fontSize:20,color:"var(--t-1)",fontStyle:"italic"}}>{activeBatches.length}</div>
+                    <div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:2}}>open</div>
+                  </div>
+                </div>
+              </div>)}
+
+              {/* ── Exhausted history ── */}
+              {exhaustedBatches.length>0&&(<div>
                 <button onClick={()=>setShowExhausted(!showExhausted)} className="touch" style={{background:"none",border:"none",color:"var(--t-4)",fontSize:10.5,cursor:"pointer",padding:"4px 0",display:"inline-flex",alignItems:"center",gap:5}}>
                   {exhaustedBatches.length} used up
                   <Icon n={showExhausted?"chevUp":"chevDown"} s={12}/>
                 </button>
-                {showExhausted&&exhaustedBatches.map(b=>{const p=userPeps.find(x=>x.id===b.peptide_id)||{name:b.peptide_id,color:"var(--t-4)"};return renderBatch(b,p);})}
+                {showExhausted&&(<div style={{marginTop:6}}>{exhaustedBatches.map(b=>{const p=userPeps.find(x=>x.id===b.peptide_id)||{name:b.peptide_id,color:"var(--t-4)"};return(<div key={b.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 14px",background:"var(--elev-1)",borderRadius:"var(--r-sm)",marginBottom:3,opacity:0.5}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:4,height:4,borderRadius:2,background:p.color}}/>
+                    <span style={{fontSize:11,color:"var(--t-3)"}}>{p.name}</span>
+                    <span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>{new Date(b.date_recon+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>
+                    {b.vendor&&<span className="mono" style={{fontSize:10,color:"var(--t-5)"}}>{b.vendor}</span>}
+                  </div>
+                  <button onClick={()=>deleteBatch(b)} className="touch" style={{fontSize:10,color:"var(--c-danger)",background:"none",border:"none",cursor:"pointer",padding:4,opacity:0.7}}><Icon n="trash" s={11}/></button>
+                </div>);})}</div>)}
               </div>)}
             </>);
           })()}

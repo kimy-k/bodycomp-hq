@@ -608,34 +608,12 @@ function DashboardInner(){
         whoopBaseline.avgRecovery=avg(whoop7.map(w=>w.recovery));whoopBaseline.avgRhr=avg(whoop7.map(w=>w.rhr));whoopBaseline.avgHrv=avg(whoop7.map(w=>w.hrv));
       }
       const activePeps=userPeps.filter(p=>p.status==="active").map(p=>({id:p.id,name:p.label||p.id,dose:p.dose,schedule:p.schedule,timing:p.timing}));
-      const targetStr=`Protein: ${TARGETS.protein}g, Calories: ${TARGETS.cal}, Goal: ${goalPct}% body fat`;
       const tdee=data.length>0?Math.round((370+21.6*(data[data.length-1].leanMass||33.7))*({sedentary:1.2,light:1.375,moderate:1.55,active:1.725}[userConfig?.activity]||1.375)):2042;
 
-      const prompt=`You are a body recomposition coach analyzing data for a female, 152cm, targeting ${goalPct}% body fat. Current: ${recentScans[recentScans.length-1]?.fatPct||36}% BF, ${recentScans[recentScans.length-1]?.weight||53}kg. TDEE ~${tdee} kcal. Targets: ${targetStr}.
-
-DATA:
-Macros (last 7d): ${JSON.stringify(macros7)}
-InBody scans (last 3): ${JSON.stringify(recentScans)}
-Whoop (last 10d): ${JSON.stringify(whoop7)}
-Active peptides: ${JSON.stringify(activePeps)}
-Peptide → next-day Whoop correlations: ${JSON.stringify(pepCorr)}
-Whoop baseline averages: ${JSON.stringify(whoopBaseline)}
-
-RULES:
-1. Return ONLY valid JSON array, no other text.
-2. Each item: {"severity":"critical"|"warning"|"positive","title":"short title","body":"2-3 sentences connecting multiple data streams. Be specific with numbers. Give ONE clear action.","tags":["macro","body","peptide","whoop"]}
-3. Maximum 4 insights, minimum 2. Rank by impact on the 25% body fat goal.
-4. CONNECT data streams — don't just restate one metric. Link deficit+protein+muscle loss, or peptide+recovery+RHR.
-5. For peptide correlations: compare each peptide's next-day Whoop metrics vs the baseline. Flag if recovery drops >8pts or RHR rises >2bpm. Mention sample size.
-6. Never say "watch for fatigue" or other vague advice. Be direct: "reduce deficit to X" or "add Y grams protein."
-7. If deficit exceeds 35%, flag it as critical with specific calorie recommendation.`;
-
-      const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})});
+      const resp=await fetch("/api/ai/analysis",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({macros:macros7,scans:recentScans,whoop:whoop7,peptides:activePeps,pepCorr,whoopBaseline,targets:{protein:TARGETS.protein,cal:TARGETS.cal},tdee,profile:{gender:userConfig?.gender,height:userConfig?.height,goalBf:goalPct}})});
       const result=await resp.json();
-      const text=(result.content||[]).map(c=>c.text||"").join("");
-      const clean=text.replace(/```json|```/g,"").trim();
-      const parsed=JSON.parse(clean);
-      setAiInsights(parsed);
+      if(!resp.ok||!result.ok)throw new Error(result.message||result.error||"API error");
+      setAiInsights(result.insights);
     }catch(err){console.error("AI analysis error:",err);setAiInsights([{severity:"warning",title:"Analysis unavailable",body:"Could not complete analysis. Tap refresh to retry.",tags:["system"]}]);}
     setAiLoading(false);
   },[insightsLoaded,insightsData,data,userPeps,TARGETS,whey,goalPct,userConfig]);
@@ -1743,11 +1721,10 @@ RULES:
                 try{
                   const base64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej(new Error("Read failed"));r.readAsDataURL(file);});
                   const mediaType=file.type||"image/jpeg";
-                  const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:mediaType,data:base64}},{type:"text",text:`Extract the weekly meal plan from this menu image. Return ONLY valid JSON with no other text: {"days":[{"day":"Monday","meals":[{"slot":"Breakfast","name":"Meal name here"},{"slot":"Lunch","name":"Meal name"},{"slot":"Dinner","name":"Meal name"},{"slot":"Snack","name":"Snack name"}]}]} Include all days visible. Use exact meal names as printed. If a slot is not visible, omit it.`}]}]})});
+                  const resp=await fetch("/api/ai/menu-ocr",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:base64,media_type:mediaType})});
                   const data=await resp.json();
-                  const text=data.content?.map(c=>c.text||"").join("")||"";
-                  const clean=text.replace(/```json|```/g,"").trim();
-                  const parsed=JSON.parse(clean);
+                  if(!resp.ok||!data.ok)throw new Error(data.message||"Failed to parse menu");
+                  const parsed=data;
                   /* Match meals against library */
                   parsed.days.forEach(d=>d.meals.forEach(m=>{
                     const match=mealDict.find(h=>h.name.toLowerCase()===m.name.toLowerCase()||h.name.toLowerCase().includes(m.name.toLowerCase())||m.name.toLowerCase().includes(h.name.toLowerCase()));

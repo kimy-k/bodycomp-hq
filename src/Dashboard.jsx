@@ -916,7 +916,7 @@ function DashboardInner(){
             <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Body composition · trend</span>
             <span className="mono" style={{fontSize:10,color:"var(--c-fat)",letterSpacing:".10em",fontWeight:600}}>{goalPct}% target</span>
           </div>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={220}>
             <LineChart data={data} margin={{top:6,right:8,left:2,bottom:0}}>
               <CartesianGrid strokeDasharray="2 5" stroke="rgba(255,255,255,0.06)" vertical={false}/>
               <XAxis dataKey="label" tick={{fill:"var(--t-4)",fontSize:9,fontFamily:"Geist Mono"}} axisLine={false} tickLine={false} interval={data.length>10?2:data.length>6?1:0}/>
@@ -926,7 +926,8 @@ function DashboardInner(){
               <Legend iconType="circle" iconSize={6} wrapperStyle={{fontSize:10,color:"var(--t-3)",fontFamily:"Geist Mono",paddingTop:6}}/>
               <ReferenceLine yAxisId="pct" y={goalPct} stroke="var(--c-fat)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.4}/>
               <Line yAxisId="pct" type="monotone" dataKey="fatPct" stroke="var(--c-fat)" strokeWidth={2.2} name="Fat %" dot={{r:3,fill:"var(--c-fat)",stroke:"#000",strokeWidth:1}} activeDot={{r:5,fill:"var(--c-fat)",stroke:"#000",strokeWidth:2}}/>
-              <Line yAxisId="kg" type="monotone" dataKey="weight" stroke="var(--accent)" strokeWidth={2} name="Weight (kg)" dot={{r:2.5,fill:"var(--accent)",stroke:"#000",strokeWidth:1}} activeDot={{r:4.5,fill:"var(--accent)",stroke:"#000",strokeWidth:2}}/>
+              <Line yAxisId="kg" type="monotone" dataKey="weight" stroke="var(--accent)" strokeWidth={2} name="Weight" dot={{r:2.5,fill:"var(--accent)",stroke:"#000",strokeWidth:1}} activeDot={{r:4.5,fill:"var(--accent)",stroke:"#000",strokeWidth:2}}/>
+              <Line yAxisId="kg" type="monotone" dataKey="muscle" stroke="var(--c-danger)" strokeWidth={2} name="Muscle" dot={{r:2.5,fill:"var(--c-danger)",stroke:"#000",strokeWidth:1}} activeDot={{r:4.5,fill:"var(--c-danger)",stroke:"#000",strokeWidth:2}}/>
             </LineChart>
           </ResponsiveContainer>
           {/* Muscle trend strip — separate from the weight axis so it's not crushed */}

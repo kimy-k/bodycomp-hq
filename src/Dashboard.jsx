@@ -574,6 +574,74 @@ function DashboardInner(){
 
   const insights=useMemo(()=>{if(!insightsLoaded)return[];return computeInsights({pepHist:insightsData.pepHist,macroHist:insightsData.macroHist,whoopHist:insightsData.whoopHist,wellnessHist:insightsData.wellnessHist,measurements:insightsData.meas,scans:data,userPeps,TARGETS,whey,goalBf:goalPct,userConfig});},[insightsLoaded,insightsData,data,userPeps,TARGETS,whey,goalPct,userConfig]);
 
+  /* ═══ AI-powered weekly analysis (replaces pattern cards) ═══ */
+  const [aiInsights,setAiInsights]=useState(null);const [aiLoading,setAiLoading]=useState(false);
+  const runAIAnalysis=useCallback(async()=>{
+    if(!insightsLoaded)return;setAiLoading(true);
+    try{
+      /* Build data payload for Claude */
+      const macros7=(insightsData.macroHist||[]).filter(d=>{const age=(Date.now()-new Date(d.date+"T12:00:00"))/864e5;return age<=7;}).map(d=>{let p=0,f=0,c=0;(d.meals||[]).forEach(m=>{p+=+m.protein||0;f+=+m.fat||0;c+=+m.carbs||0;});if(d.whey!==false&&whey?.enabled){p+=whey.protein;f+=whey.fat;c+=whey.carbs;}return{date:d.date,protein:Math.round(p),fat:Math.round(f),carbs:Math.round(c),cal:calcCal(p,f,c)};});
+      const recentScans=data.slice(-3).map(s=>({date:s.date,weight:s.weight,fatPct:s.fatPct,muscle:s.muscle,leanMass:s.leanMass,fatMass:s.fatMass}));
+      const whoop7=(insightsData.whoopHist||[]).filter(d=>{const age=(Date.now()-new Date(d.date+"T12:00:00"))/864e5;return age<=10;}).map(d=>({date:d.date,recovery:d.recovery,rhr:d.rhr,hrv:d.hrv_ms,sleep:d.sleep_hours}));
+      /* Build peptide × whoop correlation data */
+      const pepWhoop={};
+      (insightsData.pepHist||[]).forEach(day=>{
+        Object.keys(day.checks||{}).forEach(pepId=>{
+          if(!pepWhoop[pepId])pepWhoop[pepId]={doseDays:[],nextDayWhoop:[]};
+          pepWhoop[pepId].doseDays.push(day.date);
+          const nextDate=new Date(day.date+"T12:00:00");nextDate.setDate(nextDate.getDate()+1);
+          const nk=nextDate.toISOString().slice(0,10);
+          const wNext=(insightsData.whoopHist||[]).find(w=>w.date===nk);
+          if(wNext)pepWhoop[pepId].nextDayWhoop.push({date:nk,recovery:wNext.recovery,rhr:wNext.rhr,hrv:wNext.hrv_ms});
+        });
+      });
+      /* Compute averages per peptide */
+      const pepCorr={};
+      Object.entries(pepWhoop).forEach(([id,d])=>{
+        if(d.nextDayWhoop.length<3)return;
+        const avg=arr=>Math.round(arr.reduce((a,b)=>a+b,0)/arr.length*10)/10;
+        pepCorr[id]={n:d.nextDayWhoop.length,avgRecovery:avg(d.nextDayWhoop.map(w=>w.recovery)),avgRhr:avg(d.nextDayWhoop.map(w=>w.rhr)),avgHrv:avg(d.nextDayWhoop.filter(w=>w.hrv).map(w=>w.hrv))};
+      });
+      const whoopBaseline={};
+      if(whoop7.length>0){
+        const avg=arr=>Math.round(arr.filter(v=>v!=null).reduce((a,b)=>a+b,0)/arr.filter(v=>v!=null).length*10)/10;
+        whoopBaseline.avgRecovery=avg(whoop7.map(w=>w.recovery));whoopBaseline.avgRhr=avg(whoop7.map(w=>w.rhr));whoopBaseline.avgHrv=avg(whoop7.map(w=>w.hrv));
+      }
+      const activePeps=userPeps.filter(p=>p.status==="active").map(p=>({id:p.id,name:p.label||p.id,dose:p.dose,schedule:p.schedule,timing:p.timing}));
+      const targetStr=`Protein: ${TARGETS.protein}g, Calories: ${TARGETS.cal}, Goal: ${goalPct}% body fat`;
+      const tdee=data.length>0?Math.round((370+21.6*(data[data.length-1].leanMass||33.7))*({sedentary:1.2,light:1.375,moderate:1.55,active:1.725}[userConfig?.activity]||1.375)):2042;
+
+      const prompt=`You are a body recomposition coach analyzing data for a female, 152cm, targeting ${goalPct}% body fat. Current: ${recentScans[recentScans.length-1]?.fatPct||36}% BF, ${recentScans[recentScans.length-1]?.weight||53}kg. TDEE ~${tdee} kcal. Targets: ${targetStr}.
+
+DATA:
+Macros (last 7d): ${JSON.stringify(macros7)}
+InBody scans (last 3): ${JSON.stringify(recentScans)}
+Whoop (last 10d): ${JSON.stringify(whoop7)}
+Active peptides: ${JSON.stringify(activePeps)}
+Peptide → next-day Whoop correlations: ${JSON.stringify(pepCorr)}
+Whoop baseline averages: ${JSON.stringify(whoopBaseline)}
+
+RULES:
+1. Return ONLY valid JSON array, no other text.
+2. Each item: {"severity":"critical"|"warning"|"positive","title":"short title","body":"2-3 sentences connecting multiple data streams. Be specific with numbers. Give ONE clear action.","tags":["macro","body","peptide","whoop"]}
+3. Maximum 4 insights, minimum 2. Rank by impact on the 25% body fat goal.
+4. CONNECT data streams — don't just restate one metric. Link deficit+protein+muscle loss, or peptide+recovery+RHR.
+5. For peptide correlations: compare each peptide's next-day Whoop metrics vs the baseline. Flag if recovery drops >8pts or RHR rises >2bpm. Mention sample size.
+6. Never say "watch for fatigue" or other vague advice. Be direct: "reduce deficit to X" or "add Y grams protein."
+7. If deficit exceeds 35%, flag it as critical with specific calorie recommendation.`;
+
+      const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})});
+      const result=await resp.json();
+      const text=(result.content||[]).map(c=>c.text||"").join("");
+      const clean=text.replace(/```json|```/g,"").trim();
+      const parsed=JSON.parse(clean);
+      setAiInsights(parsed);
+    }catch(err){console.error("AI analysis error:",err);setAiInsights([{severity:"warning",title:"Analysis unavailable",body:"Could not complete analysis. Tap refresh to retry.",tags:["system"]}]);}
+    setAiLoading(false);
+  },[insightsLoaded,insightsData,data,userPeps,TARGETS,whey,goalPct,userConfig]);
+  /* Auto-run on first load if no cached result */
+  useEffect(()=>{if(insightsLoaded&&!aiInsights&&!aiLoading&&tab==="body")runAIAnalysis();},[insightsLoaded,tab]);
+
   const streak=useMemo(()=>{let s=0;const sorted=[...pepHist].sort((a,b)=>b.date.localeCompare(a.date));for(const d of sorted){const chks=d.checks||{};const ids=typeof Object.values(chks)[0]==="string"?Object.keys(chks):Object.keys(chks);if(ids.length>0)s++;else break;}return s;},[pepHist]);
 
   const prev=data.length>=2?data[data.length-2]:null;
@@ -659,28 +727,7 @@ function DashboardInner(){
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
-  /* ═══ AI WEEKLY SUMMARY ═══
-     Gemini-powered narrative report. Cached in ai_summaries; user can regenerate. */
-  const [aiSummary,setAiSummary]=useState(null);   /* {summary_md, generated_at, model} */
-  const [aiLoading,setAiLoading]=useState(false);  /* generating new */
-  const [aiCacheLoaded,setAiCacheLoaded]=useState(false);
-  const [aiError,setAiError]=useState(null);
-  useEffect(()=>{(async()=>{
-    const cached=await db.getLatestAISummary();
-    if(cached)setAiSummary({summary_md:cached.summary_md,generated_at:cached.generated_at,model:cached.model});
-    setAiCacheLoaded(true);
-  })();},[db]);
-  const generateAISummary=useCallback(async()=>{
-    if(aiLoading)return;
-    setAiLoading(true);setAiError(null);
-    const result=await db.generateAISummary();
-    setAiLoading(false);
-    if(result.ok){
-      setAiSummary({summary_md:result.summary_md,generated_at:result.generated_at,model:"gemini-2.5-flash"});
-    }else{
-      setAiError(result.error||"Generation failed");
-    }
-  },[db,aiLoading]);
+  /* Old Gemini AI summary removed — replaced by Claude API analysis above */
 
   /* ═══ AI DAILY BRIEFING — Phase 2 smart layer ═══
      60-80 word morning brief: Overnight | Today | Watch. Cached same-day by the
@@ -1024,95 +1071,33 @@ function DashboardInner(){
           })()}
         </div>
 
-        {/* ─── AI Weekly Summary — Concept C clinical card ─── */}
-        {(()=>{
-          /* Tiny markdown→JSX renderer reused from prior shipping turn */
-          const renderMd = md => {
-            if (!md) return null;
-            const lines = md.replace(/\r\n/g, "\n").split("\n");
-            const out = [];
-            let listBuf = [];
-            const flushList = () => {
-              if (listBuf.length) {
-                out.push(<ul key={`l${out.length}`} style={{margin:"4px 0 8px",paddingLeft:18,fontSize:12.5,color:"var(--t-2)",lineHeight:1.6}}>
-                  {listBuf.map((item,j) => <li key={j} style={{marginBottom:3}}>{renderInline(item)}</li>)}
-                </ul>);
-                listBuf = [];
-              }
-            };
-            const renderInline = txt => {
-              const parts = [];
-              let i = 0;
-              const re = /\*\*([^*]+)\*\*/g;
-              let m;
-              while ((m = re.exec(txt))) {
-                if (m.index > i) parts.push(txt.slice(i, m.index));
-                parts.push(<strong key={parts.length} style={{color:"var(--t-1)",fontWeight:600}}>{m[1]}</strong>);
-                i = m.index + m[0].length;
-              }
-              if (i < txt.length) parts.push(txt.slice(i));
-              return parts.length === 0 ? txt : parts;
-            };
-            lines.forEach((line, idx) => {
-              const trimmed = line.trim();
-              if (!trimmed) { flushList(); return; }
-              const h3 = trimmed.match(/^###\s+(.+)$/);
-              const h2 = trimmed.match(/^##\s+(.+)$/);
-              const li = trimmed.match(/^[-*]\s+(.+)$/);
-              if (h2 || h3) {
-                flushList();
-                out.push(<h3 key={`h${idx}`} className="mono" style={{fontSize:9.5,fontWeight:700,color:"var(--accent)",margin:"14px 0 6px",letterSpacing:".22em",textTransform:"uppercase"}}>{renderInline(h2 ? h2[1] : h3[1])}</h3>);
-              } else if (li) {
-                listBuf.push(li[1]);
-              } else {
-                flushList();
-                out.push(<p key={`p${idx}`} style={{fontSize:12.5,color:"var(--t-2)",lineHeight:1.6,margin:"0 0 8px"}}>{renderInline(trimmed)}</p>);
-              }
-            });
-            flushList();
-            return out;
-          };
-          return(<div className="rise" style={{background:"linear-gradient(180deg, #0a0a0a, #050505)",border:"1px solid var(--line-soft)",borderRadius:"var(--r-md)",padding:"16px 16px 18px",marginBottom:12,position:"relative",overflow:"hidden"}}>
-            <div style={{position:"absolute",left:0,top:0,bottom:0,width:2,background:"var(--accent)",boxShadow:"0 0 8px var(--accent)"}}/>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:14,paddingLeft:8}}>
-              <div className="mono" style={{fontSize:9.5,letterSpacing:".22em",textTransform:"uppercase",color:"var(--accent)",fontWeight:700,display:"flex",alignItems:"center",gap:7}}>
-                <span style={{width:5,height:5,borderRadius:"50%",background:"var(--accent)",boxShadow:"0 0 6px var(--accent)"}}/>
-                AI · weekly
-              </div>
-              <button onClick={generateAISummary} disabled={aiLoading} className="touch mono" style={{padding:"6px 12px",borderRadius:"var(--r-sm)",background:"transparent",color:"var(--accent)",border:"1px solid var(--accent-line)",fontSize:10,fontWeight:700,cursor:aiLoading?"wait":"pointer",letterSpacing:".14em",textTransform:"uppercase",opacity:aiLoading?0.6:1}}>
-                {aiLoading?"…":aiSummary?"↻ Refresh":"Generate"}
-              </button>
-            </div>
-            <div style={{paddingLeft:8}}>
-              {aiError&&<div className="mono" style={{padding:"10px 12px",background:"rgba(255,61,61,0.10)",border:"1px solid rgba(255,61,61,0.30)",borderRadius:"var(--r-sm)",fontSize:11,color:"var(--c-danger)",marginBottom:6}}>
-                {aiError.includes("no_api_key")?"GEMINI_API_KEY not configured in Vercel.":aiError.slice(0,200)}
-              </div>}
-              {aiCacheLoaded&&!aiSummary&&!aiError&&!aiLoading&&<div style={{fontSize:12.5,color:"var(--t-3)",lineHeight:1.55}}>
-                Click <strong style={{color:"var(--accent)",fontWeight:600}}>Generate</strong> to get a narrative summary of your week — body comp, peptide compliance, recovery patterns, and 1-2 things to watch.
-              </div>}
-              {aiSummary&&renderMd(aiSummary.summary_md)}
-              {aiSummary?.generated_at&&<div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:10,letterSpacing:".06em"}}>{new Date(aiSummary.generated_at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})} · {aiSummary.model||"gemini"}</div>}
-            </div>
-          </div>);
-        })()}
 
-        {/* ─── Patterns & Insights (Phase 1 of smart layer) ─── */}
-        {insightsLoaded&&insights.length>0&&(()=>{
-          const visibleCount = patternsExpanded ? insights.length : 6;
+        {/* ─── AI-Powered Analysis ─── */}
+        {insightsLoaded&&(()=>{
+          const sevColor={critical:"var(--c-danger)",warning:"var(--c-warn)",positive:"var(--c-success)"};
+          const sevIcon={critical:"warn",warning:"eye",positive:"check"};
+          const sevLabel={critical:"🔴",warning:"🟡",positive:"🟢"};
           return(<div className="rise" style={{marginBottom:12}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"4px 4px 10px"}}>
-              <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>Patterns · {insights.length} detected</span>
+              <span className="mono" style={{fontSize:10,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700}}>AI Analysis</span>
+              <button onClick={runAIAnalysis} disabled={aiLoading} className="touch mono" style={{fontSize:9,padding:"4px 10px",borderRadius:999,border:"1px solid var(--accent-line)",background:aiLoading?"var(--elev-2)":"var(--accent-soft)",color:"var(--accent)",fontWeight:600,cursor:aiLoading?"wait":"pointer",letterSpacing:".08em"}}>{aiLoading?"Analyzing…":"Refresh"}</button>
             </div>
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {insights.slice(0,visibleCount).map((ins,i)=>(<div key={ins.id} className="rise" style={{animationDelay:`${i*0.04}s`,background:"#0a0a0a",border:"1px solid var(--line-soft)",borderLeft:`3px solid ${ins.color}`,borderRadius:"var(--r-sm)",padding:"11px 13px",display:"flex",alignItems:"flex-start",gap:11}}>
-                <div style={{marginTop:1,flexShrink:0}}><Icon n={ins.icon} s={14} c={ins.color} sw={1.8}/></div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div className="mono" style={{fontSize:9.5,color:ins.color,fontWeight:700,letterSpacing:".18em",textTransform:"uppercase",marginBottom:3}}>{ins.title}</div>
-                  <div style={{fontSize:12.5,color:"var(--t-2)",lineHeight:1.55}}>{ins.body}</div>
+            {aiLoading&&!aiInsights&&(<div style={{padding:"32px 0",textAlign:"center"}}>
+              <div style={{fontSize:12,color:"var(--accent)",marginBottom:6}}>Analyzing your data…</div>
+              <div className="mono" style={{fontSize:10,color:"var(--t-4)"}}>Connecting macros, scans, peptides, and Whoop data</div>
+            </div>)}
+            {aiInsights&&(<div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {aiInsights.map((ins,i)=>(<div key={i} className="rise" style={{animationDelay:`${i*0.06}s`,background:"#0a0a0a",border:"1px solid var(--line-soft)",borderLeft:`3px solid ${sevColor[ins.severity]||"var(--t-3)"}`,borderRadius:"var(--r-sm)",padding:"12px 14px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+                  <span style={{fontSize:11}}>{sevLabel[ins.severity]||"⚪"}</span>
+                  <span className="mono" style={{fontSize:10,color:sevColor[ins.severity]||"var(--t-3)",fontWeight:700,letterSpacing:".14em",textTransform:"uppercase"}}>{ins.title}</span>
                 </div>
+                <div style={{fontSize:12.5,color:"var(--t-2)",lineHeight:1.6,paddingLeft:2}}>{ins.body}</div>
+                {ins.tags&&<div style={{display:"flex",gap:4,marginTop:6,flexWrap:"wrap"}}>
+                  {ins.tags.map(t=>(<span key={t} className="mono" style={{fontSize:8,color:"var(--t-4)",background:"var(--elev-2)",padding:"2px 6px",borderRadius:999,letterSpacing:".06em"}}>{t}</span>))}
+                </div>}
               </div>))}
-            </div>
-            {insights.length>6&&<button onClick={()=>setPatternsExpanded(v=>!v)} className="touch mono" style={{display:"block",width:"100%",marginTop:8,padding:"8px 12px",background:"transparent",border:"1px solid var(--line-soft)",borderRadius:"var(--r-sm)",color:"var(--accent)",fontSize:10.5,fontWeight:600,letterSpacing:".10em",cursor:"pointer",textTransform:"uppercase"}}>{patternsExpanded?`Show less`:`Show ${insights.length-6} more patterns`}</button>}
+            </div>)}
           </div>);
         })()}
 

@@ -29,6 +29,8 @@ export const Icon = ({n, s = 20, c = "currentColor", sw = 1.5}) => {
     case "back": return <svg {...p}><path d="M19 12H5M12 19l-7-7 7-7"/></svg>;
     case "chevDown": return <svg {...p}><path d="M6 9l6 6 6-6"/></svg>;
     case "chevUp": return <svg {...p}><path d="M18 15l-6-6-6 6"/></svg>;
+    case "chevLeft": return <svg {...p}><path d="M15 18l-6-6 6-6"/></svg>;
+    case "chevRight": return <svg {...p}><path d="M9 6l6 6-6 6"/></svg>;
     case "pause": return <svg {...p}><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>;
     case "calendar": return <svg {...p}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>;
     case "heart": return <svg {...p}><path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/></svg>;

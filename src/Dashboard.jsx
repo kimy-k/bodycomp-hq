@@ -114,6 +114,7 @@ function DashboardInner(){
   },[newMeal.name,mealDict]);
   /* Library search */
   const [libSearch,setLibSearch]=useState("");
+  const [libCat,setLibCat]=useState("All");
   /* Menu upload state */
   const [menuPlan,setMenuPlan]=useState(null);const [menuLoading,setMenuLoading]=useState(false);const [menuError,setMenuError]=useState(null);
   /* AI food parser state — Wave A. Natural-language → {name,protein,fat,carbs}.
@@ -1696,30 +1697,51 @@ function DashboardInner(){
 
         {/* ═══ LIBRARY — all meals ever logged, searchable, tap to log ═══ */}
         {macroSub==="library"&&(<>
-          <div style={{marginBottom:12}}>
+          <div style={{marginBottom:10}}>
             <input value={libSearch} onChange={e=>setLibSearch(e.target.value)} placeholder="Search meals…" className="bcq-input" style={{fontSize:13,padding:"10px 14px"}}/>
           </div>
-          {mealDict.length===0?<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}>No meals logged yet. Start logging on the Today tab.</div>:(
-            <div>
-              <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",marginBottom:8,fontWeight:600}}>{mealDict.length} UNIQUE MEALS · sorted by frequency</div>
-              {mealDict.filter(m=>!libSearch||m.name.toLowerCase().includes(libSearch.toLowerCase())).map((m,i)=>(<div key={i} style={{display:"flex",alignItems:"center",padding:"10px 0",borderBottom:"1px solid var(--line-soft)",gap:10}}>
-                <div onClick={()=>{const meal={name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag,id:Date.now()};saveMacro([...meals,meal],wheyOn);setMacroSub("log");showToast(`${m.name} added`,"success");}} style={{flex:1,minWidth:0,cursor:"pointer"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
-                    <span style={{fontSize:13,color:"var(--t-1)",fontWeight:500}}>{m.name}</span>
-                    <span className="mono" style={{fontSize:9,color:"var(--t-4)"}}>{m.count}×</span>
-                  </div>
-                  <div className="mono" style={{display:"flex",gap:10,fontSize:10.5}}>
-                    <span style={{color:"var(--c-cal)"}}>{calcCal(m.protein,m.fat,m.carbs)}</span>
-                    <span style={{color:"var(--c-protein)",fontWeight:600}}>{m.protein}P</span>
-                    <span style={{color:"var(--c-fat)"}}>{m.fat}F</span>
-                    <span style={{color:"var(--c-carbs)"}}>{m.carbs}C</span>
-                  </div>
-                </div>
-                <button onClick={()=>{const meal={name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag,id:Date.now()};saveMacro([...meals,meal],wheyOn);showToast(`${m.name} added`,"success");}} className="touch" style={{padding:"6px 12px",borderRadius:999,border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:10,fontWeight:600,cursor:"pointer",flexShrink:0}}>+ Log</button>
-              </div>))}
-              {mealDict.filter(m=>!libSearch||m.name.toLowerCase().includes(libSearch.toLowerCase())).length===0&&<div style={{textAlign:"center",padding:"32px 0",color:"var(--t-4)",fontSize:13}}>No matches for "{libSearch}"</div>}
-            </div>
-          )}
+          {/* Category filter chips */}
+          {(()=>{
+            const cats=["All","Breakfast","Lunch","Dinner","Snack"];
+            const filtered=mealDict.filter(m=>{
+              if(libSearch&&!m.name.toLowerCase().includes(libSearch.toLowerCase()))return false;
+              if(libCat!=="All"&&m.tag!==libCat)return false;
+              return true;
+            });
+            const grouped={};
+            filtered.forEach(m=>{const t=m.tag||"Other";if(!grouped[t])grouped[t]=[];grouped[t].push(m);});
+            const tagOrder=["Breakfast","Lunch","Dinner","Snack","Other"];
+            const catCounts=Object.fromEntries(cats.filter(c=>c!=="All").map(c=>[c,mealDict.filter(m=>m.tag===c).length]));
+
+            return(<>
+              <div style={{display:"flex",gap:5,marginBottom:14,overflowX:"auto",paddingBottom:2}}>
+                {cats.map(c=>(<button key={c} onClick={()=>setLibCat(c)} className="touch" style={{padding:"6px 12px",borderRadius:999,border:libCat===c?"1px solid var(--accent-line)":"1px solid var(--line-soft)",background:libCat===c?"var(--accent-soft)":"var(--elev-1)",color:libCat===c?"var(--accent)":"var(--t-3)",fontSize:11,fontWeight:libCat===c?600:500,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+                  {c}{c!=="All"&&catCounts[c]?` (${catCounts[c]})`:c==="All"?` (${mealDict.length})`:""}
+                </button>))}
+              </div>
+              {filtered.length===0&&<div style={{textAlign:"center",padding:"32px 0",color:"var(--t-4)",fontSize:13}}>{libSearch?`No matches for "${libSearch}"${libCat!=="All"?` in ${libCat}`:""}`:mealDict.length===0?"No meals logged yet":"No meals in this category"}</div>}
+              {(libCat==="All"?tagOrder:["All"]).map(tag=>{
+                const items=libCat==="All"?grouped[tag]:filtered;
+                if(!items||items.length===0)return null;
+                return(<div key={tag} style={{marginBottom:libCat==="All"?16:0}}>
+                  {libCat==="All"&&<div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:6,paddingTop:4,borderTop:"1px solid var(--line-soft)"}}>{tag} · {items.length}</div>}
+                  {items.map((m,i)=>(<div key={i} style={{display:"flex",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--line-soft)",gap:8}}>
+                    <div onClick={()=>{saveMacro([...meals,{name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag,id:Date.now()}],wheyOn);setMacroSub("log");showToast(`${m.name} added`,"success");}} style={{flex:1,minWidth:0,cursor:"pointer"}}>
+                      <div style={{fontSize:12.5,color:"var(--t-1)",fontWeight:500,marginBottom:1}}>{m.name}</div>
+                      <div className="mono" style={{display:"flex",gap:8,fontSize:10}}>
+                        <span style={{color:"var(--c-cal)"}}>{calcCal(m.protein,m.fat,m.carbs)}</span>
+                        <span style={{color:"var(--c-protein)",fontWeight:600}}>{m.protein}P</span>
+                        <span style={{color:"var(--c-fat)"}}>{m.fat}F</span>
+                        <span style={{color:"var(--c-carbs)"}}>{m.carbs}C</span>
+                        <span style={{color:"var(--t-5)"}}>{m.count}×</span>
+                      </div>
+                    </div>
+                    <button onClick={()=>{saveMacro([...meals,{name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag,id:Date.now()}],wheyOn);showToast(`${m.name} added`,"success");}} className="touch" style={{padding:"5px 10px",borderRadius:999,border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:9.5,fontWeight:600,cursor:"pointer",flexShrink:0}}>+ Log</button>
+                  </div>))}
+                </div>);
+              })}
+            </>);
+          })()}
         </>)}
 
         {/* ═══ MENU — upload Smartfitchen image, parse into weekly meal plan ═══ */}

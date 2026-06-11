@@ -475,6 +475,21 @@ export const recommendedReconFor = pepId => {
 
 /* ═══ CHANGELOG — shown in "What's New" sheet on first load after update ═══ */
 export const CHANGELOG = [
+  {v:"2026.06.11a", date:"2026-06-11", title:"Macros Overhaul, AI Analysis & Cycle Planner", items:[
+    {icon:"muscle", text:"Meal autocomplete — type a meal name and it suggests from your 52-meal history with macros pre-filled"},
+    {icon:"star",   text:"Quick-add strip — your top favorites as one-tap chips above the meal list"},
+    {icon:"target", text:"Smart protein nudge — when behind pace, suggests protein shake, bar, or eggs"},
+    {icon:"eye",    text:"Meal Library tab — all meals categorized by Breakfast/Lunch/Dinner/Snack, searchable, tap to log"},
+    {icon:"camera", text:"Menu upload — photograph your Smartfitchen weekly menu, AI reads it and matches meals against your library"},
+    {icon:"calendar",text:"Meal plan grid — parsed menus display as a Mon–Fri calendar with KNOWN/NEW badges"},
+    {icon:"trending-up",text:"History rebuilt — weekly summary strip, deficit per day, calorie vs target bars, expandable meal detail, missing day indicators"},
+    {icon:"vial",   text:"Cycle planner — visual timeline showing every peptide's cycle as a Gantt chart with start/end/break/upcoming"},
+    {icon:"plus",   text:"Add supply — log sealed vials directly from the Inventory tab"},
+    {icon:"eye",    text:"AI Analysis — Gemini-powered insights that connect your macros, scans, peptides, and Whoop data into 2–4 actionable recommendations"},
+    {icon:"scale",  text:"Compact protein card — 60% smaller, same data, better page balance"},
+    {icon:"clock",  text:"Arrow date navigation on Macros — same ← → style as the Peps tab"},
+    {icon:"moon",   text:"Dark mode polish — all form inputs, date pickers, and dropdowns now properly themed"},
+  ]},
   {v:"2026.06.10b", date:"2026-06-10", title:"Supply, Smart TDEE & Cycle Intelligence", items:[
     {icon:"vial",  text:"Supply tab — track sealed vials, tap Open Vial to start a batch"},
     {icon:"trending-up", text:"Titration alerts — app tells you when it's time to bump your dose"},

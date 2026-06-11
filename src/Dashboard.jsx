@@ -97,7 +97,8 @@ function DashboardInner(){
   /* Meal dictionary — all unique meals ever logged, sorted by frequency. Powers autocomplete. */
   const [mealDict,setMealDict]=useState([]);
   useEffect(()=>{if(tab!=="macros")return;(async()=>{
-    const rows=await db.list("daily_macros",90);
+    /* Load from BOTH users so Bea gets Kim's meal history (same Smartfitchen menu) */
+    const rows=await db.listShared("daily_macros",90,"date");
     const freq={};
     (rows||[]).forEach(r=>(r.meals||[]).forEach(m=>{
       const k=m.name?.trim().toLowerCase();if(!k)return;
@@ -117,6 +118,17 @@ function DashboardInner(){
   const [libCat,setLibCat]=useState("All");
   /* Menu upload state */
   const [menuPlan,setMenuPlan]=useState(null);const [menuLoading,setMenuLoading]=useState(false);const [menuError,setMenuError]=useState(null);
+  /* Load shared menu plan on Menu tab mount */
+  useEffect(()=>{if(tab!=="macros"||macroSub!=="menu")return;(async()=>{
+    const own=await db.getConfig("weekly_menu");
+    if(own?.days){setMenuPlan(own);return;}
+    /* Check other household member's menu */
+    const others=["kim","bea"].filter(u=>u!==db.currentUser);
+    for(const u of others){
+      try{const r=await fetch(`${SB}/config?user_id=eq.${u}&key=eq.weekly_menu&select=value`,{headers:hdr});
+      const rows=await r.json();if(rows?.[0]?.value?.days){setMenuPlan({...rows[0].value,uploadedBy:u});return;}}catch(e){}
+    }
+  })();},[tab,macroSub,db]);
   /* AI food parser state — Wave A. Natural-language → {name,protein,fat,carbs}.
      Fills the Add Meal form so user can adjust before saving. */
   const [foodParse,setFoodParse]=useState({input:"",loading:false,error:null,confidence:null,notes:null});
@@ -1770,6 +1782,8 @@ function DashboardInner(){
                     if(match){m.protein=match.protein;m.fat=match.fat;m.carbs=match.carbs;m.matched=true;}
                   }));
                   setMenuPlan(parsed);
+                  /* Save to DB so both household members can see it */
+                  db.setConfig("weekly_menu",{...parsed,uploadedAt:new Date().toISOString(),uploadedBy:db.currentUser});
                 }catch(err){setMenuError(err.message||"Failed to parse menu");}
                 setMenuLoading(false);e.target.value="";
               }}/>
@@ -1780,7 +1794,10 @@ function DashboardInner(){
 
           {menuPlan&&(<div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>{menuPlan.days?.length||0} days parsed</div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>{menuPlan.days?.length||0} days parsed</div>
+                {menuPlan.uploadedBy&&menuPlan.uploadedBy!==db.currentUser&&<span className="mono" style={{fontSize:8,color:"var(--accent)",background:"var(--accent-soft)",padding:"2px 7px",borderRadius:999,fontWeight:600}}>Shared by {menuPlan.uploadedBy}</span>}
+              </div>
               <button onClick={()=>setMenuPlan(null)} className="touch" style={{fontSize:10,color:"var(--t-3)",background:"none",border:"none",cursor:"pointer",padding:4}}>Upload new</button>
             </div>
             {/* Week calendar grid */}
@@ -1895,7 +1912,19 @@ function DashboardInner(){
       {/* ═══ PEPTIDES ═══ */}
       {tab==="peptides"&&pepLoading&&<SkelTab/>}
       {tab==="peptides"&&!pepLoading&&(<>
-        <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{[["today","Today"],["timeline","Timeline"],["all","Stack"],["batches","Batches"],["supply","Supply"],["history","History"]].map(([k,l])=>(<TabBtn key={k} active={pepSub===k} onClick={()=>setPepSub(k)}>{l}</TabBtn>))}</div>
+        {/* Sub-tabs — hide advanced ones for users with minimal data */}
+        {(()=>{
+          const hasBatches=batches.length>0;
+          const hasSupply=supply.length>0;
+          const hasCycleData=userPeps.some(p=>p.cycle_end||p.total_weeks);
+          const allTabs=[["today","Today"]];
+          if(hasCycleData)allTabs.push(["timeline","Timeline"]);
+          allTabs.push(["all","Stack"]);
+          if(hasBatches)allTabs.push(["batches","Batches"]);
+          if(hasSupply||hasBatches)allTabs.push(["supply","Supply"]);
+          allTabs.push(["history","History"]);
+          return(<div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{allTabs.map(([k,l])=>(<TabBtn key={k} active={pepSub===k} onClick={()=>setPepSub(k)}>{l}</TabBtn>))}</div>);
+        })()}
 
         {pepSub==="today"&&(<>
           {/* Supply alerts — use live inventory from shared batches when available, else hardcoded supplyNote */}

@@ -1743,25 +1743,27 @@ function DashboardInner(){
 
           {menuPlan&&(<div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>Parsed {menuPlan.days?.length||0} days</div>
+              <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>{menuPlan.days?.length||0} days parsed</div>
               <button onClick={()=>setMenuPlan(null)} className="touch" style={{fontSize:10,color:"var(--t-3)",background:"none",border:"none",cursor:"pointer",padding:4}}>Upload new</button>
             </div>
-            {(menuPlan.days||[]).map((d,di)=>(<div key={di} style={{marginBottom:12}}>
-              <div className="mono" style={{fontSize:10,color:"var(--accent)",letterSpacing:".08em",fontWeight:600,marginBottom:6}}>{d.day}</div>
-              {d.meals.map((m,mi)=>(<div key={mi} style={{display:"flex",alignItems:"center",padding:"8px 12px",background:"var(--elev-1)",borderRadius:"var(--r-sm)",marginBottom:3,gap:8}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <span className="mono" style={{fontSize:9,color:"var(--t-4)",width:48,flexShrink:0}}>{m.slot}</span>
-                    <span style={{fontSize:12,color:"var(--t-1)",fontWeight:500}}>{m.name}</span>
-                  </div>
-                  {m.matched&&<div className="mono" style={{fontSize:10,color:"var(--t-3)",marginTop:2,marginLeft:54}}>
-                    <span style={{color:"var(--c-protein)"}}>{m.protein}P</span> · <span style={{color:"var(--c-fat)"}}>{m.fat}F</span> · <span style={{color:"var(--c-carbs)"}}>{m.carbs}C</span>
-                  </div>}
-                </div>
-                {m.matched?<span className="mono" style={{fontSize:9,color:"var(--c-success)",background:"color-mix(in oklch, var(--c-success) 10%, transparent)",padding:"2px 7px",borderRadius:999,fontWeight:600}}>KNOWN</span>
-                :<span className="mono" style={{fontSize:9,color:"var(--c-warn)",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",padding:"2px 7px",borderRadius:999,fontWeight:600}}>NEW</span>}
+            {/* Week calendar grid */}
+            <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(menuPlan.days?.length||5,5)}, 1fr)`,gap:4}}>
+              {(menuPlan.days||[]).map((d,di)=>(<div key={di} style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"8px 6px",minWidth:0}}>
+                <div className="mono" style={{fontSize:9,color:"var(--accent)",letterSpacing:".08em",fontWeight:700,textAlign:"center",marginBottom:6,textTransform:"uppercase"}}>{d.day?.slice(0,3)||`D${di+1}`}</div>
+                {d.meals.map((m,mi)=>(<div key={mi} style={{marginBottom:4,padding:"5px 6px",background:"var(--elev-2)",borderRadius:4,borderLeft:m.matched?"2px solid var(--c-success)":"2px solid var(--c-warn)"}}>
+                  <div className="mono" style={{fontSize:7.5,color:"var(--t-4)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:1}}>{m.slot}</div>
+                  <div style={{fontSize:10,color:"var(--t-1)",fontWeight:500,lineHeight:1.2,wordBreak:"break-word"}}>{m.name}</div>
+                  {m.matched&&<div className="mono" style={{fontSize:8,color:"var(--c-protein)",marginTop:2}}>{m.protein}P · {m.fat}F · {m.carbs}C</div>}
+                  {!m.matched&&<div className="mono" style={{fontSize:7.5,color:"var(--c-warn)",marginTop:1}}>macros TBD</div>}
+                </div>))}
               </div>))}
-            </div>))}
+            </div>
+            {/* Summary */}
+            {(()=>{
+              const known=(menuPlan.days||[]).flatMap(d=>d.meals).filter(m=>m.matched).length;
+              const total=(menuPlan.days||[]).flatMap(d=>d.meals).length;
+              return(<div className="mono" style={{fontSize:10,color:"var(--t-3)",marginTop:8,textAlign:"center"}}>{known}/{total} meals matched from your library · {total-known} new</div>);
+            })()}
           </div>)}
         </>)}
 
@@ -1856,7 +1858,7 @@ function DashboardInner(){
       {/* ═══ PEPTIDES ═══ */}
       {tab==="peptides"&&pepLoading&&<SkelTab/>}
       {tab==="peptides"&&!pepLoading&&(<>
-        <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{[["today","Today"],["all","Stack"],["batches","Batches"],["supply","Supply"],["history","History"]].map(([k,l])=>(<TabBtn key={k} active={pepSub===k} onClick={()=>setPepSub(k)}>{l}</TabBtn>))}</div>
+        <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{[["today","Today"],["timeline","Timeline"],["all","Stack"],["batches","Batches"],["supply","Supply"],["history","History"]].map(([k,l])=>(<TabBtn key={k} active={pepSub===k} onClick={()=>setPepSub(k)}>{l}</TabBtn>))}</div>
 
         {pepSub==="today"&&(<>
           {/* Supply alerts — use live inventory from shared batches when available, else hardcoded supplyNote */}
@@ -2109,6 +2111,79 @@ function DashboardInner(){
               </div>))}
             </div>)}
           </div>);})()}
+        </>)}
+
+        {/* ═══ TIMELINE — visual peptide cycle planner ═══ */}
+        {pepSub==="timeline"&&(<>
+          <H2 sub="Cycle start · end · breaks · what's next">Cycle planner</H2>
+          {(()=>{
+            const today=new Date();const todayMs=today.getTime();
+            /* Build timeline from 60 days ago to 90 days ahead */
+            const rangeStart=new Date(today);rangeStart.setDate(rangeStart.getDate()-30);
+            const rangeEnd=new Date(today);rangeEnd.setDate(rangeEnd.getDate()+90);
+            const totalDays=Math.round((rangeEnd-rangeStart)/864e5);
+            const pct=d=>{const ms=new Date(d+"T12:00:00").getTime();return Math.max(0,Math.min(100,((ms-rangeStart.getTime())/(rangeEnd.getTime()-rangeStart.getTime()))*100));};
+            const todayPct=pct(localDateKey(today));
+            /* Month markers */
+            const months=[];for(let m=new Date(rangeStart);m<=rangeEnd;m.setMonth(m.getMonth()+1)){const first=new Date(m.getFullYear(),m.getMonth(),1);if(first>=rangeStart&&first<=rangeEnd)months.push({label:first.toLocaleDateString("en-US",{month:"short"}),pct:pct(localDateKey(first))});}
+
+            const rows=userPeps.filter(p=>p.enabled!==false).map(p=>{
+              const pep=PEPTIDES.find(x=>x.id===p.id)||{color:"var(--t-3)"};
+              const start=p.startDate||p.start_date;
+              const end=p.cycle_end;
+              const isActive=p.status==="active";
+              const isBreak=p.status==="break";
+              const isCompleted=p.status==="completed";
+              const isStarting=p.status==="starting";
+              const startPct=start?pct(start):null;
+              const endPct=end?pct(end):isActive?100:null;
+              const barWidth=startPct!=null&&endPct!=null?Math.max(1,endPct-startPct):null;
+              const daysLeft=end?Math.round((new Date(end+"T12:00:00")-today)/864e5):null;
+              return{p,pep,start,end,isActive,isBreak,isCompleted,isStarting,startPct,endPct,barWidth,daysLeft};
+            }).sort((a,b)=>{const o={active:0,starting:1,break:2,completed:3};return(o[a.p.status]||4)-(o[b.p.status]||4);});
+
+            return(<div>
+              {/* Month scale */}
+              <div style={{position:"relative",height:16,marginBottom:4,marginLeft:80}}>
+                {months.map((m,i)=>(<span key={i} className="mono" style={{position:"absolute",left:`${m.pct}%`,fontSize:8,color:"var(--t-4)",transform:"translateX(-50%)"}}>{m.label}</span>))}
+              </div>
+              {/* Today marker label */}
+              <div style={{position:"relative",height:10,marginLeft:80}}>
+                <div style={{position:"absolute",left:`${todayPct}%`,transform:"translateX(-50%)",fontSize:7,color:"var(--accent)",fontWeight:700}}>TODAY</div>
+              </div>
+              {/* Rows */}
+              {rows.map((r,i)=>(<div key={r.p.id} className="rise" style={{animationDelay:`${i*0.04}s`,display:"flex",alignItems:"center",marginBottom:3,height:36}}>
+                {/* Label */}
+                <div style={{width:80,flexShrink:0,paddingRight:8,textAlign:"right"}}>
+                  <div style={{fontSize:11,color:r.pep.color,fontWeight:600,lineHeight:1.1}}>{r.pep.name||r.p.id}</div>
+                  <div className="mono" style={{fontSize:8,color:r.isActive?"var(--c-success)":r.isBreak?"var(--c-warn)":r.isStarting?"var(--accent)":"var(--t-4)"}}>{r.p.status}</div>
+                </div>
+                {/* Bar area */}
+                <div style={{flex:1,position:"relative",height:20,background:"var(--elev-1)",borderRadius:3,overflow:"hidden"}}>
+                  {/* Today line */}
+                  <div style={{position:"absolute",left:`${todayPct}%`,top:0,bottom:0,width:1,background:"var(--accent)",opacity:0.5,zIndex:2}}/>
+                  {/* Cycle bar */}
+                  {r.barWidth!=null&&(<div style={{position:"absolute",left:`${r.startPct}%`,width:`${r.barWidth}%`,top:3,bottom:3,borderRadius:3,background:r.isBreak?`repeating-linear-gradient(45deg,${r.pep.color}22,${r.pep.color}22 4px,transparent 4px,transparent 8px)`:r.isCompleted?`${r.pep.color}33`:r.isStarting?`${r.pep.color}55`:`${r.pep.color}88`,border:r.isBreak?`1px dashed ${r.pep.color}55`:"none"}}/>)}
+                  {/* End marker */}
+                  {r.end&&r.endPct!=null&&r.endPct<98&&(<div style={{position:"absolute",left:`${r.endPct}%`,top:2,bottom:2,width:2,background:r.pep.color,borderRadius:1}}/>)}
+                </div>
+                {/* Days remaining */}
+                <div style={{width:52,flexShrink:0,textAlign:"right",paddingLeft:6}}>
+                  {r.daysLeft!=null?(<span className="mono" style={{fontSize:10,color:r.daysLeft<=7?"var(--c-warn)":r.daysLeft<=0?"var(--c-danger)":"var(--t-3)"}}>{r.daysLeft<=0?"ended":`${r.daysLeft}d left`}</span>)
+                  :r.isActive?<span className="mono" style={{fontSize:9,color:"var(--t-4)"}}>ongoing</span>
+                  :r.isStarting?<span className="mono" style={{fontSize:9,color:"var(--accent)"}}>soon</span>
+                  :null}
+                </div>
+              </div>))}
+              {/* Legend */}
+              <div style={{display:"flex",gap:12,marginTop:10,paddingLeft:80}}>
+                {[{label:"Active",bg:"var(--accent)88"},{label:"Break",bg:"repeating-linear-gradient(45deg,var(--t-3)22,var(--t-3)22 4px,transparent 4px,transparent 8px)"},{label:"Upcoming",bg:"var(--accent)55"}].map(l=>(<div key={l.label} style={{display:"flex",alignItems:"center",gap:4}}>
+                  <div style={{width:16,height:8,borderRadius:2,background:l.bg,border:l.label==="Break"?"1px dashed var(--t-3)55":"none"}}/>
+                  <span className="mono" style={{fontSize:8,color:"var(--t-4)"}}>{l.label}</span>
+                </div>))}
+              </div>
+            </div>);
+          })()}
         </>)}
 
         {pepSub==="all"&&(<>

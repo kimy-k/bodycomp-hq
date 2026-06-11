@@ -74,9 +74,14 @@ input[type=number]{-moz-appearance:textfield}
 ::selection{background:var(--accent-soft);color:var(--t-1)}
 .bcq-app{min-height:100vh;background:radial-gradient(120% 60% at 50% -10%,var(--bg-rad-1) 0%,transparent 55%),radial-gradient(80% 40% at 80% 0%,var(--bg-rad-2) 0%,transparent 60%),var(--bg);padding:18px 16px calc(96px + env(safe-area-inset-bottom,0px));max-width:520px;margin:0 auto;font-family:"Inter",sans-serif}
 .bcq-nav{position:fixed;bottom:0;left:0;right:0;z-index:99;background:var(--nav-bg);backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);border-top:1px solid var(--line);padding:8px 0 calc(8px + env(safe-area-inset-bottom,0px));max-width:520px;margin:0 auto}
-.bcq-input{width:100%;padding:12px 14px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--elev-2);color:var(--t-1);font-size:15px;font-family:"Inter",sans-serif;outline:none;transition:border-color .2s var(--ease-out),background .2s var(--ease-out)}
+.bcq-input{width:100%;padding:12px 14px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--elev-2);color:var(--t-1);font-size:15px;font-family:"Inter",sans-serif;outline:none;transition:border-color .2s var(--ease-out),background .2s var(--ease-out);color-scheme:dark}
 .bcq-input:focus{border-color:var(--accent-line);background:var(--elev-3)}
 .bcq-input::placeholder{color:var(--t-4)}
+input[type="date"],input[type="time"],select{color-scheme:dark;background:var(--elev-2);color:var(--t-1);border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;font-family:"Inter",sans-serif;font-size:14px;outline:none}
+input[type="date"]:focus,input[type="time"]:focus,select:focus{border-color:var(--accent-line);background:var(--elev-3)}
+input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1) brightness(0.8);cursor:pointer}
+select{-webkit-appearance:none;-moz-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2366686a' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+::selection{background:var(--accent);color:#000}
 .touch{min-height:44px;min-width:44px;display:flex;align-items:center;justify-content:center}
 button{font-family:inherit;color:inherit}
 .ring-pulse{animation:pulseRing 2.5s var(--ease-out) infinite}

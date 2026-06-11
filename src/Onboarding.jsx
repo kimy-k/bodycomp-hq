@@ -16,7 +16,7 @@ const todayLocal = () => {
 export function Onboarding({db,userId,onComplete}){
   const isBea=userId&&userId!=="kim";
   const [step,setStep]=useState(0);
-  const [d,setD]=useState({name:isBea?(userId==="bea"?"Bea":""):"",height:"",weight:"",age:"",gender:"female",activity:"light",targetBf:"30",targetCal:"",targetProtein:"",targetFat:"",targetCarbs:"",wheyProtein:"",wheyScoops:"",peptides:[],scanWeight:"",scanMuscle:"",scanFat:"",scanDate:todayLocal()});
+  const [d,setD]=useState({name:isBea?(userId==="bea"?"Bea":""):"",height:"",weight:"",age:"",gender:"female",activity:"light",targetBf:isBea?"18":"30",targetCal:"",targetProtein:"",targetFat:"",targetCarbs:"",wheyProtein:"",wheyScoops:"",peptides:[],scanWeight:"",scanMuscle:"",scanFat:"",scanDate:todayLocal()});
   const up=(k,v)=>setD({...d,[k]:v});
   const togglePep=(id)=>{const p=[...d.peptides];const i=p.indexOf(id);if(i>=0)p.splice(i,1);else p.push(id);setD({...d,peptides:p});};
   const finish=async()=>{

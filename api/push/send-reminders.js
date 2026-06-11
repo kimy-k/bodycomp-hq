@@ -96,7 +96,7 @@ export default async function handler(req, res) {
     if (auth !== `Bearer ${CRON_SECRET}`) return res.status(401).json({error: "unauthorized"});
   }
   if (!SB_SERVICE_KEY || !VAPID_PUBLIC || !VAPID_PRIVATE) {
-    return res.status(500).json({error: "server not configured"});
+    return res.status(200).json({ok: true, skipped: true, reason: "Push env vars not configured"});
   }
 
   const today = userTodayKey();

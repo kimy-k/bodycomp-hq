@@ -13,9 +13,10 @@ const todayLocal = () => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 };
 
-export function Onboarding({db,onComplete}){
+export function Onboarding({db,userId,onComplete}){
+  const isBea=userId&&userId!=="kim";
   const [step,setStep]=useState(0);
-  const [d,setD]=useState({name:"",height:"",weight:"",age:"",gender:"female",activity:"light",targetBf:"30",targetCal:"",targetProtein:"",targetFat:"",targetCarbs:"",wheyProtein:"",wheyScoops:"",peptides:[],scanWeight:"",scanMuscle:"",scanFat:"",scanDate:todayLocal()});
+  const [d,setD]=useState({name:isBea?(userId==="bea"?"Bea":""):"",height:"",weight:"",age:"",gender:"female",activity:"light",targetBf:"30",targetCal:"",targetProtein:"",targetFat:"",targetCarbs:"",wheyProtein:"",wheyScoops:"",peptides:[],scanWeight:"",scanMuscle:"",scanFat:"",scanDate:todayLocal()});
   const up=(k,v)=>setD({...d,[k]:v});
   const togglePep=(id)=>{const p=[...d.peptides];const i=p.indexOf(id);if(i>=0)p.splice(i,1);else p.push(id);setD({...d,peptides:p});};
   const finish=async()=>{
@@ -33,10 +34,29 @@ export function Onboarding({db,onComplete}){
       <div style={{width:60,height:60,margin:"0 auto 26px",borderRadius:18,background:"var(--accent-soft)",border:"1px solid var(--accent-line)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--accent)"}}>
         <Icon n="body" s={28} c="var(--accent)" sw={1.6}/>
       </div>
-      <div style={{color:"var(--t-3)",fontSize:11,letterSpacing:".18em",textTransform:"uppercase",marginBottom:14}}>Welcome to</div>
-      <h1 className="serif" style={{fontSize:54,color:"var(--t-1)",margin:"0 0 18px",fontStyle:"italic",letterSpacing:"-0.025em",lineHeight:1.02}}>Body Comp HQ</h1>
-      <p style={{fontSize:15,color:"var(--t-2)",margin:"0 auto 46px",lineHeight:1.55,maxWidth:340}}>Body composition. Nutrition. Peptides. Recovery. All in one place.</p>
-      <button onClick={()=>setStep(1)} style={btn(true)}>Begin Setup</button>
+      {isBea?(<>
+        <div style={{color:"var(--accent)",fontSize:11,letterSpacing:".18em",textTransform:"uppercase",marginBottom:14}}>Your personal dashboard</div>
+        <h1 className="serif" style={{fontSize:44,color:"var(--t-1)",margin:"0 0 14px",fontStyle:"italic",letterSpacing:"-0.025em",lineHeight:1.05}}>Hey {userId==="bea"?"Bea":userId} 👋</h1>
+        <p style={{fontSize:15,color:"var(--t-2)",margin:"0 auto 16px",lineHeight:1.55,maxWidth:340}}>Kim set up Body Comp HQ for both of you. This is <strong style={{color:"var(--t-1)"}}>your personal space</strong> — your own targets, your own tracking, your own progress.</p>
+        <div style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"16px 18px",margin:"0 auto 20px",maxWidth:320,textAlign:"left"}}>
+          <div className="mono" style={{fontSize:9,color:"var(--accent)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:700,marginBottom:10}}>What you'll track</div>
+          {[
+            {icon:"macros",text:"Daily meals & protein — quick-tap logging, takes 30 seconds"},
+            {icon:"vial",text:"Your peptide doses — tap a checkbox each morning"},
+            {icon:"scale",text:"Body composition — enter your InBody scan results"},
+            {icon:"eye",text:"AI insights — the app connects all your data and tells you what to focus on"},
+          ].map((f,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:i<3?10:0}}>
+            <Icon n={f.icon} s={14} c="var(--accent)" sw={1.5}/>
+            <span style={{fontSize:12.5,color:"var(--t-2)",lineHeight:1.4}}>{f.text}</span>
+          </div>))}
+        </div>
+        <p style={{fontSize:12,color:"var(--t-4)",margin:"0 auto 30px",maxWidth:300,lineHeight:1.5}}>Setup takes 2 minutes. After that, daily logging is just a few taps.</p>
+      </>):(<>
+        <div style={{color:"var(--t-3)",fontSize:11,letterSpacing:".18em",textTransform:"uppercase",marginBottom:14}}>Welcome to</div>
+        <h1 className="serif" style={{fontSize:54,color:"var(--t-1)",margin:"0 0 18px",fontStyle:"italic",letterSpacing:"-0.025em",lineHeight:1.02}}>Body Comp HQ</h1>
+        <p style={{fontSize:15,color:"var(--t-2)",margin:"0 auto 46px",lineHeight:1.55,maxWidth:340}}>Body composition. Nutrition. Peptides. Recovery. All in one place.</p>
+      </>)}
+      <button onClick={()=>setStep(1)} style={btn(true)}>{isBea?"Let's set up my profile":"Begin Setup"}</button>
     </div>,
     <div key={1} className="sheet">
       <h2 className="serif" style={{fontSize:32,color:"var(--t-1)",margin:"0 0 6px",fontStyle:"italic",letterSpacing:"-0.02em"}}>About you</h2>

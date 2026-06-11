@@ -825,7 +825,7 @@ function DashboardInner(){
     </div>
   </div>);
   if(onboarded===null)return(<div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:20}}><style>{STYLE}</style><div className="fade"><Logo size={36}/></div><div className="fade" style={{color:"var(--t-3)",fontSize:11,letterSpacing:".12em",textTransform:"uppercase",animationDelay:".15s"}}>Loading…</div></div>);
-  if(!onboarded)return <Onboarding db={db} onComplete={handleOnboardComplete}/>;
+  if(!onboarded)return <Onboarding db={db} userId={db.currentUser} onComplete={handleOnboardComplete}/>;
 
   return(
     <div className="bcq-app">

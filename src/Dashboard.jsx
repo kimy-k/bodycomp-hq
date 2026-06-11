@@ -1174,7 +1174,7 @@ function DashboardInner(){
               {id:"macros",done:meals.length>0||(mealDict||[]).length>0,label:"Log your first meal",desc:"Track protein, calories, and macros. Autocomplete suggests from history.",tab:"macros",icon:"macros"},
               {id:"scan",done:data.length>0,label:"Enter an InBody scan",desc:"Body fat %, weight, muscle mass — the numbers that drive your 25% goal",tab:"body",icon:"scale"},
               {id:"peps",done:(pepHist||[]).length>0,label:"Log a peptide dose",desc:"Tap the checkbox on Peps → Today to log. Tracks your 7-day adherence.",tab:"peptides",icon:"vial"},
-              {id:"library",done:(mealDict||[]).length>=5,label:"Build your meal library",desc:"Log 5+ meals and they auto-populate your Library tab for one-tap logging",tab:"macros",icon:"star"},
+              {id:"library",done:(mealDict||[]).length>=5||(meals.length>=3),label:"Meal library active",desc:"Your frequently-logged meals appear in autocomplete and Library tab",tab:"macros",icon:"star"},
             ];
             const done=checks.filter(c=>c.done).length;
             const total=checks.length;

@@ -98,9 +98,15 @@ function DashboardInner(){
   const [mealDict,setMealDict]=useState([]);
   useEffect(()=>{if(tab!=="macros")return;(async()=>{
     /* Load from BOTH users so Bea gets Kim's meal history (same Smartfitchen menu) */
-    const rows=await db.listShared("daily_macros",90,"date");
+    /* Direct fetch to ensure we get ALL rows — listShared had issues with meal dict */
+    const users=["kim","bernadette","bea"];
+    const allRows=[];
+    for(const u of users){
+      try{const r=await fetch(`${SB}/daily_macros?user_id=eq.${u}&select=meals&order=date.desc&limit=200`,{headers:hdr});
+      if(r.ok){const rows=await r.json();allRows.push(...rows);}}catch(e){}
+    }
     const freq={};
-    (rows||[]).forEach(r=>(r.meals||[]).forEach(m=>{
+    allRows.forEach(r=>(r.meals||[]).forEach(m=>{
       const k=m.name?.trim().toLowerCase();if(!k)return;
       if(!freq[k])freq[k]={name:m.name,protein:+m.protein||0,fat:+m.fat||0,carbs:+m.carbs||0,tag:m.tag||"Other",count:0};
       freq[k].count++;freq[k].protein=+m.protein||freq[k].protein;freq[k].fat=+m.fat||freq[k].fat;freq[k].carbs=+m.carbs||freq[k].carbs;

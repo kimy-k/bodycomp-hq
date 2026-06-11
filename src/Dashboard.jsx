@@ -2163,7 +2163,7 @@ function DashboardInner(){
                   {/* Today line */}
                   <div style={{position:"absolute",left:`${todayPct}%`,top:0,bottom:0,width:1,background:"var(--accent)",opacity:0.5,zIndex:2}}/>
                   {/* Cycle bar */}
-                  {r.barWidth!=null&&(<div style={{position:"absolute",left:`${r.startPct}%`,width:`${r.barWidth}%`,top:3,bottom:3,borderRadius:3,background:r.isBreak?`repeating-linear-gradient(45deg,${r.pep.color}22,${r.pep.color}22 4px,transparent 4px,transparent 8px)`:r.isCompleted?`${r.pep.color}33`:r.isStarting?`${r.pep.color}55`:`${r.pep.color}88`,border:r.isBreak?`1px dashed ${r.pep.color}55`:"none"}}/>)}
+                  {r.barWidth!=null&&(<div style={{position:"absolute",left:`${r.startPct}%`,width:`${r.barWidth}%`,top:3,bottom:3,borderRadius:3,background:r.isBreak?`repeating-linear-gradient(45deg,color-mix(in oklch, ${r.pep.color} 25%, transparent),color-mix(in oklch, ${r.pep.color} 25%, transparent) 4px,transparent 4px,transparent 8px)`:r.isCompleted?`color-mix(in oklch, ${r.pep.color} 25%, transparent)`:r.isStarting?`color-mix(in oklch, ${r.pep.color} 40%, transparent)`:`color-mix(in oklch, ${r.pep.color} 70%, transparent)`,border:r.isBreak?`1px dashed color-mix(in oklch, ${r.pep.color} 40%, transparent)`:"none"}}/>)}
                   {/* End marker */}
                   {r.end&&r.endPct!=null&&r.endPct<98&&(<div style={{position:"absolute",left:`${r.endPct}%`,top:2,bottom:2,width:2,background:r.pep.color,borderRadius:1}}/>)}
                 </div>
@@ -2177,7 +2177,7 @@ function DashboardInner(){
               </div>))}
               {/* Legend */}
               <div style={{display:"flex",gap:12,marginTop:10,paddingLeft:80}}>
-                {[{label:"Active",bg:"var(--accent)88"},{label:"Break",bg:"repeating-linear-gradient(45deg,var(--t-3)22,var(--t-3)22 4px,transparent 4px,transparent 8px)"},{label:"Upcoming",bg:"var(--accent)55"}].map(l=>(<div key={l.label} style={{display:"flex",alignItems:"center",gap:4}}>
+                {[{label:"Active",bg:"color-mix(in oklch, var(--accent) 70%, transparent)"},{label:"Break",bg:"color-mix(in oklch, var(--t-3) 25%, transparent)"},{label:"Upcoming",bg:"color-mix(in oklch, var(--accent) 40%, transparent)"}].map(l=>(<div key={l.label} style={{display:"flex",alignItems:"center",gap:4}}>
                   <div style={{width:16,height:8,borderRadius:2,background:l.bg,border:l.label==="Break"?"1px dashed var(--t-3)55":"none"}}/>
                   <span className="mono" style={{fontSize:8,color:"var(--t-4)"}}>{l.label}</span>
                 </div>))}

@@ -776,6 +776,8 @@ function DashboardInner(){
   useEffect(()=>{if(tab!=="peptides")return;(async()=>{setBatchesLoading(true);const rows=await db.listShared("peptide_batches",100,"date_recon");setBatches(rows||[]);setBatchesLoading(false);})();},[tab,db]);
   /* ═══ SEALED SUPPLY — unreconstituted vial inventory (peptide_supply table) ═══ */
   const [supply,setSupply]=useState([]);
+  const [addingSupply,setAddingSupply]=useState(false);
+  const [newSupply,setNewSupply]=useState({peptide_id:"",quantity:"1",mg_per_vial:"",vendor:"",cost_per_vial:"",currency:"PHP",purchase_date:todayKey(),notes:""});
   useEffect(()=>{if(tab!=="peptides")return;(async()=>{const rows=await db.listShared("peptide_supply",200,"created_at");setSupply(rows||[]);})();},[tab,db]);
   const supplyFor=pepId=>supply.filter(s=>s.peptide_id===pepId&&s.quantity>0).reduce((sum,s)=>sum+s.quantity,0);
   /* ═══ TITRATION LADDER — planned dose ramp steps (titration_steps table) ═══ */
@@ -2274,10 +2276,65 @@ function DashboardInner(){
         {pepSub==="batches"&&(<>
           <div className="rise" style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14}}>
             <div><h2 className="serif" style={{fontSize:24,fontWeight:400,color:"var(--t-1)",margin:0,fontStyle:"italic",letterSpacing:"-0.015em"}}>Inventory</h2><p className="mono" style={{fontSize:11,color:"var(--t-3)",margin:"2px 0 0"}}>vials · supply · costs</p></div>
-            {!addingBatch&&<button onClick={()=>setAddingBatch(true)} className="touch" style={{padding:"9px 14px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12.5,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={14}/> Mix vial</button>}
+            <div style={{display:"flex",gap:6}}>
+              {!addingBatch&&!addingSupply&&<button onClick={()=>setAddingSupply(true)} className="touch" style={{padding:"9px 12px",borderRadius:"var(--r-sm)",border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-2)",fontSize:12,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="plus" s={13}/> Supply</button>}
+              {!addingBatch&&!addingSupply&&<button onClick={()=>setAddingBatch(true)} className="touch" style={{padding:"9px 12px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:12,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}><Icon n="vial" s={13}/> Mix</button>}
+            </div>
           </div>
 
           {batchesLoading&&<SkelTab/>}
+
+          {/* Add supply form — sealed vials */}
+          {addingSupply&&(<div className="sheet" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:18,marginBottom:16,borderLeft:"3px solid var(--c-success)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:14,alignItems:"baseline"}}>
+              <h3 className="serif" style={{fontSize:20,fontWeight:400,color:"var(--c-success)",margin:0,fontStyle:"italic"}}>Add sealed supply</h3>
+              <button onClick={()=>{setAddingSupply(false);setNewSupply({peptide_id:"",quantity:"1",mg_per_vial:"",vendor:"",cost_per_vial:"",currency:"PHP",purchase_date:todayKey(),notes:""});}} className="touch" style={{background:"none",border:"none",color:"var(--t-3)",cursor:"pointer",padding:4}}><Icon n="x" s={16}/></button>
+            </div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Peptide</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>{PEPTIDES.map(p=>(<button key={p.id} onClick={()=>setNewSupply({...newSupply,peptide_id:p.id,mg_per_vial:RECONSTITUTION[p.id]?.vialMg?String(RECONSTITUTION[p.id].vialMg):newSupply.mg_per_vial})} className="touch" style={{padding:"7px 11px",borderRadius:999,border:newSupply.peptide_id===p.id?`1px solid ${p.color}`:"1px solid var(--line-soft)",background:newSupply.peptide_id===p.id?`color-mix(in oklch, ${p.color} 14%, transparent)`:"var(--elev-2)",color:newSupply.peptide_id===p.id?p.color:"var(--t-3)",fontSize:11.5,fontWeight:500,cursor:"pointer"}}>{p.name}</button>))}</div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+              <div>
+                <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Qty (vials)</div>
+                <input type="number" value={newSupply.quantity} onChange={e=>setNewSupply({...newSupply,quantity:e.target.value})} className="bcq-input" min="1" placeholder="1"/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>mg / vial</div>
+                <input type="number" value={newSupply.mg_per_vial} onChange={e=>setNewSupply({...newSupply,mg_per_vial:e.target.value})} className="bcq-input" placeholder="10"/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Cost / vial</div>
+                <input type="number" value={newSupply.cost_per_vial} onChange={e=>setNewSupply({...newSupply,cost_per_vial:e.target.value})} className="bcq-input" placeholder="760"/>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+              <div>
+                <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Vendor</div>
+                <input value={newSupply.vendor} onChange={e=>setNewSupply({...newSupply,vendor:e.target.value})} className="bcq-input" placeholder="Pepmuse Group Buy"/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Purchased</div>
+                <input type="date" value={newSupply.purchase_date} onChange={e=>setNewSupply({...newSupply,purchase_date:e.target.value})} className="bcq-input" style={{colorScheme:"dark"}}/>
+              </div>
+            </div>
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:10,color:"var(--t-3)",marginBottom:5,fontWeight:600,letterSpacing:".10em",textTransform:"uppercase"}}>Notes (optional)</div>
+              <input value={newSupply.notes} onChange={e=>setNewSupply({...newSupply,notes:e.target.value})} className="bcq-input" placeholder="e.g. GB batch 2, expires Aug 2027"/>
+            </div>
+            <button onClick={async()=>{
+              if(!newSupply.peptide_id||!newSupply.quantity||!newSupply.mg_per_vial){showToast("Fill in peptide, quantity, and mg","warn");return;}
+              const row={user_id:activeUser,peptide_id:newSupply.peptide_id,quantity:+newSupply.quantity,mg_per_vial:+newSupply.mg_per_vial,vendor:newSupply.vendor||null,cost_per_vial:newSupply.cost_per_vial?+newSupply.cost_per_vial:null,currency:newSupply.currency,purchase_date:newSupply.purchase_date||null,notes:newSupply.notes||null};
+              const{error}=await supabase.from("peptide_supply").insert(row);
+              if(error){showToast("Error: "+error.message,"warn");return;}
+              showToast(`${newSupply.quantity} ${PEPTIDES.find(p=>p.id===newSupply.peptide_id)?.name||newSupply.peptide_id} vial${+newSupply.quantity>1?"s":""} added`,"success");
+              setAddingSupply(false);setNewSupply({peptide_id:"",quantity:"1",mg_per_vial:"",vendor:"",cost_per_vial:"",currency:"PHP",purchase_date:todayKey(),notes:""});
+              /* Refresh supply data */
+              const rows=await db.listShared("peptide_supply",200,"created_at");setSupply(rows||[]);
+            }} className="touch" style={{width:"100%",padding:"12px 18px",borderRadius:"var(--r-sm)",background:"var(--c-success)",color:"#000",fontSize:14,fontWeight:700,border:"none",cursor:"pointer"}}>
+              Add {newSupply.quantity||0} vial{(+newSupply.quantity||0)!==1?"s":""}
+            </button>
+          </div>)}
 
           {/* Add batch form */}
           {addingBatch&&(<div className="sheet" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:18,marginBottom:16,borderLeft:"3px solid var(--accent)"}}>

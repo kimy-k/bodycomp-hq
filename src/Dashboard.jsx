@@ -1147,6 +1147,43 @@ function DashboardInner(){
         };
         const dateStr = new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
         return(<>
+          {/* Getting Started checklist — shows when features are unused */}
+          {(()=>{
+            const dismissed=userConfig?.dismissedChecklist;
+            if(dismissed)return null;
+            const checks=[
+              {id:"profile",done:!!userConfig?.weight,label:"Set up your profile",desc:"Height, weight, age, activity level — powers your TDEE and macro targets",tab:"more",icon:"body"},
+              {id:"macros",done:meals.length>0||(mealDict||[]).length>0,label:"Log your first meal",desc:"Track protein, calories, and macros. Autocomplete suggests from history.",tab:"macros",icon:"macros"},
+              {id:"scan",done:data.length>0,label:"Enter an InBody scan",desc:"Body fat %, weight, muscle mass — the numbers that drive your 25% goal",tab:"body",icon:"scale"},
+              {id:"peps",done:(pepHist||[]).length>0,label:"Log a peptide dose",desc:"Tap the checkbox on Peps → Today to log. Tracks your 7-day adherence.",tab:"peptides",icon:"vial"},
+              {id:"library",done:(mealDict||[]).length>=5,label:"Build your meal library",desc:"Log 5+ meals and they auto-populate your Library tab for one-tap logging",tab:"macros",icon:"star"},
+            ];
+            const done=checks.filter(c=>c.done).length;
+            const total=checks.length;
+            if(done===total)return null;
+            return(<div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"16px 16px 14px",marginBottom:14,borderLeft:"3px solid var(--accent)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <div>
+                  <div className="mono" style={{fontSize:9.5,color:"var(--accent)",letterSpacing:".14em",textTransform:"uppercase",fontWeight:700}}>Getting started</div>
+                  <div style={{fontSize:12,color:"var(--t-3)",marginTop:2}}>{done}/{total} complete</div>
+                </div>
+                <button onClick={()=>{db.upsert("config",{key:"profile",value:{...userConfig,dismissedChecklist:true}});setUserConfig({...userConfig,dismissedChecklist:true});}} className="touch mono" style={{fontSize:9,color:"var(--t-4)",background:"none",border:"none",cursor:"pointer",padding:4}}>Dismiss</button>
+              </div>
+              {/* Progress bar */}
+              <div style={{height:3,background:"var(--elev-3)",borderRadius:2,marginBottom:12,overflow:"hidden"}}><div style={{height:"100%",width:`${(done/total)*100}%`,background:"var(--accent)",borderRadius:2,transition:"width 0.3s"}}/></div>
+              {checks.map(c=>(<div key={c.id} onClick={()=>{if(!c.done)setTab(c.tab);}} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid var(--line-soft)",cursor:c.done?"default":"pointer",opacity:c.done?0.5:1}}>
+                <div style={{width:22,height:22,borderRadius:"50%",border:c.done?"2px solid var(--c-success)":"2px solid var(--line)",background:c.done?"color-mix(in oklch, var(--c-success) 14%, transparent)":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  {c.done&&<Icon n="check" s={12} c="var(--c-success)" sw={2.5}/>}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12.5,color:c.done?"var(--t-3)":"var(--t-1)",fontWeight:c.done?400:600,textDecoration:c.done?"line-through":"none"}}>{c.label}</div>
+                  {!c.done&&<div style={{fontSize:10.5,color:"var(--t-4)",marginTop:1,lineHeight:1.3}}>{c.desc}</div>}
+                </div>
+                {!c.done&&<span className="mono" style={{fontSize:9,color:"var(--accent)",flexShrink:0}}>Go →</span>}
+              </div>))}
+            </div>);
+          })()}
+
           {/* Date + section header */}
           <div className="rise" style={{marginBottom:16,paddingTop:4}}>
             <div className="mono" style={{fontSize:10.5,letterSpacing:".22em",textTransform:"uppercase",color:"var(--t-3)",fontWeight:700,marginBottom:6}}>Morning briefing</div>

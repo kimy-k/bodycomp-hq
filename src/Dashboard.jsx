@@ -10,6 +10,7 @@ import {
   batchStatus as batchStatus_pure,
   currentBatchFor as currentBatchFor_pure,
   mgFromDoseStr,
+  unitsFromDoseStr,
   inventoryFor as inventoryFor_pure,
   costPerMg, costPerDose, costPerMonth, fmtCost,
   sharedActiveComponents,
@@ -498,8 +499,17 @@ function DashboardInner(){
       setEditPepModal(null);
     }
   },[db,showToast]);
-
-  /* ═══ NOTIFICATIONS — foreground reminders for overdue peptides ═══ */
+  const removePepFromStack=useCallback(async(pepId,pepName)=>{
+    if(!window.confirm(`Remove ${pepName||pepId} from your stack? This won't delete dose history.`))return;
+    try{
+      const ok=await fetch(`${SB}/peptide_stack?user_id=eq.${userId}&peptide_id=eq.${pepId}`,{method:"DELETE",headers:{...hdr,Prefer:"return=minimal"}});
+      if(ok.ok){
+        setPeptideStack(prev=>prev.filter(r=>r.peptide_id!==pepId));
+        showToast(`${pepName||pepId} removed from stack`,"success");
+        setEditPepModal(null);
+      }else{showToast("Couldn't remove — try again","error");}
+    }catch(e){showToast("Couldn't remove — try again","error");}
+  },[userId,showToast]);
   const [notifEnabled,setNotifEnabled]=useState(false);
   const [notifPerm,setNotifPerm]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
   useEffect(()=>{(async()=>{const n=await db.getConfig("notifEnabled");if(n===true||n==="true")setNotifEnabled(true);})();},[db]);
@@ -809,7 +819,25 @@ function DashboardInner(){
   const batchStatus = b => batchStatus_pure(b);
   const currentBatchFor = pepId => currentBatchFor_pure(pepId, batches);
   const dueState = (p, checked) => dueState_pure(p, checked);
-  const saveBatch=async()=>{if(!newBatch.peptide_id||!newBatch.mg_total||!newBatch.ml_bac)return;const row={peptide_id:newBatch.peptide_id,date_recon:newBatch.date_recon,mg_total:+newBatch.mg_total,ml_bac:+newBatch.ml_bac,storage:newBatch.storage||null,expiry_date:newBatch.expiry_date||addDays(newBatch.date_recon,30),notes:newBatch.notes||null,exhausted:false,cost:newBatch.cost?+newBatch.cost:null,currency:newBatch.currency||"PHP",vendor:newBatch.vendor||null};const ok=await db.upsert("peptide_batches",row);if(ok){const rows=await db.listShared("peptide_batches",100,"date_recon");setBatches(rows||[]);setNewBatch({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:"",cost:"",currency:newBatch.currency||"PHP",vendor:""});setAddingBatch(false);showToast("Batch logged · shared with household","success");}};
+  const saveBatch=async()=>{if(!newBatch.peptide_id||!newBatch.mg_total||!newBatch.ml_bac)return;const row={peptide_id:newBatch.peptide_id,date_recon:newBatch.date_recon,mg_total:+newBatch.mg_total,ml_bac:+newBatch.ml_bac,storage:newBatch.storage||null,expiry_date:newBatch.expiry_date||addDays(newBatch.date_recon,30),notes:newBatch.notes||null,exhausted:false,cost:newBatch.cost?+newBatch.cost:null,currency:newBatch.currency||"PHP",vendor:newBatch.vendor||null};const ok=await db.upsert("peptide_batches",row);if(ok){
+    /* Auto-deduct from sealed supply: find matching supply entry and subtract 1 */
+    try{
+      const supplyRows=await db.listShared("peptide_supply",200,"created_at");
+      /* Match by peptide_id, prefer same vendor if specified */
+      const candidates=(supplyRows||[]).filter(s=>s.peptide_id===newBatch.peptide_id&&s.quantity>0);
+      let match=newBatch.vendor?candidates.find(s=>s.vendor&&s.vendor.toLowerCase().includes(newBatch.vendor.toLowerCase())):null;
+      if(!match&&candidates.length>0)match=candidates[0];
+      if(match){
+        const newQty=match.quantity-1;
+        if(newQty<=0){await fetch(`${SB}/peptide_supply?id=eq.${match.id}`,{method:"DELETE",headers:hdr});}
+        else{await fetch(`${SB}/peptide_supply?id=eq.${match.id}`,{method:"PATCH",headers:{...hdr,Prefer:"return=minimal"},body:JSON.stringify({quantity:newQty})});}
+        showToast(`Batch logged · 1 sealed vial deducted from supply`,"success");
+      }else{showToast("Batch logged · shared with household","success");}
+    }catch(e){console.warn("Supply deduct failed:",e);showToast("Batch logged · shared with household","success");}
+    const rows=await db.listShared("peptide_batches",100,"date_recon");setBatches(rows||[]);
+    const supRows=await db.listShared("peptide_supply",200,"created_at");setSupply(supRows||[]);
+    setNewBatch({peptide_id:"",date_recon:todayKey(),mg_total:"",ml_bac:"",storage:"",expiry_date:"",notes:"",cost:"",currency:newBatch.currency||"PHP",vendor:""});setAddingBatch(false);
+  }};
   const updateBatch=async(b,patch)=>{const updated={...b,...patch};const res=await fetch(`${SB}/peptide_batches?id=eq.${b.id}&user_id=eq.${b.user_id}`,{method:"PATCH",headers:{...hdr,Prefer:"return=minimal"},body:JSON.stringify(patch)}).catch(()=>null);if(res&&res.ok){setBatches(batches.map(x=>x.id===b.id?updated:x));}else{showToast("Couldn't update batch","error");}};
   const deleteBatch=async(b)=>{if(!window.confirm("Delete this shared batch entry? It will disappear from both profiles."))return;const ok=await db.delByIdShared("peptide_batches",b.id,b.user_id);if(ok){setBatches(batches.filter(x=>x.id!==b.id));setEditingBatch(null);showToast("Batch deleted","success");}};
 
@@ -2598,7 +2626,7 @@ function DashboardInner(){
               const active=activeBatches.filter(b=>b.peptide_id===p.id);
               const b=active[0]; /* current vial */
               const sealed=supplyFor(p.id);
-              const liveInv=b?(()=>{const mgPerDose=mgFromDoseStr(p.dose);if(!mgPerDose||!b.mg_total)return null;const totalDoses=Math.floor(b.mg_total/mgPerDose);const used=sharedDoseLog.filter(d=>d.date>=b.date_recon&&d.checks&&d.checks[p.id]).length;return{total:totalDoses,used,remaining:Math.max(0,totalDoses-used)};})():null;
+              const liveInv=b?(()=>{const units=unitsFromDoseStr(p.dose);const mgPerDose=units&&b.ml_bac?+(units*0.01*(b.mg_total/b.ml_bac)).toFixed(4):mgFromDoseStr(p.dose);if(!mgPerDose||!b.mg_total)return null;const totalDoses=Math.floor(b.mg_total/mgPerDose);const used=sharedDoseLog.filter(d=>d.date>=b.date_recon&&d.checks&&d.checks[p.id]).length;return{total:totalDoses,used,remaining:Math.max(0,totalDoses-used)};})():null;
               const dosesPerWeek=p.schedule?p.schedule.length:0;
               const daysUntilEmpty=liveInv&&dosesPerWeek>0?Math.round(liveInv.remaining/(dosesPerWeek/7)):null;
               const daysToExpiry=b?.expiry_date?Math.max(0,Math.round((new Date(b.expiry_date+"T23:59:59")-new Date())/(86400000))):null;
@@ -3410,7 +3438,7 @@ function DashboardInner(){
               }} className="touch" style={{flex:1,padding:"13px",borderRadius:"var(--r-md)",border:"none",background:p.color,color:"var(--bg)",fontSize:14,fontWeight:600,cursor:"pointer"}}>Save changes</button>
               {hasDefaults&&<button onClick={()=>resetPepOverride(p.id)} className="touch" style={{padding:"13px 16px",borderRadius:"var(--r-md)",border:"1px solid var(--line-soft)",background:"transparent",color:"var(--t-3)",fontSize:12.5,fontWeight:600,cursor:"pointer"}}>Reset</button>}
             </div>
-            {hasDefaults&&<div style={{fontSize:10.5,color:"var(--t-4)",marginTop:8,fontStyle:"italic",textAlign:"center"}}>Reset returns this peptide to its built-in defaults.</div>}
+            <button onClick={()=>removePepFromStack(p.id,p.name)} className="touch" style={{width:"100%",padding:"12px",borderRadius:"var(--r-md)",border:"1px solid color-mix(in oklch, var(--c-danger) 30%, transparent)",background:"transparent",color:"var(--c-danger)",fontSize:12,fontWeight:500,cursor:"pointer",marginTop:10,opacity:0.7}}>Remove from my stack</button>
           </div>
         </div>);
       })()}

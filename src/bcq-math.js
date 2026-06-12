@@ -141,6 +141,31 @@ export const mgFromDoseStr = str => {
   return null;
 };
 
+/* Extract syringe units (u) from a dose string.
+   "2.5mg (25u) QD" → 25, "15u (0.15mL)" → 15, "100mcg ea (3u)" → 3 */
+export const unitsFromDoseStr = str => {
+  if (!str) return null;
+  const m = String(str).match(/(\d+\.?\d*)\s*u(?:\b|[)\s,])/i);
+  return m ? +m[1] : null;
+};
+
+/* Compute actual mg per injection using batch concentration × syringe units.
+   This is the CORRECT calculation — it uses the real concentration from the
+   mixed vial, not the mg text in the dose string (which may be wrong if the
+   BAC water amount changed).
+   Falls back to mgFromDoseStr if units can't be parsed. */
+export const mgPerDoseFromBatch = (peptide, batch) => {
+  if (!peptide || !batch) return mgFromDoseStr(peptide?.dose);
+  const units = unitsFromDoseStr(peptide.dose);
+  if (units && batch.mg_total && batch.ml_bac) {
+    const conc = batch.mg_total / batch.ml_bac; // mg per ml
+    const actualMg = units * 0.01 * conc;        // 1 unit = 0.01 ml
+    return +actualMg.toFixed(4);
+  }
+  // Fallback: parse mg from text (less accurate but better than nothing)
+  return mgFromDoseStr(peptide.dose);
+};
+
 /* Extract doses-per-day from a dose string (or null = default 1).
    Detects BID/TID/QID, "x2 daily", "twice daily", and "x N" multipliers.
    Caller is responsible for applying this to monthly cost calculations.
@@ -174,7 +199,7 @@ export const inventoryFor = (peptide, batches, sharedDoseLog, now = new Date()) 
   if (!peptide) return null;
   const batch = currentBatchFor(peptide.id, batches, now);
   if (!batch || !batch.mg_total) return null;
-  const mgPerDose = mgFromDoseStr(peptide.dose);
+  const mgPerDose = mgPerDoseFromBatch(peptide, batch);
   if (!mgPerDose || mgPerDose <= 0) return null;
   const totalDosesInVial = Math.floor(batch.mg_total / mgPerDose);
   const batchStart = batch.date_recon;
@@ -202,7 +227,7 @@ export const costPerMg = batch => {
 export const costPerDose = (batch, peptide) => {
   const cpm = costPerMg(batch);
   if (cpm == null || !peptide) return null;
-  const mg = mgFromDoseStr(peptide.dose);
+  const mg = mgPerDoseFromBatch(peptide, batch);
   if (!mg || mg <= 0) return null;
   return +(cpm * mg).toFixed(2);
 };

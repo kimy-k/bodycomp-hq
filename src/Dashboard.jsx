@@ -125,6 +125,8 @@ function DashboardInner(){
   const [libCat,setLibCat]=useState("All");
   /* Menu upload state */
   const [menuPlan,setMenuPlan]=useState(null);const [menuLoading,setMenuLoading]=useState(false);const [menuError,setMenuError]=useState(null);
+  const [menuImages,setMenuImages]=useState([]);const [menuExpandedDay,setMenuExpandedDay]=useState(null);
+  const slotToTag=s=>{const m={"breakfast":"Breakfast","lunch":"Lunch","dinner":"Dinner","snack":"Snack"};return m[(s||"").toLowerCase()]||"Lunch";};
   /* Load shared menu plan on Menu tab mount */
   useEffect(()=>{if(tab!=="macros"||macroSub!=="menu")return;(async()=>{
     const own=await db.getConfig("weekly_menu");
@@ -1792,37 +1794,59 @@ function DashboardInner(){
           })()}
         </>)}
 
-        {/* ═══ MENU — upload Smartfitchen image, parse into weekly meal plan ═══ */}
+        {/* ═══ MENU — upload Smartfitchen image(s), parse into weekly meal plan, log meals ═══ */}
         {macroSub==="menu"&&(<>
-          <H2 sub="Upload your weekly menu image">Meal plan</H2>
+          <H2 sub="Upload, parse & log meals from your weekly menu">Meal plan</H2>
           {!menuPlan&&(<div style={{marginBottom:16}}>
-            <div style={{border:"2px dashed var(--accent-line)",borderRadius:"var(--r-md)",padding:"32px 20px",textAlign:"center",cursor:"pointer",background:"var(--accent-soft)"}} onClick={()=>document.getElementById("menuUpload")?.click()}>
+            {/* Multi-image staging area */}
+            {(!menuImages||menuImages.length===0)?(<div style={{border:"2px dashed var(--accent-line)",borderRadius:"var(--r-md)",padding:"32px 20px",textAlign:"center",cursor:"pointer",background:"var(--accent-soft)"}} onClick={()=>document.getElementById("menuUpload")?.click()}>
               <Icon n="plus" s={28} c="var(--accent)"/>
-              <div style={{fontSize:14,color:"var(--accent)",fontWeight:600,marginTop:8}}>Upload menu image</div>
-              <div style={{fontSize:11,color:"var(--t-3)",marginTop:4}}>Photo of your Smartfitchen weekly menu</div>
-              <input id="menuUpload" type="file" accept="image/*" style={{display:"none"}} onChange={async(e)=>{
-                const file=e.target.files?.[0];if(!file)return;
-                setMenuLoading(true);setMenuError(null);
-                try{
-                  const base64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej(new Error("Read failed"));r.readAsDataURL(file);});
-                  const mediaType=file.type||"image/jpeg";
-                  const resp=await fetch("/api/ai/menu-ocr",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:base64,media_type:mediaType})});
-                  const data=await resp.json();
-                  if(!resp.ok||!data.ok)throw new Error(data.message||"Failed to parse menu");
-                  const parsed=data;
-                  /* Match meals against library */
-                  parsed.days.forEach(d=>d.meals.forEach(m=>{
-                    const match=mealDict.find(h=>h.name.toLowerCase()===m.name.toLowerCase()||h.name.toLowerCase().includes(m.name.toLowerCase())||m.name.toLowerCase().includes(h.name.toLowerCase()));
-                    if(match){m.protein=match.protein;m.fat=match.fat;m.carbs=match.carbs;m.matched=true;}
-                  }));
-                  setMenuPlan(parsed);
-                  /* Save to DB so both household members can see it */
-                  db.setConfig("weekly_menu",{...parsed,uploadedAt:new Date().toISOString(),uploadedBy:db.currentUser});
-                }catch(err){setMenuError(err.message||"Failed to parse menu");}
-                setMenuLoading(false);e.target.value="";
+              <div style={{fontSize:14,color:"var(--accent)",fontWeight:600,marginTop:8}}>Upload menu images</div>
+              <div style={{fontSize:11,color:"var(--t-3)",marginTop:4}}>Select 1 or more photos of your weekly menu</div>
+              <input id="menuUpload" type="file" accept="image/*" multiple style={{display:"none"}} onChange={(e)=>{
+                const files=Array.from(e.target.files||[]);if(!files.length)return;
+                Promise.all(files.map(f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res({data:r.result.split(",")[1],media_type:f.type||"image/jpeg",preview:r.result,name:f.name});r.onerror=()=>rej();r.readAsDataURL(f);}))).then(imgs=>setMenuImages(imgs));
+                e.target.value="";
               }}/>
-            </div>
-            {menuLoading&&<div style={{textAlign:"center",padding:"24px 0",color:"var(--accent)",fontSize:13}}><div className="mono" style={{letterSpacing:".10em"}}>Reading menu…</div></div>}
+            </div>):(<div>
+              {/* Image thumbnails + add more */}
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+                {menuImages.map((img,i)=>(<div key={i} style={{position:"relative",width:80,height:80,borderRadius:"var(--r-sm)",overflow:"hidden",border:"2px solid var(--accent-line)"}}>
+                  <img src={img.preview} alt={`Menu ${i+1}`} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                  <button onClick={()=>setMenuImages(prev=>prev.filter((_,j)=>j!==i))} style={{position:"absolute",top:2,right:2,width:20,height:20,borderRadius:99,background:"rgba(0,0,0,0.7)",color:"#fff",border:"none",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+                </div>))}
+                <div style={{width:80,height:80,borderRadius:"var(--r-sm)",border:"2px dashed var(--line-soft)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",background:"var(--elev-1)"}} onClick={()=>document.getElementById("menuUploadMore")?.click()}>
+                  <Icon n="plus" s={20} c="var(--t-4)"/>
+                  <input id="menuUploadMore" type="file" accept="image/*" multiple style={{display:"none"}} onChange={(e)=>{
+                    const files=Array.from(e.target.files||[]);if(!files.length)return;
+                    Promise.all(files.map(f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res({data:r.result.split(",")[1],media_type:f.type||"image/jpeg",preview:r.result,name:f.name});r.onerror=()=>rej();r.readAsDataURL(f);}))).then(imgs=>setMenuImages(prev=>[...prev,...imgs]));
+                    e.target.value="";
+                  }}/>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={async()=>{
+                  setMenuLoading(true);setMenuError(null);
+                  try{
+                    const resp=await fetch("/api/ai/menu-ocr",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:menuImages.map(i=>({data:i.data,media_type:i.media_type}))})});
+                    const data=await resp.json();
+                    if(!resp.ok||!data.ok)throw new Error(data.message||"Failed to parse menu");
+                    const parsed=data;
+                    parsed.days.forEach(d=>d.meals.forEach(m=>{
+                      const match=mealDict.find(h=>h.name.toLowerCase()===m.name.toLowerCase()||h.name.toLowerCase().includes(m.name.toLowerCase())||m.name.toLowerCase().includes(h.name.toLowerCase()));
+                      if(match){m.protein=match.protein;m.fat=match.fat;m.carbs=match.carbs;m.matched=true;m.tag=match.tag||"Other";}
+                    }));
+                    setMenuPlan(parsed);
+                    db.setConfig("weekly_menu",{...parsed,uploadedAt:new Date().toISOString(),uploadedBy:db.currentUser});
+                    setMenuImages([]);
+                  }catch(err){setMenuError(err.message||"Failed to parse menu");}
+                  setMenuLoading(false);
+                }} disabled={menuLoading} className="touch" style={{flex:1,padding:"14px",borderRadius:"var(--r-md)",background:"var(--accent)",color:"#000",fontWeight:700,fontSize:14,border:"none",cursor:"pointer",opacity:menuLoading?0.5:1}}>
+                  {menuLoading?"Reading menu…":`Parse ${menuImages.length} image${menuImages.length>1?"s":""}`}
+                </button>
+                <button onClick={()=>setMenuImages([])} className="touch" style={{padding:"14px 16px",borderRadius:"var(--r-md)",border:"1px solid var(--line-soft)",background:"transparent",color:"var(--t-3)",fontSize:13,cursor:"pointer"}}>Clear</button>
+              </div>
+            </div>)}
             {menuError&&<div style={{padding:"10px 14px",background:"color-mix(in oklch, var(--c-danger) 10%, var(--elev-1))",borderLeft:"3px solid var(--c-danger)",borderRadius:"var(--r-sm)",fontSize:12,color:"var(--c-danger)",marginTop:10}}>{menuError}</div>}
           </div>)}
 
@@ -1832,20 +1856,60 @@ function DashboardInner(){
                 <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>{menuPlan.days?.length||0} days parsed</div>
                 {menuPlan.uploadedBy&&menuPlan.uploadedBy!==db.currentUser&&<span className="mono" style={{fontSize:8,color:"var(--accent)",background:"var(--accent-soft)",padding:"2px 7px",borderRadius:999,fontWeight:600}}>Shared by {menuPlan.uploadedBy}</span>}
               </div>
-              <button onClick={()=>setMenuPlan(null)} className="touch" style={{fontSize:10,color:"var(--t-3)",background:"none",border:"none",cursor:"pointer",padding:4}}>Upload new</button>
+              <button onClick={()=>{setMenuPlan(null);setMenuImages([]);}} className="touch" style={{fontSize:10,color:"var(--t-3)",background:"none",border:"none",cursor:"pointer",padding:4}}>Upload new</button>
             </div>
-            {/* Week calendar grid */}
-            <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(menuPlan.days?.length||5,5)}, 1fr)`,gap:4}}>
-              {(menuPlan.days||[]).map((d,di)=>(<div key={di} style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"8px 6px",minWidth:0}}>
-                <div className="mono" style={{fontSize:9,color:"var(--accent)",letterSpacing:".08em",fontWeight:700,textAlign:"center",marginBottom:6,textTransform:"uppercase"}}>{d.day?.slice(0,3)||`D${di+1}`}</div>
-                {d.meals.map((m,mi)=>(<div key={mi} style={{marginBottom:4,padding:"5px 6px",background:"var(--elev-2)",borderRadius:4,borderLeft:m.matched?"2px solid var(--c-success)":"2px solid var(--c-warn)"}}>
-                  <div className="mono" style={{fontSize:7.5,color:"var(--t-4)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:1}}>{m.slot}</div>
-                  <div style={{fontSize:10,color:"var(--t-1)",fontWeight:500,lineHeight:1.2,wordBreak:"break-word"}}>{m.name}</div>
-                  {m.matched&&<div className="mono" style={{fontSize:8,color:"var(--c-protein)",marginTop:2}}>{m.protein}P · {m.fat}F · {m.carbs}C</div>}
-                  {!m.matched&&<div className="mono" style={{fontSize:7.5,color:"var(--c-warn)",marginTop:1}}>macros TBD</div>}
-                </div>))}
-              </div>))}
-            </div>
+            {/* Tap a day to see its meals in detail, or tap individual meals to log */}
+            {(menuPlan.days||[]).map((d,di)=>{
+              const isExpanded=menuExpandedDay===di;
+              const todayMealNames=(meals||[]).map(m=>(m.name||"").toLowerCase().trim());
+              return(<div key={di} style={{marginBottom:6}}>
+                <div onClick={()=>setMenuExpandedDay(isExpanded?null:di)} className="touch" style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:"var(--elev-1)",borderRadius:isExpanded?"var(--r-sm) var(--r-sm) 0 0":"var(--r-sm)",cursor:"pointer"}}>
+                  <div>
+                    <span className="mono" style={{fontSize:11,color:"var(--accent)",fontWeight:700,letterSpacing:".06em",textTransform:"uppercase"}}>{d.day||`Day ${di+1}`}</span>
+                    <span className="mono" style={{fontSize:10,color:"var(--t-4)",marginLeft:8}}>{d.meals.length} meals</span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    {(()=>{const logged=d.meals.filter(m=>todayMealNames.includes(m.name.toLowerCase().trim())).length;return logged>0?<span className="mono" style={{fontSize:9,color:"var(--c-success)"}}>{logged} logged</span>:null;})()}
+                    <span style={{color:"var(--t-4)",fontSize:14,transition:"transform .2s",transform:isExpanded?"rotate(180deg)":"none"}}>▾</span>
+                  </div>
+                </div>
+                {isExpanded&&(<div style={{background:"var(--elev-1)",borderRadius:"0 0 var(--r-sm) var(--r-sm)",borderTop:"1px solid var(--line-soft)"}}>
+                  {d.meals.map((m,mi)=>{
+                    const alreadyLogged=todayMealNames.includes(m.name.toLowerCase().trim());
+                    return(<div key={mi} onClick={()=>{
+                      if(alreadyLogged)return;
+                      /* Pre-fill the add meal form and switch to Today sub-tab */
+                      setNewMeal({name:m.name,protein:m.protein||0,fat:m.fat||0,carbs:m.carbs||0,tag:m.tag||slotToTag(m.slot)||"Lunch"});
+                      setAddingMeal(true);setMacroSub("today");
+                      showToast(`${m.name} ready to log — adjust macros if needed`,"success");
+                    }} className={alreadyLogged?"":"touch"} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderTop:mi>0?"1px solid var(--line-soft)":"none",cursor:alreadyLogged?"default":"pointer",opacity:alreadyLogged?0.5:1}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div className="mono" style={{fontSize:8,color:"var(--t-4)",letterSpacing:".06em",textTransform:"uppercase",marginBottom:2}}>{m.slot}</div>
+                        <div style={{fontSize:13,color:"var(--t-1)",fontWeight:500}}>{m.name}</div>
+                        {m.matched?<div className="mono" style={{fontSize:10,color:"var(--c-protein)",marginTop:2}}>{m.protein}P · {m.fat}F · {m.carbs}C</div>
+                        :<div className="mono" style={{fontSize:9,color:"var(--c-warn)",marginTop:2}}>Macros not in library — tap to log & enter manually</div>}
+                      </div>
+                      {alreadyLogged?<div style={{color:"var(--c-success)",fontSize:16}}>✓</div>
+                      :<div style={{width:30,height:30,borderRadius:99,background:"var(--accent-soft)",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon n="plus" s={14} c="var(--accent)"/></div>}
+                    </div>);
+                  })}
+                  {/* Log all meals for this day */}
+                  {(()=>{const unlogged=d.meals.filter(m=>!todayMealNames.includes(m.name.toLowerCase().trim())&&m.matched);return unlogged.length>1?(<div style={{padding:"8px 14px",borderTop:"1px solid var(--line-soft)"}}>
+                    <button onClick={async()=>{
+                      const toLog=d.meals.filter(m=>!todayMealNames.includes(m.name.toLowerCase().trim())&&m.matched);
+                      const updated=[...(meals||[]),...toLog.map(m=>({name:m.name,protein:+m.protein||0,fat:+m.fat||0,carbs:+m.carbs||0,tag:m.tag||slotToTag(m.slot)||"Lunch"}))];
+                      const cal=updated.reduce((s,m)=>s+(+m.protein||0)*4+(+m.fat||0)*9+(+m.carbs||0)*4,0)+(whey?225:0);
+                      const protein=updated.reduce((s,m)=>s+(+m.protein||0),0)+(whey?50:0);
+                      await db.upsert("daily_macros",{date:macroDate,meals:updated,whey,cal,protein});
+                      setMeals(updated);
+                      showToast(`${toLog.length} meals logged from ${d.day}`,"success");
+                    }} className="touch" style={{width:"100%",padding:"10px",borderRadius:"var(--r-sm)",background:"var(--accent-soft)",color:"var(--accent)",border:"none",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                      Log all {unlogged.length} matched meals from {d.day}
+                    </button>
+                  </div>):null;})()}
+                </div>)}
+              </div>);
+            })}
             {/* Summary */}
             {(()=>{
               const known=(menuPlan.days||[]).flatMap(d=>d.meals).filter(m=>m.matched).length;

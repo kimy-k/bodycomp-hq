@@ -1,5 +1,6 @@
 /* ═══ POST /api/ai/menu-ocr ═══
-   Body: { image: base64_string, media_type: "image/jpeg" }
+   Body: { image, media_type } — single image (legacy)
+     OR: { images: [{data, media_type}] } — multiple images
    Returns: { ok, days: [{day, meals: [{slot, name}]}] }
    Env vars required: GEMINI_API_KEY
    Uses Gemini Flash vision to parse Smartfitchen weekly menu images.
@@ -18,10 +19,14 @@ export default async function handler(req, res) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(500).json({ error: "no_api_key", message: "GEMINI_API_KEY not configured in Vercel." });
 
-  const { image, media_type } = req.body || {};
-  if (!image) return res.status(400).json({ error: "no_image", message: "No image provided" });
+  /* Support both single image (legacy) and multiple images */
+  const { image, media_type, images } = req.body || {};
+  const imgList = images && images.length > 0
+    ? images.map(i => ({ data: i.data, mime: i.media_type || "image/jpeg" }))
+    : image ? [{ data: image, mime: media_type || "image/jpeg" }] : [];
+  if (imgList.length === 0) return res.status(400).json({ error: "no_image", message: "No image(s) provided" });
 
-  const prompt = `Extract the weekly meal plan from this menu image. Return ONLY valid JSON with no other text, no markdown fences: {"days":[{"day":"Monday","meals":[{"slot":"Breakfast","name":"Meal name here"},{"slot":"Lunch","name":"Meal name"},{"slot":"Dinner","name":"Meal name"},{"slot":"Snack","name":"Snack name"}]}]} Include all days visible. Use exact meal names as printed. If a slot is not visible, omit it.`;
+  const prompt = `Extract the weekly meal plan from ${imgList.length > 1 ? "these menu images (they are parts of the same menu)" : "this menu image"}. Return ONLY valid JSON with no other text, no markdown fences: {"days":[{"day":"Monday","meals":[{"slot":"Breakfast","name":"Meal name here"},{"slot":"Lunch","name":"Meal name"},{"slot":"Dinner","name":"Meal name"},{"slot":"Snack","name":"Snack name"}]}]} Include all days visible across all images. Use exact meal names as printed. If a slot is not visible, omit it. Merge days that appear across multiple images.`;
 
   try {
     const r = await fetch(GEMINI_URL, {
@@ -33,7 +38,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         contents: [{
           parts: [
-            { inlineData: { mimeType: media_type || "image/jpeg", data: image } },
+            ...imgList.map(img => ({ inlineData: { mimeType: img.mime, data: img.data } })),
             { text: prompt },
           ],
         }],

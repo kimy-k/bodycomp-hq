@@ -194,8 +194,9 @@ export const dosesPerDayFromDose = str => {
    dosesUsed counts entries in sharedDoseLog where:
    - date >= batch.date_recon
    - checks[peptide.id] is truthy
-   sharedDoseLog is expected to be merged across users (household inventory model). */
-export const inventoryFor = (peptide, batches, sharedDoseLog, now = new Date()) => {
+   sharedDoseLog is expected to be merged across users (household inventory model).
+   sharedDosesPerWeek: total scheduled doses/week across ALL users sharing this vial (not just current user). */
+export const inventoryFor = (peptide, batches, sharedDoseLog, now = new Date(), sharedDosesPerWeek = null) => {
   if (!peptide) return null;
   const batch = currentBatchFor(peptide.id, batches, now);
   if (!batch || !batch.mg_total) return null;
@@ -206,7 +207,8 @@ export const inventoryFor = (peptide, batches, sharedDoseLog, now = new Date()) 
   const log = Array.isArray(sharedDoseLog) ? sharedDoseLog : [];
   const dosesUsed = log.filter(d => d.date >= batchStart && d.checks && d.checks[peptide.id]).length;
   const dosesRemaining = Math.max(0, totalDosesInVial - dosesUsed);
-  const dosesPerWeek = (peptide.schedule || []).length || 1;
+  /* Use shared household consumption rate if provided, else fall back to single-user schedule */
+  const dosesPerWeek = sharedDosesPerWeek || (peptide.schedule || []).length || 1;
   const daysSupply = dosesPerWeek > 0 ? Math.round(dosesRemaining / dosesPerWeek * 7) : null;
   return {totalDosesInVial, dosesUsed, dosesRemaining, daysSupply, mgPerDose, source: "batch"};
 };

@@ -848,9 +848,23 @@ function DashboardInner(){
        vial's running total. Privacy stays intact for the dose log itself: each user
        sees only their own checklist. We just aggregate the counts for inventory. */
   const [sharedDoseLog,setSharedDoseLog]=useState([]);
-  useEffect(()=>{if(tab!=="peptides"&&tab!=="overview")return;const oldestBatch=batches.length?batches.reduce((a,b)=>a.date_recon<b.date_recon?a:b):null;if(!oldestBatch)return;(async()=>{const rows=await db.listSharedSince("daily_peptides",oldestBatch.date_recon,"date");setSharedDoseLog(rows||[]);})();},[tab,batches,db]);
-  /* inventoryFor wrapper — bridges the pure inventoryFor to the closure-local batches + sharedDoseLog */
-  const inventoryFor=useCallback(peptide=>inventoryFor_pure(peptide,batches,sharedDoseLog),[batches,sharedDoseLog]);
+  /* Household schedules — maps peptide_id → total doses/week across ALL users sharing that peptide.
+     Used to fix the supply bar for shared vials (NAD+, MOTS-c, etc.) so days-remaining
+     accounts for everyone drawing from the vial, not just the current user. */
+  const [householdDosesPerWeek,setHouseholdDosesPerWeek]=useState({});
+  useEffect(()=>{if(tab!=="peptides"&&tab!=="overview")return;const oldestBatch=batches.length?batches.reduce((a,b)=>a.date_recon<b.date_recon?a:b):null;if(!oldestBatch)return;(async()=>{
+    const rows=await db.listSharedSince("daily_peptides",oldestBatch.date_recon,"date");setSharedDoseLog(rows||[]);
+    /* Load ALL users' active schedules to compute shared consumption rates */
+    try{const r=await fetch(`${SB}/peptide_stack?enabled=eq.true&status=in.(active,starting)&select=peptide_id,schedule,user_id`,{headers:hdr});
+      if(r.ok){const all=await r.json();const map={};all.forEach(s=>{const sched=Array.isArray(s.schedule)?s.schedule:[];if(!map[s.peptide_id])map[s.peptide_id]=0;map[s.peptide_id]+=sched.length||0;});setHouseholdDosesPerWeek(map);}
+    }catch(e){}
+  })();},[tab,batches,db]);
+  /* inventoryFor wrapper — bridges the pure inventoryFor to the closure-local batches + sharedDoseLog.
+     Passes householdDosesPerWeek so shared vials correctly calculate days remaining. */
+  const inventoryFor=useCallback(peptide=>{
+    const sharedRate=peptide?.id?householdDosesPerWeek[peptide.id]:null;
+    return inventoryFor_pure(peptide,batches,sharedDoseLog,new Date(),sharedRate||null);
+  },[batches,sharedDoseLog,householdDosesPerWeek]);
 
   const todayLabel=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
 
@@ -2564,8 +2578,8 @@ function DashboardInner(){
             <button onClick={async()=>{
               if(!newSupply.peptide_id||!newSupply.quantity||!newSupply.mg_per_vial){showToast("Fill in peptide, quantity, and mg","warn");return;}
               const row={user_id:activeUser,peptide_id:newSupply.peptide_id,quantity:+newSupply.quantity,mg_per_vial:+newSupply.mg_per_vial,vendor:newSupply.vendor||null,cost_per_vial:newSupply.cost_per_vial?+newSupply.cost_per_vial:null,currency:newSupply.currency,purchase_date:newSupply.purchase_date||null,notes:newSupply.notes||null};
-              const{error}=await supabase.from("peptide_supply").insert(row);
-              if(error){showToast("Error: "+error.message,"warn");return;}
+              const resp=await fetch(`${SB}/peptide_supply`,{method:"POST",headers:{...hdr,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify(row)});
+              if(!resp.ok){const t=await resp.text().catch(()=>"");showToast("Error: "+(t||resp.status),"warn");return;}
               showToast(`${newSupply.quantity} ${PEPTIDES.find(p=>p.id===newSupply.peptide_id)?.name||newSupply.peptide_id} vial${+newSupply.quantity>1?"s":""} added`,"success");
               setAddingSupply(false);setNewSupply({peptide_id:"",quantity:"1",mg_per_vial:"",vendor:"",cost_per_vial:"",currency:"PHP",purchase_date:todayKey(),notes:""});
               /* Refresh supply data */

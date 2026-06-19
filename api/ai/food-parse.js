@@ -6,10 +6,10 @@
    feels instant in the Add Meal modal. The user gets a draft, can adjust before
    saving. Confidence flag tells the UI how trustworthy the estimate is.
 
-   Cost: ~$0.0001/call with gemini-flash-latest. Negligible.
+   Cost: ~$0.0001/call with gemini-2.5-flash. Negligible.
 */
 
-const MODEL = "gemini-flash-latest";
+const MODEL = "gemini-2.5-flash";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 const SYSTEM_PROMPT = `You are a nutrition estimator. Given a brief food description, return a JSON object with macronutrient estimates.

@@ -773,6 +773,25 @@ function DashboardInner(){
   const [showMore,setShowMore]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
 
+  /* ═══ CHANGELOG / WHAT'S NEW ═══ */
+  const [showChangelog,setShowChangelog]=useState(false);
+  const [changelogEntries,setChangelogEntries]=useState([]);
+  const [changelogBadge,setChangelogBadge]=useState(false);
+  useEffect(()=>{(async()=>{
+    try{
+      const r=await fetch(`${SB}/changelog?select=*&order=date.desc`,{headers:hdr});
+      if(!r.ok)return;const entries=await r.json();setChangelogEntries(entries);
+      if(entries.length===0)return;
+      const lastSeen=await db.getConfig("last_changelog_seen");
+      const latest=entries[0]?.version;
+      if(!lastSeen||lastSeen!==latest){setShowChangelog(true);setChangelogBadge(true);}
+    }catch(e){}
+  })();},[db]);
+  const dismissChangelog=async()=>{
+    setShowChangelog(false);setChangelogBadge(false);
+    if(changelogEntries.length>0)await db.setConfig("last_changelog_seen",changelogEntries[0].version);
+  };
+
   /* ═══ DATA TAB SUBTABS — scans / measurements / photos ═══ */
   const [dataSub,setDataSub]=useState("scans");
 
@@ -937,6 +956,12 @@ function DashboardInner(){
               <span style={{fontSize:14,fontWeight:tab===id?600:500}}>{label}</span>
             </button>
           ))}
+          <div style={{borderTop:"1px solid var(--line-soft)",margin:"2px 0"}}/>
+          <button onClick={()=>{setShowChangelog(true);setShowMore(false);}} className="touch" style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:"var(--r-sm)",border:"none",background:"transparent",cursor:"pointer",width:"100%",textAlign:"left",color:"var(--t-2)",position:"relative"}}>
+            <Icon n="info" s={18}/>
+            <span style={{fontSize:14,fontWeight:500}}>What's new</span>
+            {changelogBadge&&<span style={{width:7,height:7,borderRadius:999,background:"var(--accent)",position:"absolute",left:28,top:10}}/>}
+          </button>
         </div>
       </div></>)}
       {showSettings&&<Settings db={db} userId={userId} userConfig={userConfig} defaultProfile={defaultProfile} peptideStack={peptideStack} onStackToggle={async(pepId,enabled)=>{
@@ -950,6 +975,41 @@ function DashboardInner(){
         const row=await db.upsertStackEntry(pepId,patch);
         if(row){setPeptideStack(prev=>{const i=prev.findIndex(r=>r.peptide_id===pepId);return i>=0?prev.map(r=>r.peptide_id===pepId?row:r):[...prev,row];});}
       }} onClose={()=>setShowSettings(false)} onSave={(cfg)=>{setUserConfig(cfg);setShowSettings(false);}} notifEnabled={notifEnabled} notifPerm={notifPerm} requestNotifPermission={requestNotifPermission} disableNotifs={disableNotifs} sendTestPush={async()=>{try{const r=await sendTestPush(userId);showToast(r.sent>0?`Test sent to ${r.sent} device(s)`:"No active devices","success");}catch(e){showToast("Test failed: "+String(e?.message||e).slice(0,60),"error");}}} exportData={exportData} exporting={exporting} switchUser={switchUser}/>}
+
+      {/* ═══ WHAT'S NEW MODAL ═══ */}
+      {showChangelog&&changelogEntries.length>0&&(
+        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)"}} onClick={dismissChangelog}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,maxHeight:"80vh",overflow:"auto",background:"var(--elev-1)",borderRadius:"20px 20px 0 0",padding:"24px 20px 32px",animation:"sheetUp .3s"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div>
+                <h2 className="serif" style={{fontSize:22,margin:0,fontStyle:"italic",color:"var(--t-1)"}}>What's new</h2>
+                <div className="mono" style={{fontSize:10,color:"var(--t-4)",letterSpacing:".08em",marginTop:2}}>v{changelogEntries[0].version}</div>
+              </div>
+              <button onClick={dismissChangelog} className="touch" style={{width:32,height:32,borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+            </div>
+            {changelogEntries.slice(0,3).map((entry,ei)=>(
+              <div key={ei} style={{marginBottom:ei<2?20:0}}>
+                <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:8}}>
+                  <span className="mono" style={{fontSize:11,fontWeight:700,color:"var(--accent)",letterSpacing:".04em"}}>v{entry.version}</span>
+                  <span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>{new Date(entry.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>
+                  <span style={{fontSize:12,fontWeight:600,color:"var(--t-2)"}}>{entry.title}</span>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {(entry.items||[]).map((item,ii)=>(
+                    <div key={ii} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12,color:"var(--t-3)",lineHeight:1.4}}>
+                      <span style={{flexShrink:0,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:999,letterSpacing:".06em",marginTop:1,
+                        background:item.type==="new"?"color-mix(in oklch, var(--accent) 15%, transparent)":"color-mix(in oklch, var(--c-success) 15%, transparent)",
+                        color:item.type==="new"?"var(--accent)":"var(--c-success)"
+                      }}>{item.type==="new"?"NEW":"FIX"}</span>
+                      <span>{item.text}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ═══ P18: EDIT PAST DOSE MODAL ═══ */}
       {editPastDose&&(()=>{

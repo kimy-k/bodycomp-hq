@@ -348,12 +348,17 @@ function DashboardInner(){
       .map(s=>{
         const c=cat[s.peptide_id];
         if(!c)return null; /* peptide removed from catalog — skip */
+        /* ── Auto-status: derive effective status from dates ── */
+        const today=new Date().toISOString().slice(0,10);
+        let effectiveStatus=s.status||"active";
+        if((effectiveStatus==="break"||effectiveStatus==="starting")&&s.start_date&&s.start_date<=today){effectiveStatus="active";}
+        if(effectiveStatus==="active"&&s.cycle_end&&s.cycle_end<today){effectiveStatus="completed";}
         return {
           ...c,
           dose:s.dose||"",
           schedule:Array.isArray(s.schedule)?s.schedule:[],
           time:s.time||"",
-          status:s.status||"active",
+          status:effectiveStatus,
           startDate:s.start_date,
           totalWeeks:s.total_weeks,
           cycleEnd:s.cycle_end,

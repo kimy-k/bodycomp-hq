@@ -918,7 +918,7 @@ function DashboardInner(){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
           <div>
             <div className="mono" style={{fontSize:10,color:"var(--t-3)",letterSpacing:".20em",textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Goal · {goalPct}% body fat</div>
-            <div className="mono" style={{fontSize:11,color:"var(--t-4)",letterSpacing:".04em"}}>{fatToLose>0?`${fatToLose}kg to go`:"Goal reached"}</div>
+            <div className="mono" style={{fontSize:11,color:"var(--t-4)",letterSpacing:".04em"}}>{fatToLose>0?`${fatToLose}kg to go`:"Goal reached"}{(()=>{const onTrack=etaMonths.find(s=>s.name==="On Track");if(!onTrack||onTrack.months===">12"||!fatToLose||fatToLose<=0)return null;const mo=typeof onTrack.months==="number"?onTrack.months:parseInt(onTrack.months);if(!mo||isNaN(mo))return null;const eta=new Date();eta.setMonth(eta.getMonth()+mo);const label=eta.toLocaleDateString("en-US",{month:"short",year:"numeric"});return ` · ${label} at current rate`;})()}</div>
           </div>
           <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
             <div style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:32,color:"var(--accent)",lineHeight:1,fontWeight:800,letterSpacing:"-0.04em"}}>{pctDone}<span className="mono" style={{fontSize:13,color:"var(--t-4)",fontWeight:600,letterSpacing:".04em"}}>%</span></div>

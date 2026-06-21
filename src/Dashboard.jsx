@@ -2062,14 +2062,43 @@ function DashboardInner(){
 
           {/* Titration alerts — "Time to bump" for peptides with dose ladders */}
           {(()=>{
-            const alerts=userPeps.filter(p=>isPeptideLive(p)).map(p=>{const d=daysUntilBump(p.id);const next=nextStepFor(p.id);const cur=currentStepFor(p.id);if(d===null||d>14)return null;return{peptide:p,days:d,nextDose:next?.dose,curDose:cur?.dose,nextDate:next?.planned_date};}).filter(Boolean).sort((a,b)=>a.days-b.days);
+            const alerts=userPeps.filter(p=>isPeptideLive(p)).map(p=>{const d=daysUntilBump(p.id);const next=nextStepFor(p.id);const cur=currentStepFor(p.id);if(d===null||d>14)return null;return{peptide:p,days:d,nextStep:next,nextDose:next?.dose,curDose:cur?.dose,nextDate:next?.planned_date};}).filter(Boolean).sort((a,b)=>a.days-b.days);
             if(alerts.length===0)return null;
-            return(<div style={{marginBottom:16}}>{alerts.map(({peptide:p,days,nextDose,curDose,nextDate})=>{const ready=days<=0;const color=ready?"var(--accent)":"var(--c-info,#60a5fa)";return(<div key={p.id} className="rise" style={{background:`color-mix(in oklch, ${color} 10%, var(--elev-1))`,borderLeft:`3px solid ${color}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
+            const confirmBump=async(alert)=>{
+              const step=alert.nextStep;if(!step)return;
+              /* 1. Mark this step as completed with today's date */
+              await fetch(`${SB}/titration_steps?id=eq.${step.id}`,{method:"PATCH",headers:{...hdr,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({completed:true,start_date:todayKey()})});
+              /* 2. Update the peptide_stack dose to the new dose string */
+              const stackEntry=peptideStack.find(s=>s.peptide_id===alert.peptide.id);
+              if(stackEntry){
+                await fetch(`${SB}/peptide_stack?id=eq.${stackEntry.id}`,{method:"PATCH",headers:{...hdr,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({dose:step.dose})});
+              }
+              /* 3. Refresh data */
+              const rows=await db.listShared("titration_steps",200,"created_at");setTitrationSteps(rows||[]);
+              const fresh=await db.list("peptide_stack",200,"peptide_id");setPeptideStack(fresh||[]);
+              showToast(`Bumped to ${step.dose}`,"success");
+            };
+            const delayBump=async(alert)=>{
+              const step=alert.nextStep;if(!step)return;
+              /* Push planned_date by 7 days */
+              const newDate=new Date(step.planned_date+"T12:00:00");newDate.setDate(newDate.getDate()+7);
+              const nd=newDate.toISOString().slice(0,10);
+              await fetch(`${SB}/titration_steps?id=eq.${step.id}`,{method:"PATCH",headers:{...hdr,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({planned_date:nd})});
+              const rows=await db.listShared("titration_steps",200,"created_at");setTitrationSteps(rows||[]);
+              showToast(`Delayed 7 days → ${new Date(nd+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}`,"info");
+            };
+            return(<div style={{marginBottom:16}}>{alerts.map((alert)=>{const{peptide:p,days,nextDose,curDose,nextDate}=alert;const ready=days<=0;const color=ready?"var(--accent)":"var(--c-info,#60a5fa)";return(<div key={p.id} className="rise" style={{background:`color-mix(in oklch, ${color} 10%, var(--elev-1))`,borderLeft:`3px solid ${color}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:color}}><Icon n="trending-up" s={15} c={color} sw={2}/> {p.name}</span>
                 <span className="mono" style={{fontSize:11.5,fontWeight:600,color:color}}>{ready?"Ready now":`${days}d to bump`}</span>
               </div>
               <div style={{fontSize:11,color:"var(--t-3)",marginTop:4}}>{curDose} → <span style={{color:"var(--accent)",fontWeight:600}}>{nextDose}</span>{nextDate?` · planned ${new Date(nextDate+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}`:""}</div>
+              {ready&&<div style={{display:"flex",gap:8,marginTop:8}}>
+                <button onClick={()=>confirmBump(alert)} className="touch" style={{flex:1,padding:"7px 0",borderRadius:999,border:"none",background:"var(--accent)",color:"var(--bg)",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+                  <Icon n="check" s={14} c="var(--bg)" sw={2.5}/> I bumped to {nextDose}
+                </button>
+                <button onClick={()=>delayBump(alert)} className="touch" style={{padding:"7px 14px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",fontSize:11,fontWeight:600,cursor:"pointer"}}>+7d</button>
+              </div>}
             </div>);})}</div>);
           })()}
 

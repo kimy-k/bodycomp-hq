@@ -369,6 +369,27 @@ function DashboardInner(){
       .filter(Boolean);
   },[peptideStack]);
 
+  /* ── Auto-status DB writeback: when client-side auto-status differs from DB,
+       patch the DB so household queries, AI briefing, and all server-side reads stay in sync.
+       Runs once per peptideStack change, only fires PATCH for actual mismatches. ── */
+  useEffect(()=>{
+    const today=new Date().toISOString().slice(0,10);
+    const patches=peptideStack.filter(s=>s.enabled).map(s=>{
+      let expected=s.status||"active";
+      if((expected==="break"||expected==="starting")&&s.start_date&&s.start_date<=today){expected="active";}
+      if(expected==="active"&&s.cycle_end&&s.cycle_end<today){expected="completed";}
+      return expected!==s.status?{id:s.id,peptide_id:s.peptide_id,from:s.status,to:expected}:null;
+    }).filter(Boolean);
+    if(patches.length===0)return;
+    (async()=>{
+      for(const p of patches){
+        await fetch(`${SB}/peptide_stack?id=eq.${p.id}`,{method:"PATCH",headers:{...hdr,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({status:p.to})});
+      }
+      /* Refresh local state so the memo doesn't re-trigger patches */
+      const fresh=await db.list("peptide_stack",200,"peptide_id");if(fresh)setPeptideStack(fresh);
+    })();
+  },[peptideStack,db]);
+
   /* "starting" with a passed start_date is functionally active — only future
      start_dates remain truly upcoming. Note: userPeps maps DB's snake_case
      start_date → camelCase startDate at line 297, so we read startDate here. */

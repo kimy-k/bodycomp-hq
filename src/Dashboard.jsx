@@ -1979,8 +1979,8 @@ function DashboardInner(){
                     return(<div key={mi} onClick={()=>{
                       if(alreadyLogged)return;
                       /* Pre-fill the add meal form and switch to Today sub-tab */
-                      setNewMeal({name:m.name,protein:m.protein||0,fat:m.fat||0,carbs:m.carbs||0,tag:m.tag||slotToTag(m.slot)||"Lunch"});
-                      setAddingMeal(true);setMacroSub("today");
+                      setNewMeal({name:m.name,protein:m.protein||"",fat:m.fat||"",carbs:m.carbs||"",tag:m.tag||slotToTag(m.slot)||"Lunch"});
+                      setAdding(true);setMacroSub("log");
                       showToast(`${m.name} ready to log — adjust macros if needed`,"success");
                     }} className={alreadyLogged?"":"touch"} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderTop:mi>0?"1px solid var(--line-soft)":"none",cursor:alreadyLogged?"default":"pointer",opacity:alreadyLogged?0.5:1}}>
                       <div style={{flex:1,minWidth:0}}>

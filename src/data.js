@@ -475,6 +475,23 @@ export const recommendedReconFor = pepId => {
 
 /* ═══ CHANGELOG — shown in "What's New" sheet on first load after update ═══ */
 export const CHANGELOG = [
+  {v:"2026.07.31a", date:"2026-07-31", title:"Supply Health, Auto-Status & Shared Vials", items:[
+    {icon:"peps",   text:"Supply Health — sealed vials, weeks of supply, and weekly burn rate for every peptide, sorted so whatever runs out first is at the top"},
+    {icon:"plus",   text:"Open a sealed vial in one tap — it subtracts from your supply and starts a new batch with the details already filled in"},
+    {icon:"warn",   text:"Low stock warnings — total vial count up top, colour-coded urgency on every peptide"},
+    {icon:"users",  text:"Shared vials count both of you — NAD+ and MOTS-c supply now includes the whole household"},
+    {icon:"calendar",text:"Resuming soon — paused peptides count down to their resume date, and anything paused indefinitely shows as ON HOLD"},
+    {icon:"check",  text:"Peptides now resume on their own when the resume date arrives. Until now the app could only turn things off, never back on"},
+    {icon:"vial",   text:"Auto-status — cycles switch to active or completed by themselves based on your start and end dates"},
+    {icon:"target", text:"Titration banners you can tap — confirm a dose increase or push it back 7 days without leaving the screen"},
+    {icon:"scale",  text:"Doses now calculated from your batch's actual mg/ml and syringe units instead of reading the dose text"},
+    {icon:"target", text:"Goal ETA on the home card — your projected goal date every time you open the app"},
+    {icon:"pause",  text:"A paused peptide no longer jumps straight back to its old dose when you switch it on — resuming is now a deliberate step"},
+    {icon:"check",  text:"Your peptide list no longer blanks out after a cycle finishes or you confirm a titration bump"},
+    {icon:"star",   text:"All AI features working again — moved to Gemini 2.5 Flash after the old model was shut down"},
+    {icon:"macros", text:"Menu + button opens the add meal form properly again"},
+    {icon:"vial",   text:"Corrected doses per vial for 5-Amino-1MQ, NAD+ and Tesamorelin, and updated the CJC/Ipamorelin dose for the 5mg/ml mix"},
+  ]},
   {v:"2026.06.11a", date:"2026-06-11", title:"Macros Overhaul, AI Analysis & Cycle Planner", items:[
     {icon:"muscle", text:"Meal autocomplete — type a meal name and it suggests from your 52-meal history with macros pre-filled"},
     {icon:"star",   text:"Quick-add strip — your top favorites as one-tap chips above the meal list"},

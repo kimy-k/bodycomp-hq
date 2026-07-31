@@ -126,7 +126,7 @@ function DashboardInner(){
 
   /* ═══ MACRO STATE ═══ */
   const MEAL_TAGS=["Lunch","Snack","Dinner","Breakfast","Other"];
-  const [meals,setMeals]=useState([]);const [wheyOn,setWheyOn]=useState(true);const [macroSub,setMacroSub]=useState("log");const [mLoading,setMLoading]=useState(true);const [histDays,setHistDays]=useState([]);const [adding,setAdding]=useState(false);const [newMeal,setNewMeal]=useState({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});
+  const [meals,setMeals]=useState([]);const [wheyScoops,setWheyScoops]=useState(null); /* null = not loaded yet → fall back to configured default */const [macroSub,setMacroSub]=useState("log");const [mLoading,setMLoading]=useState(true);const [histDays,setHistDays]=useState([]);const [adding,setAdding]=useState(false);const [newMeal,setNewMeal]=useState({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});
   /* Meal dictionary — all unique meals ever logged, sorted by frequency. Powers autocomplete. */
   const [mealDict,setMealDict]=useState([]);
   useEffect(()=>{if(tab!=="macros")return;(async()=>{
@@ -201,7 +201,16 @@ function DashboardInner(){
   /* Reset pepDate to today when switching to peps tab */
   useEffect(()=>{if(tab==="peps")setPepDate(todayKey());},[tab]);
   /* Whey config derived from userConfig (Settings). Sensible defaults match the original constant (25g protein/scoop × 2 scoops). */
-  const whey=useMemo(()=>{const perScoop=+(userConfig?.wheyProtein||25);const scoops=+(userConfig?.wheyScoops||2);return{protein:perScoop*scoops,fat:+(scoops*0.5).toFixed(1),carbs:scoops*2,scoops,perScoop,enabled:perScoop>0&&scoops>0,label:scoops>0?`Whey · ${scoops} scoop${scoops!==1?"s":""}`:"Whey"};},[userConfig]);
+  /* ── Whey: standing config vs. what was actually taken today ──────────────
+     wheyCfg is the Settings-level setup (g per scoop, usual scoops/day).
+     `whey` is TODAY's actual intake, driven by wheyScoops state, because it
+     isn't always the usual amount. Macros must reflect the day, not the default. */
+  const wheyCfg=useMemo(()=>{const perScoop=+(userConfig?.wheyProtein||25);const maxScoops=Math.max(1,+(userConfig?.wheyScoops||2));return{perScoop,maxScoops,enabled:perScoop>0};},[userConfig]);
+  const whey=useMemo(()=>{
+    const s=Math.max(0,wheyScoops==null?wheyCfg.maxScoops:wheyScoops);
+    return{protein:wheyCfg.perScoop*s,fat:+(s*0.5).toFixed(1),carbs:s*2,scoops:s,perScoop:wheyCfg.perScoop,maxScoops:wheyCfg.maxScoops,
+      enabled:wheyCfg.enabled,label:s>0?`Whey · ${s} scoop${s!==1?"s":""}`:"Whey · none today"};
+  },[wheyCfg,wheyScoops]);
 
   /* P18: macroDate lets the user back-edit a past day's macros. Defaults to today.
      Changing this re-runs the load effect below and reroutes saves to that date. */
@@ -209,18 +218,24 @@ function DashboardInner(){
   /* Reset macroDate to today whenever user re-enters Macros tab — avoids confusion if they previously back-edited */
   useEffect(()=>{if(tab==="macros")setMacroDate(todayKey());},[tab]);
 
-  useEffect(()=>{setMeals([]);setWheyOn(true);setMLoading(true);(async()=>{
+  useEffect(()=>{setMeals([]);setWheyScoops(null);setMLoading(true);(async()=>{
     const row=await db.get("daily_macros",macroDate);
-    if(row){setMeals(row.meals||[]);setWheyOn(row.whey!==false);}
+    /* whey_scoops is authoritative; fall back to the legacy boolean for rows
+       written before the column existed. */
+    if(row){setMeals(row.meals||[]);setWheyScoops(row.whey_scoops!=null?row.whey_scoops:(row.whey===false?0:null));}
     /* Load shared household favorites (own + partner's). Each item carries _owner. */
     const sharedFavs=await db.getSharedFavs();
     if(sharedFavs)setFavs(sharedFavs);
     setMLoading(false);
   })();},[macroDate,db]);
 
-  const saveMacro=useCallback((m,w)=>{
-    setMeals(m);setWheyOn(w);
-    db.upsert("daily_macros",{date:macroDate,meals:m,whey:w});
+  /* Second arg is now a SCOOP COUNT, not a boolean. `whey` is written as a pure
+     function of it (scoops > 0) — never set independently — so the legacy boolean
+     column can't disagree with the count. */
+  const saveMacro=useCallback((m,scoops)=>{
+    const s=Math.max(0,+scoops||0);
+    setMeals(m);setWheyScoops(s);
+    db.upsert("daily_macros",{date:macroDate,meals:m,whey_scoops:s,whey:s>0});
   },[macroDate]);
 
   /* Save favs: strip _owner, write ONLY the current user's items to config.
@@ -236,12 +251,12 @@ function DashboardInner(){
     const res=rows.map(md=>{let t={cal:0,protein:0,fat:0,carbs:0};(md.meals||[]).forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});t.cal=calcCal(t.protein,t.fat,t.carbs);if(md.whey!==false&&whey.enabled){t.protein+=whey.protein;t.fat+=whey.fat;t.carbs+=whey.carbs;t.cal+=calcCal(whey.protein,whey.fat,whey.carbs);}return{date:md.date,...t,meals:md.meals||[]};});
     setHistDays(res);
   })();},[macroSub,tab]);
-  const totals=useMemo(()=>{let t={protein:0,fat:0,carbs:0};meals.forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});if(wheyOn&&whey.enabled){t.protein+=whey.protein;t.fat+=whey.fat;t.carbs+=whey.carbs;}t.cal=calcCal(t.protein,t.fat,t.carbs);return t;},[meals,wheyOn,whey]);
+  const totals=useMemo(()=>{let t={protein:0,fat:0,carbs:0};meals.forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});if(whey.enabled&&whey.scoops>0){t.protein+=whey.protein;t.fat+=whey.fat;t.carbs+=whey.carbs;}t.cal=calcCal(t.protein,t.fat,t.carbs);return t;},[meals,whey]);
   const rem={cal:TARGETS.cal-totals.cal,protein:TARGETS.protein-totals.protein};
   const weekAvgProtein=useMemo(()=>{if(histDays.length===0)return null;const recent=histDays.slice(0,7);return Math.round(recent.reduce((s,d)=>s+d.protein,0)/recent.length);},[histDays]);
-  const addMeal=()=>{if(!newMeal.name)return;const m={name:newMeal.name,protein:+(newMeal.protein||0),fat:+(newMeal.fat||0),carbs:+(newMeal.carbs||0),tag:newMeal.tag||"Other",id:Date.now()};saveMacro([...meals,m],wheyOn);setNewMeal({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});setAdding(false);};
-  const removeMeal=id=>saveMacro(meals.filter(m=>m.id!==id),wheyOn);
-  const toggleWhey=()=>saveMacro(meals,!wheyOn);
+  const addMeal=()=>{if(!newMeal.name)return;const m={name:newMeal.name,protein:+(newMeal.protein||0),fat:+(newMeal.fat||0),carbs:+(newMeal.carbs||0),tag:newMeal.tag||"Other",id:Date.now()};saveMacro([...meals,m],whey.scoops);setNewMeal({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});setAdding(false);};
+  const removeMeal=id=>saveMacro(meals.filter(m=>m.id!==id),whey.scoops);
+  const setScoops=n=>saveMacro(meals,n);
   const addFav=(m)=>{
     /* De-dupe against OWN list only — partner's "Egg sandwich" doesn't block yours. */
     if(favs.find(f=>f.name===m.name&&f._owner===db.currentUser))return;
@@ -254,11 +269,11 @@ function DashboardInner(){
   const addFromFav=(f)=>{
     /* Strip _owner before adding to today's meals log — it's not part of the meal schema. */
     const {_owner,...meal}=f;
-    saveMacro([...meals,{...meal,id:Date.now()}],wheyOn);
+    saveMacro([...meals,{...meal,id:Date.now()}],whey.scoops);
     setShowFavs(false);
   };
   const startEdit=(m)=>{setEditId(m.id);setEditMeal({name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag||"Other"});};
-  const saveEdit=()=>{saveMacro(meals.map(m=>m.id===editId?{...m,name:editMeal.name,protein:+(editMeal.protein||0),fat:+(editMeal.fat||0),carbs:+(editMeal.carbs||0),tag:editMeal.tag}:m),wheyOn);setEditId(null);};
+  const saveEdit=()=>{saveMacro(meals.map(m=>m.id===editId?{...m,name:editMeal.name,protein:+(editMeal.protein||0),fat:+(editMeal.fat||0),carbs:+(editMeal.carbs||0),tag:editMeal.tag}:m),whey.scoops);setEditId(null);};
 
   /* ═══ PEPTIDE STATE ═══ */
   const SIDE_FX = ["headache","insomnia","nightmare","nausea","flush","stinging","fatigue","hunger","jitter"];
@@ -1722,19 +1737,37 @@ function DashboardInner(){
           </div>
 
           {/* Whey toggle — only shown when configured in Settings */}
-          {whey.enabled&&<button onClick={toggleWhey} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:wheyOn?"var(--accent-soft)":"var(--elev-1)",border:wheyOn?"1px solid var(--accent-line)":"1px solid transparent",borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:18,cursor:"pointer",transition:"all .2s var(--ease-out)",minHeight:54}}>
-            <div style={{textAlign:"left"}}>
-              <div style={{fontSize:13.5,fontWeight:600,color:"var(--t-1)"}}>{whey.label}</div>
-              <div className="mono" style={{fontSize:11,color:"var(--t-3)",marginTop:2,letterSpacing:".01em"}}>{calcCal(whey.protein,whey.fat,whey.carbs)} kcal · {whey.protein}g protein</div>
-            </div>
-            <div style={{width:42,height:24,borderRadius:12,background:wheyOn?"var(--accent)":"var(--elev-3)",display:"flex",alignItems:"center",padding:"0 3px",transition:"background .2s var(--ease-out)"}}><div style={{width:18,height:18,borderRadius:9,background:"var(--bg)",transform:wheyOn?"translateX(18px)":"translateX(0)",transition:"transform .25s var(--ease-out)"}}/></div>
-          </button>}
+          {/* ── Whey: Off / 1 / 2 … one tap to any state ──────────────────────
+               Was a single on/off toggle, which forced an all-or-nothing 2-scoop
+               assumption. Segments go up to the configured usual scoops, minimum 2,
+               so a 1-scoop day is a single tap rather than an untrackable event. */}
+          {whey.enabled&&(()=>{
+            const on=whey.scoops>0;
+            const opts=[0,...Array.from({length:Math.max(2,whey.maxScoops)},(_,i)=>i+1)];
+            return(<div style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:on?"var(--accent-soft)":"var(--elev-1)",border:on?"1px solid var(--accent-line)":"1px solid transparent",borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:18,transition:"all .2s var(--ease-out)",minHeight:54}}>
+              <div style={{textAlign:"left",minWidth:0}}>
+                <div style={{fontSize:13.5,fontWeight:600,color:"var(--t-1)"}}>{whey.label}</div>
+                <div className="mono" style={{fontSize:11,color:"var(--t-3)",marginTop:2,letterSpacing:".01em"}}>
+                  {on?<>{calcCal(whey.protein,whey.fat,whey.carbs)} kcal · {whey.protein}g protein</>:<>not counted today</>}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:3,background:"var(--elev-2)",borderRadius:999,padding:3,flexShrink:0}}>
+                {opts.map(n=>{const sel=whey.scoops===n;return(
+                  <button key={n} onClick={()=>setScoops(n)} className="touch" aria-label={n===0?"No whey today":`${n} scoop${n===1?"":"s"}`} aria-pressed={sel}
+                    style={{minWidth:34,height:28,borderRadius:999,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",
+                      background:sel?(n===0?"var(--elev-3)":"var(--accent)"):"transparent",
+                      color:sel?(n===0?"var(--t-2)":"var(--bg)"):"var(--t-4)",transition:"all .18s var(--ease-out)"}}>
+                    {n===0?"Off":n}
+                  </button>);})}
+              </div>
+            </div>);
+          })()}
 
           {/* Quick-add — top favorites as one-tap chips */}
           {!adding&&!showFavs&&favs.length>0&&(<div style={{marginBottom:12}}>
             <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:6}}>Quick add</div>
             <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:2}}>
-              {favs.slice(0,6).map(f=>(<button key={f.name} onClick={()=>{const m={name:f.name,protein:+(f.protein||0),fat:+(f.fat||0),carbs:+(f.carbs||0),tag:f.tag||"Other",id:Date.now()};saveMacro([...meals,m],wheyOn);}} className="touch" style={{padding:"7px 11px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-2)",fontSize:11,fontWeight:500,cursor:"pointer",whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:5,flexShrink:0}}>
+              {favs.slice(0,6).map(f=>(<button key={f.name} onClick={()=>{const m={name:f.name,protein:+(f.protein||0),fat:+(f.fat||0),carbs:+(f.carbs||0),tag:f.tag||"Other",id:Date.now()};saveMacro([...meals,m],whey.scoops);}} className="touch" style={{padding:"7px 11px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-2)",fontSize:11,fontWeight:500,cursor:"pointer",whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:5,flexShrink:0}}>
                 <span style={{color:"var(--c-protein)",fontWeight:600,fontSize:10}}>{f.protein}p</span>
                 {f.name.length>18?f.name.slice(0,16)+"…":f.name}
               </button>))}
@@ -1756,7 +1789,7 @@ function DashboardInner(){
             return(<div style={{background:"color-mix(in oklch, var(--c-protein) 8%, var(--elev-1))",borderLeft:"3px solid var(--c-protein)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:12}}>
               <div style={{fontSize:11,color:"var(--c-protein)",fontWeight:600,marginBottom:6}}>Protein boost needed</div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {options.map(o=>(<button key={o.name} onClick={()=>{const m={name:o.name,protein:o.protein,fat:o.name.includes("Egg")?10:2,carbs:o.name.includes("Bar")?20:4,tag:"Snack",id:Date.now()};saveMacro([...meals,m],wheyOn);}} className="touch" style={{padding:"6px 10px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-2)",fontSize:11,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4}}>
+                {options.map(o=>(<button key={o.name} onClick={()=>{const m={name:o.name,protein:o.protein,fat:o.name.includes("Egg")?10:2,carbs:o.name.includes("Bar")?20:4,tag:"Snack",id:Date.now()};saveMacro([...meals,m],whey.scoops);}} className="touch" style={{padding:"6px 10px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-1)",color:"var(--t-2)",fontSize:11,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4}}>
                   <span>{o.icon}</span> {o.name} <span className="mono" style={{color:"var(--c-protein)",fontWeight:600,fontSize:10}}>+{o.protein}g</span>
                 </button>))}
               </div>
@@ -1933,7 +1966,7 @@ function DashboardInner(){
                 return(<div key={tag} style={{marginBottom:libCat==="All"?16:0}}>
                   {libCat==="All"&&<div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:6,paddingTop:4,borderTop:"1px solid var(--line-soft)"}}>{tag} · {items.length}</div>}
                   {items.map((m,i)=>(<div key={i} style={{display:"flex",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--line-soft)",gap:8}}>
-                    <div onClick={()=>{saveMacro([...meals,{name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag,id:Date.now()}],wheyOn);setMacroSub("log");showToast(`${m.name} added`,"success");}} style={{flex:1,minWidth:0,cursor:"pointer"}}>
+                    <div onClick={()=>{saveMacro([...meals,{name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag,id:Date.now()}],whey.scoops);setMacroSub("log");showToast(`${m.name} added`,"success");}} style={{flex:1,minWidth:0,cursor:"pointer"}}>
                       <div style={{fontSize:12.5,color:"var(--t-1)",fontWeight:500,marginBottom:1}}>{m.name}</div>
                       <div className="mono" style={{display:"flex",gap:8,fontSize:10}}>
                         <span style={{color:"var(--c-cal)"}}>{calcCal(m.protein,m.fat,m.carbs)}</span>
@@ -1943,7 +1976,7 @@ function DashboardInner(){
                         <span style={{color:"var(--t-5)"}}>{m.count}×</span>
                       </div>
                     </div>
-                    <button onClick={()=>{saveMacro([...meals,{name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag,id:Date.now()}],wheyOn);showToast(`${m.name} added`,"success");}} className="touch" style={{padding:"5px 10px",borderRadius:999,border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:9.5,fontWeight:600,cursor:"pointer",flexShrink:0}}>+ Log</button>
+                    <button onClick={()=>{saveMacro([...meals,{name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag,id:Date.now()}],whey.scoops);showToast(`${m.name} added`,"success");}} className="touch" style={{padding:"5px 10px",borderRadius:999,border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:9.5,fontWeight:600,cursor:"pointer",flexShrink:0}}>+ Log</button>
                   </div>))}
                 </div>);
               })}
@@ -2055,9 +2088,13 @@ function DashboardInner(){
                     <button onClick={async()=>{
                       const toLog=d.meals.filter(m=>!todayMealNames.includes(m.name.toLowerCase().trim())&&m.matched);
                       const updated=[...(meals||[]),...toLog.map(m=>({name:m.name,protein:+m.protein||0,fat:+m.fat||0,carbs:+m.carbs||0,tag:m.tag||slotToTag(m.slot)||"Lunch"}))];
-                      const cal=updated.reduce((s,m)=>s+(+m.protein||0)*4+(+m.fat||0)*9+(+m.carbs||0)*4,0)+(whey?225:0);
-                      const protein=updated.reduce((s,m)=>s+(+m.protein||0),0)+(whey?50:0);
-                      await db.upsert("daily_macros",{date:macroDate,meals:updated,whey,cal,protein});
+                      /* `whey` is the memo object — truthy even at 0 scoops — so this
+                         used to add a hardcoded 225 kcal / 50g every time and write the
+                         object into the boolean column. Use the actual day's values. */
+                      const wOn=whey.enabled&&whey.scoops>0;
+                      const cal=updated.reduce((s,m)=>s+(+m.protein||0)*4+(+m.fat||0)*9+(+m.carbs||0)*4,0)+(wOn?calcCal(whey.protein,whey.fat,whey.carbs):0);
+                      const protein=updated.reduce((s,m)=>s+(+m.protein||0),0)+(wOn?whey.protein:0);
+                      await db.upsert("daily_macros",{date:macroDate,meals:updated,whey_scoops:whey.scoops,whey:wOn,cal,protein});
                       setMeals(updated);
                       showToast(`${toLog.length} meals logged from ${d.day}`,"success");
                     }} className="touch" style={{width:"100%",padding:"10px",borderRadius:"var(--r-sm)",background:"var(--accent-soft)",color:"var(--accent)",border:"none",fontSize:12,fontWeight:600,cursor:"pointer"}}>

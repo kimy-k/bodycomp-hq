@@ -47,7 +47,7 @@ async function gatherDailyData(userId) {
   const [whoop14, peps14, macrosToday, wellnessToday, stack, batches] = await Promise.all([
     sbSelect("daily_whoop",     {user_id: `eq.${userId}`, date: `gte.${d14}`, select: "date,recovery,sleep,strain,hrv_ms,rhr,sleep_hours,sleep_efficiency", order: "date.desc"}),
     sbSelect("daily_peptides",  {user_id: `eq.${userId}`, date: `gte.${d14}`, select: "date,checks,side_effects", order: "date.desc"}),
-    sbSelect("daily_macros",    {user_id: `eq.${userId}`, date: `eq.${today}`, select: "date,meals,whey"}),
+    sbSelect("daily_macros",    {user_id: `eq.${userId}`, date: `eq.${today}`, select: "date,meals,whey,whey_scoops"}),
     sbSelect("daily_wellness",  {user_id: `eq.${userId}`, date: `eq.${today}`, select: "date,mood,energy,sleep_quality,notes"}),
     sbSelect("peptide_stack",   {user_id: `eq.${userId}`, enabled: "eq.true", select: "peptide_id,dose,schedule,time,status,total_weeks,start_date"}),
     sbSelect("peptide_batches", {user_id: `eq.${userId}`, exhausted: "eq.false", select: "peptide_id,expiry_date"}),

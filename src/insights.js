@@ -3,6 +3,16 @@
    Each insight has a guard clause — degrades gracefully on sparse data. */
 
 export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, measurements, scans, userPeps, TARGETS, whey, goalBf, userConfig}) => {
+  /* Per-day whey. whey_scoops is the real count; the legacy boolean only says
+     yes/no, so fall back to the standing default for rows written before the
+     column existed. Returns null when no whey was taken that day. */
+  const wheyOf = d => {
+    if (!whey?.enabled) return null;
+    const s = d?.whey_scoops != null ? +d.whey_scoops : (d?.whey === false ? 0 : (whey.scoops || 0));
+    if (!(s > 0)) return null;
+    const per = whey.perScoop || (whey.scoops ? whey.protein / whey.scoops : 0);
+    return { protein: per * s, fat: +(s * 0.5).toFixed(1), carbs: s * 2 };
+  };
   const out = [];
   const now = new Date();
   const daysAgo = (dateStr) => (now - new Date(dateStr + "T12:00:00")) / 86400000;
@@ -15,7 +25,7 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
       const proteins = last7.map(d => {
         let p = 0;
         (d.meals || []).forEach(m => p += (+m.protein || 0));
-        if (d.whey !== false && whey?.enabled) p += whey.protein;
+        { const w = wheyOf(d); if (w) p += w.protein; }
         return p;
       });
       const avg = Math.round(proteins.reduce((a,b) => a+b, 0) / proteins.length);
@@ -163,7 +173,7 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
       if (last7Macros.length >= 3) {
         const avgProtein = Math.round(last7Macros.reduce((s, d) => {
           let p = 0; (d.meals || []).forEach(m => p += (+m.protein || 0));
-          if (d.whey !== false && whey?.enabled) p += whey.protein;
+          { const w = wheyOf(d); if (w) p += w.protein; }
           return s + p;
         }, 0) / last7Macros.length);
         const minProtein = Math.round(last.leanMass * 2.2);  /* 2.2g/kg lean mass minimum for muscle preservation during cut */
@@ -385,7 +395,7 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
       const cals = last7.map(d => {
         let c = 0;
         (d.meals || []).forEach(m => c += ((+m.protein || 0) * 4 + (+m.carbs || 0) * 4 + (+m.fat || 0) * 9));
-        if (d.whey !== false && whey?.enabled) c += (whey.protein * 4 + whey.carbs * 4 + whey.fat * 9);
+        { const w = wheyOf(d); if (w) c += (w.protein * 4 + w.carbs * 4 + w.fat * 9); }
         return c;
       });
       const avg = Math.round(cals.reduce((a,b) => a+b, 0) / cals.length);
@@ -427,7 +437,7 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
         const cals = last14.map(d => {
           let c = 0;
           (d.meals || []).forEach(m => c += ((+m.protein || 0) * 4 + (+m.carbs || 0) * 4 + (+m.fat || 0) * 9));
-          if (d.whey !== false && whey?.enabled) c += (whey.protein * 4 + whey.carbs * 4 + whey.fat * 9);
+          { const w = wheyOf(d); if (w) c += (w.protein * 4 + w.carbs * 4 + w.fat * 9); }
           return c;
         });
         const avgCal = Math.round(cals.reduce((a,b) => a+b, 0) / cals.length);
@@ -514,7 +524,7 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
         const proteins = between.map(d => {
           let p = 0;
           (d.meals || []).forEach(m => p += (+m.protein || 0));
-          if (d.whey !== false && whey?.enabled) p += whey.protein;
+          { const w = wheyOf(d); if (w) p += w.protein; }
           return p;
         });
         const hitDays = proteins.filter(p => p >= TARGETS.protein).length;

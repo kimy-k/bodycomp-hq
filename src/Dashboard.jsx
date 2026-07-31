@@ -265,7 +265,6 @@ function DashboardInner(){
   const [pepData,setPepData]=useState({checks:{},sideEffects:[]});
   const [pepLoading,setPepLoading]=useState(true);
   const [pepHist,setPepHist]=useState([]);const [pepSub,setPepSub]=useState("today");
-  const [showOther,setShowOther]=useState(false);
   const [editingDose,setEditingDose]=useState(null);const [doseVal,setDoseVal]=useState("");
   /* What's New sheet — shows once per version per user */
   const [showWhatsNew,setShowWhatsNew]=useState(false);
@@ -441,7 +440,22 @@ function DashboardInner(){
     if (p.status === "starting" && p.startDate && p.startDate <= pepDate) return true;
     return false;
   };
-  const isPeptideUpcoming = (p) => p.status === "starting" && p.startDate && p.startDate > pepDate;
+  /* ── One definition of "not running yet, but coming" ──────────────────────
+     A peptide can be waiting on either date depending on how it got there:
+       resume_date  — a paused/completed cycle returning
+       start_date   — a cycle that hasn't begun
+     That difference is an artifact of which column was populated, not something
+     the user thinks about, so it must NOT decide where the peptide renders.
+     Both resolve through here; every surface reads this one function.        */
+  const upcomingDateFor = (p) => {
+    if (isPeptideLive(p)) return null;
+    if (p.resumeDate && p.resumeDate > pepDate) return p.resumeDate;
+    if (p.startDate  && p.startDate  > pepDate) return p.startDate;
+    return null;
+  };
+  const isPeptideUpcoming = (p) => upcomingDateFor(p) !== null;
+  /* Not running and no date attached — paused indefinitely. */
+  const isPeptideOnHold = (p) => !isPeptideLive(p) && !isPeptideUpcoming(p);
 
   const pepDateDow=new Date(pepDate+"T12:00:00").getDay();
   /* Recency check: if a peptide was taken within its minimum spacing window,
@@ -2227,25 +2241,28 @@ function DashboardInner(){
             </div>);})}</div>);
           })()}
 
-          {/* Resuming Soon — completed/break peptides with upcoming resume dates */}
+          {/* ── Coming up — every peptide that isn't running but has a date ──
+               Merges what used to be two separate lists ("Resuming soon" here and
+               "Starting soon" on the Stack tab) plus the collapsed break strip below.
+               One question — what's off and when does it come back — one answer,
+               one place, on the surface where it's actionable. */}
           {(()=>{
-            const today=todayKey();
-            const resuming=userPeps.filter(p=>(p.status==="completed"||p.status==="break")&&p.resumeDate&&p.resumeDate>today)
-              .map(p=>{const d=Math.ceil((new Date(p.resumeDate+"T12:00:00")-new Date(today+"T12:00:00"))/(86400000));return{...p,daysUntil:d};})
+            const coming=userPeps.filter(isPeptideUpcoming)
+              .map(p=>{const d=upcomingDateFor(p);return{...p,upDate:d,daysUntil:Math.ceil((new Date(d+"T12:00:00")-new Date(pepDate+"T12:00:00"))/86400000)};})
               .sort((a,b)=>a.daysUntil-b.daysUntil);
-            const onHold=userPeps.filter(p=>(p.status==="break")&&!p.resumeDate&&p.enabled);
-            if(resuming.length===0&&onHold.length===0)return null;
+            const onHold=userPeps.filter(p=>isPeptideOnHold(p)&&p.status==="break");
+            if(coming.length===0&&onHold.length===0)return null;
             return(<div style={{marginBottom:16}}>
-              <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>Resuming soon</div>
-              {resuming.map(p=>{const soon=p.daysUntil<=7;const color=soon?"var(--accent)":"var(--t-3)";return(
+              <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>Coming up</div>
+              {coming.map(p=>{const soon=p.daysUntil<=7;const color=soon?"var(--accent)":"var(--t-3)";return(
                 <div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:`3px solid ${color}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div>
                     <span style={{fontSize:13,fontWeight:600,color:p.color||"var(--t-1)"}}>{p.name}</span>
                     <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:2}}>{p.dose}</div>
                   </div>
                   <div style={{textAlign:"right"}}>
-                    <span className="mono" style={{fontSize:14,fontWeight:700,color:color}}>{p.daysUntil}d</span>
-                    <div className="mono" style={{fontSize:9,color:"var(--t-4)"}}>{new Date(p.resumeDate+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
+                    <span className="mono" style={{fontSize:14,fontWeight:700,color:color}}>{p.daysUntil===0?"today":`${p.daysUntil}d`}</span>
+                    <div className="mono" style={{fontSize:9,color:"var(--t-4)"}}>{new Date(p.upDate+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
                   </div>
                 </div>
               );})}
@@ -2469,19 +2486,8 @@ function DashboardInner(){
               })}
             </div>
           </div>)}
-          {/* Break / upcoming — slim collapsed */}
-          {(()=>{const breakPeps=notDue.filter(p=>p.status==="break"||isPeptideUpcoming(p));if(breakPeps.length===0)return null;return(<div style={{marginTop:14}}>
-            <button onClick={()=>setShowOther(!showOther)} className="touch" style={{background:"none",border:"none",color:"var(--t-4)",fontSize:10.5,cursor:"pointer",padding:"4px 0",display:"inline-flex",alignItems:"center",gap:5}}>
-              {breakPeps.filter(p=>p.status==="break").length} on break · {breakPeps.filter(p=>isPeptideUpcoming(p)).length} upcoming
-              <Icon n={showOther?"chevUp":"chevDown"} s={12}/>
-            </button>
-            {showOther&&(<div className="sheet" style={{marginTop:6}}>
-              {breakPeps.map(p=>(<div key={p.id} style={{padding:"6px 0",fontSize:11,color:"var(--t-4)",borderBottom:"1px solid var(--line-soft)",display:"flex",alignItems:"center",gap:8}}>
-                <Icon n={p.status==="break"?"pause":"calendar"} s={10} c="var(--t-5)"/>
-                <span>{p.name}</span><span style={{color:"var(--t-5)"}}>· {p.note}</span>
-              </div>))}
-            </div>)}
-          </div>);})()}
+          {/* Break/upcoming strip removed — fully superseded by "Coming up" above.
+               It was also why a peptide starting tomorrow sat hidden behind a tap. */}
         </>)}
 
         {/* ═══ TIMELINE — visual peptide cycle planner ═══ */}
@@ -2659,9 +2665,14 @@ function DashboardInner(){
             </div>);
           })}
 
-          {userPeps.filter(p=>isPeptideUpcoming(p)).length>0&&<>
-            <H2>Starting soon</H2>
-            {userPeps.filter(p=>isPeptideUpcoming(p)).map(p=>{
+          {/* Not running — the complete reference list: anything upcoming OR held,
+             with cost projections. Today answers "when"; Stack answers "what and
+             what will it cost". Same upcomingDateFor() filter, so the two can't drift. */}
+          {userPeps.filter(p=>!isPeptideLive(p)).length>0&&<>
+            <H2>Not running</H2>
+            {userPeps.filter(p=>!isPeptideLive(p))
+              .sort((a,b)=>{const da=upcomingDateFor(a),db=upcomingDateFor(b);if(da&&db)return da.localeCompare(db);if(da)return -1;if(db)return 1;return a.name.localeCompare(b.name);})
+              .map(p=>{
               const inv=inventoryFor(p);
               /* Project monthly cost for upcoming peptides too — same math as Active,
                  labeled "projected" so it's clear it's not yet incurred. */
@@ -2670,7 +2681,11 @@ function DashboardInner(){
                 .sort((a,b) => b.date_recon.localeCompare(a.date_recon))[0];
               const projectedPerDose = activeBatch ? costPerDose(activeBatch, p) : null;
               const projectedMonthly = activeBatch ? costPerMonth(activeBatch, p) : null;
-              const daysToStart = p.startDate ? Math.max(0, Math.ceil((new Date(p.startDate+"T12:00:00") - new Date(day+"T12:00:00"))/86400000)) : null;
+              /* Read the date through upcomingDateFor so a held peptide (old start_date,
+                 no future date) doesn't render a bogus "starts in 0d" chip. */
+              const upDate = upcomingDateFor(p);
+              const daysToStart = upDate ? Math.max(0, Math.ceil((new Date(upDate+"T12:00:00") - new Date(day+"T12:00:00"))/86400000)) : null;
+              const upVerb = upDate ? (p.resumeDate === upDate ? "resumes in" : "starts in") : null;
               return(<div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:`3px solid ${p.color}`,borderRadius:"var(--r-sm)",padding:"13px 16px",marginBottom:8}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:14,fontWeight:600,color:p.color}}>{p.name}</span>
@@ -2682,11 +2697,16 @@ function DashboardInner(){
               <div className="mono" style={{fontSize:12,color:"var(--t-2)",marginTop:3}}>{p.dose}</div>
               <div style={{fontSize:11,color:"var(--t-3)",marginTop:2}}>{p.note}</div>
               <div style={{fontSize:11,color:"var(--t-4)",marginTop:5,lineHeight:1.5,fontStyle:"italic"}}>{p.purpose}</div>
-              {(daysToStart != null || projectedPerDose != null || projectedMonthly != null) && (
+              {(daysToStart != null || upDate == null || projectedPerDose != null || projectedMonthly != null) && (
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                  {upDate == null && (
+                    <span className="mono" style={{fontSize:10,color:"var(--t-4)",background:"var(--elev-2)",padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:"1px solid var(--line-soft)"}}>
+                      on hold
+                    </span>
+                  )}
                   {daysToStart != null && (
                     <span className="mono" style={{fontSize:10,color:p.color,background:`color-mix(in oklch, ${p.color} 10%, transparent)`,padding:"3px 8px",borderRadius:999,letterSpacing:".02em",border:`1px solid color-mix(in oklch, ${p.color} 35%, transparent)`,fontWeight:600}}>
-                      starts in {daysToStart}d
+                      {upVerb} {daysToStart}d
                     </span>
                   )}
                   {projectedPerDose != null && (

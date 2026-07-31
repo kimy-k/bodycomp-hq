@@ -1685,8 +1685,8 @@ function DashboardInner(){
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
                 {[["BMR",Math.round(bmr),"var(--c-carbs)"],["TDEE",tdee,"var(--c-weight)"],["Target",TARGETS.cal,"var(--t-1)"],[deficit>0?"Planned def.":"Planned surp.",deficit>0?`−${deficit}`:`+${Math.abs(deficit)}`,deficit>0?"var(--c-success)":"var(--c-danger)",defPct]].map(([l,v,c,p],i)=>(
                   <div key={i} style={{textAlign:"center",flex:1}}>
-                    <div style={{fontSize:8.5,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:1}}>{l}</div>
-                    <div className="serif tabular" style={{fontSize:16,color:c,lineHeight:1.1}}>{v}</div>
+                    <div style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:2}}>{l}</div>
+                    <div className="serif tabular" style={{fontSize:18,color:c,lineHeight:1.1}}>{v}</div>
                     {p&&<div className="mono" style={{fontSize:8.5,color:"var(--t-5)",marginLeft:3}}>{p}%</div>}
                   </div>
                 ))}
@@ -1709,8 +1709,8 @@ function DashboardInner(){
               <span className="mono" style={{fontSize:10,color:rem.protein>0?"var(--t-3)":"var(--c-success)"}}>{rem.protein>0?`${Math.round(rem.protein)}g left`:"✓ hit"}</span>
             </div>
             <div style={{display:"flex",alignItems:"baseline",gap:5,marginBottom:6}}>
-              <span className="serif tabular" style={{fontSize:36,color:totals.protein>=TARGETS.protein?"var(--c-success)":"var(--c-protein)",fontStyle:"italic",lineHeight:1,letterSpacing:"-0.02em"}}>{Math.round(totals.protein)}</span>
-              <span className="serif" style={{fontSize:16,color:"var(--t-4)",fontStyle:"italic"}}>/ {TARGETS.protein}g</span>
+              <span className="serif tabular" style={{fontSize:30,color:totals.protein>=TARGETS.protein?"var(--c-success)":"var(--c-protein)",lineHeight:1,letterSpacing:"-0.02em"}}>{Math.round(totals.protein)}</span>
+              <span className="serif" style={{fontSize:14,color:"var(--t-4)"}}>/ {TARGETS.protein}g</span>
             </div>
             <div className="hbar" style={{marginBottom:0}}><i style={{width:`${Math.min(100,totals.protein/TARGETS.protein*100)}%`,background:totals.protein>=TARGETS.protein?"var(--c-success)":"var(--c-protein)"}}/></div>
             {rem.protein>0&&(()=>{
@@ -1772,9 +1772,9 @@ function DashboardInner(){
                   <span className="mono" style={{fontSize:10,color:"var(--t-3)"}}>{totals.cal.toLocaleString()} of {TARGETS.cal.toLocaleString()}</span>
                 </div>
                 <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:3}}>
-                  <span className="serif tabular" style={{fontSize:38,color:over?"var(--c-warn)":"var(--t-1)",lineHeight:1.05,letterSpacing:"-0.02em"}}>{Math.abs(left).toLocaleString()}</span>
-                  {behind&&<span style={{fontSize:12,color:"var(--c-warn)"}}>behind pace</span>}
-                  {pc&&pc.onPace&&!over&&<span style={{fontSize:12,color:"var(--c-success)"}}>on pace</span>}
+                  <span className="serif tabular" style={{fontSize:30,color:over?"var(--c-warn)":"var(--t-1)",lineHeight:1,letterSpacing:"-0.035em"}}>{Math.abs(left).toLocaleString()}</span>
+                  {behind&&<span className="mono" style={{fontSize:11,color:"var(--c-warn)"}}>behind pace</span>}
+                  {pc&&pc.onPace&&!over&&<span className="mono" style={{fontSize:11,color:"var(--c-success)"}}>on pace</span>}
                 </div>
                 <div className="hbar" style={{height:8,borderRadius:4,marginTop:12,overflow:"visible"}}>
                   <i style={{width:`${Math.min(100,totals.cal/TARGETS.cal*100)}%`,background:over?"var(--c-warn)":"var(--c-cal)",borderRadius:4}}/>

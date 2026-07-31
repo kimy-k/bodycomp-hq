@@ -28,6 +28,38 @@ import {todayKey, localDateKey, addDays, buildProj, calcMonthly, compressImage} 
 import {computeInsights} from "./insights.js";
 import {Icon} from "./Icon.jsx";
 import {FONT_URL, STYLE} from "./styles.js";
+
+/* ── Auto-status state machine (single source of truth) ──────────────────────
+   Used by BOTH the userPeps memo (display) and the DB writeback effect, so the
+   two can never drift. Pure: takes a raw stack row + today's date key.
+
+   Transitions:
+     completed --(resume_date reached)--> starting   [consumes resume_date]
+     break     --(resume_date reached)--> starting   [consumes resume_date]
+     starting  --(start_date reached)---> active
+     active    --(cycle_end passed)-----> completed
+
+   Design notes:
+   - `break` no longer auto-activates off a stale start_date. A break is an
+     intentional pause; resuming requires an explicit resume_date. Previously any
+     paused peptide snapped to "active" at its old dose the moment it was
+     re-enabled — wrong default for anything paused for a clinical reason
+     (e.g. reta, which needs a titration restart, not its old dose).
+   - Resuming routes through `starting`, never straight to `active`.
+   - Returns clearResume so the caller knows to null out resume_date, preventing
+     the transition from re-firing on later renders.                          */
+export function deriveStatus(s,today){
+  let status=s.status||"active";
+  let clearResume=false;
+  if((status==="completed"||status==="break")&&s.resume_date&&s.resume_date<=today){status="starting";clearResume=true;}
+  if(status==="starting"&&s.start_date&&s.start_date<=today){status="active";}
+  /* On a resume pass, ignore a stale cycle_end from the PREVIOUS cycle — otherwise
+     the row resumes and immediately re-completes in the same pass, netting no status
+     change, so the patch never fires and the resume silently does nothing. */
+  if(!clearResume&&status==="active"&&s.cycle_end&&s.cycle_end<today){status="completed";}
+  const staleCycleEnd=clearResume&&!!s.cycle_end&&s.cycle_end<today;
+  return {status,clearResume,staleCycleEnd};
+}
 import {Tip, Card, H2, TabBtn, Insight, cBox, Skel, SkelTab, Toast, Logo, RingProgress} from "./ui.jsx";
 import {ensureServiceWorker, subscribePush, unsubscribePush, sendTestPush} from "./push-client.js";
 import {Onboarding} from "./Onboarding.jsx";
@@ -348,11 +380,9 @@ function DashboardInner(){
       .map(s=>{
         const c=cat[s.peptide_id];
         if(!c)return null; /* peptide removed from catalog — skip */
-        /* ── Auto-status: derive effective status from dates ── */
+        /* ── Auto-status: derive effective status from dates (see deriveStatus) ── */
         const today=new Date().toISOString().slice(0,10);
-        let effectiveStatus=s.status||"active";
-        if((effectiveStatus==="break"||effectiveStatus==="starting")&&s.start_date&&s.start_date<=today){effectiveStatus="active";}
-        if(effectiveStatus==="active"&&s.cycle_end&&s.cycle_end<today){effectiveStatus="completed";}
+        const {status:effectiveStatus,staleCycleEnd}=deriveStatus(s,today);
         return {
           ...c,
           dose:s.dose||"",
@@ -363,6 +393,7 @@ function DashboardInner(){
           totalWeeks:s.total_weeks,
           cycleEnd:s.cycle_end,
           resumeDate:s.resume_date,
+          staleCycleEnd, /* resumed, but cycle_end still points at the old cycle */
           note:s.note,
           _stackId:s.id, /* opaque ref for editing */
         };
@@ -376,18 +407,29 @@ function DashboardInner(){
   useEffect(()=>{
     const today=new Date().toISOString().slice(0,10);
     const patches=peptideStack.filter(s=>s.enabled).map(s=>{
-      let expected=s.status||"active";
-      if((expected==="break"||expected==="starting")&&s.start_date&&s.start_date<=today){expected="active";}
-      if(expected==="active"&&s.cycle_end&&s.cycle_end<today){expected="completed";}
-      return expected!==s.status?{id:s.id,peptide_id:s.peptide_id,from:s.status,to:expected}:null;
+      const {status:expected,clearResume}=deriveStatus(s,today);
+      /* Patch if status moved OR a resume_date was consumed — the latter must be
+         nulled even when net status is unchanged, or it re-fires forever. */
+      if(expected===s.status&&!clearResume)return null;
+      const body={};
+      if(expected!==s.status)body.status=expected;
+      if(clearResume)body.resume_date=null;
+      return {id:s.id,peptide_id:s.peptide_id,from:s.status,to:expected,body};
     }).filter(Boolean);
     if(patches.length===0)return;
     (async()=>{
+      let ok=0;
       for(const p of patches){
-        await fetch(`${SB}/peptide_stack?id=eq.${p.id}`,{method:"PATCH",headers:{...hdr,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({status:p.to})});
+        const r=await fetch(`${SB}/peptide_stack?id=eq.${p.id}`,{method:"PATCH",headers:{...hdr,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify(p.body)});
+        if(r.ok)ok++;else console.warn(`[BCQ] auto-status patch failed for ${p.peptide_id}: HTTP ${r.status}`);
       }
-      /* Refresh local state so the memo doesn't re-trigger patches */
-      const fresh=await db.list("peptide_stack",200,"peptide_id");if(fresh)setPeptideStack(fresh);
+      if(ok===0)return;
+      /* Refresh local state so the memo doesn't re-trigger patches.
+         NOTE: use getStack(), NOT db.list() — list() hardcodes order=date.desc and
+         peptide_stack has no `date` column, so it 400s and returns []. The old code
+         then did setPeptideStack([]), blanking the whole stack until manual reload. */
+      const fresh=await db.getStack();
+      if(Array.isArray(fresh)&&fresh.length)setPeptideStack(fresh);
     })();
   },[peptideStack,db]);
 
@@ -2157,7 +2199,8 @@ function DashboardInner(){
               }
               /* 3. Refresh data */
               const rows=await db.listShared("titration_steps",200,"created_at");setTitrationSteps(rows||[]);
-              const fresh=await db.list("peptide_stack",200,"peptide_id");setPeptideStack(fresh||[]);
+              const fresh=await db.getStack(); /* was db.list() — 400s on peptide_stack (no `date` column) and blanked the stack */
+              if(Array.isArray(fresh)&&fresh.length)setPeptideStack(fresh);
               showToast(`Bumped to ${step.dose}`,"success");
             };
             const delayBump=async(alert)=>{
@@ -3622,7 +3665,7 @@ function DashboardInner(){
           note:p.note,
         };
         const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-        const STATUSES=[["active","Active"],["starting","Starting"],["break","On break"],["prn","PRN"]];
+        const STATUSES=[["active","Active"],["starting","Starting"],["break","On break"],["completed","Completed"],["prn","PRN"]];
         const TIMES=["AM","PM","Bedtime","AM+PM","AM+Lunch"];
         const hasDefaults=!!DEFAULT_STACK[p.id];
         return(<div onClick={()=>setEditPepModal(null)} style={{position:"fixed",inset:0,zIndex:150,background:"oklch(0.05 0 0 / 0.78)",backdropFilter:"blur(10px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"20px"}}>

@@ -126,6 +126,8 @@ function DashboardInner(){
 
   /* ═══ MACRO STATE ═══ */
   const MEAL_TAGS=["Lunch","Snack","Dinner","Breakfast","Other"];
+  const [openCats,setOpenCats]=useState({}); /* Meal Library: which category groups are expanded */
+  const [selDay,setSelDay]=useState(null); /* index 0-6 into week7, or null = summary */
   const [macro7,setMacro7]=useState([]); /* last 8 days of totals — powers both 7-day strips */
   const [meals,setMeals]=useState([]);const [wheyScoops,setWheyScoops]=useState(null); /* null = not loaded yet → fall back to configured default */const [macroSub,setMacroSub]=useState("log");const [mLoading,setMLoading]=useState(true);const [histDays,setHistDays]=useState([]);const [adding,setAdding]=useState(false);const [newMeal,setNewMeal]=useState({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});
   /* Meal dictionary — all unique meals ever logged, sorted by frequency. Powers autocomplete. */
@@ -272,6 +274,26 @@ function DashboardInner(){
   const rem={cal:TARGETS.cal-totals.cal,protein:TARGETS.protein-totals.protein};
   /* Day window used by both pacing lines. Under an hour left, quoting a per-hour
      rate produces absurd numbers ("need 215g/hr") — state the plain gap instead. */
+  /* One model for both 7-day strips: same days, same selection, so a tap on
+     either answers both. Today comes from live totals, not the saved row. */
+  const week7=useMemo(()=>{
+    const t=new Date();const out=[];
+    const byDate=Object.fromEntries((macro7||[]).map(d=>[d.date,d]));
+    for(let i=6;i>=0;i--){
+      const d=new Date(t);d.setDate(t.getDate()-i);
+      const key=localDateKey(d), isToday=i===0;
+      const row=isToday?{cal:totals.cal,protein:totals.protein,fat:totals.fat,carbs:totals.carbs}:byDate[key];
+      const logged=!!row&&(row.cal>0||row.protein>0);
+      out.push({key,isToday,
+        label:d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}),
+        n:d.toLocaleDateString("en-US",{weekday:"narrow"}),
+        cal:logged?Math.round(row.cal):null, protein:logged?Math.round(row.protein):null,
+        fat:logged?Math.round(row.fat):null, carbs:logged?Math.round(row.carbs):null});
+    }
+    return out;
+  },[macro7,totals]);
+  const pickDay=i=>setSelDay(d=>d===i?null:i);
+
   const DAY_START=7, DAY_END=22;
   const pacing=(consumed,target)=>{
     const now=new Date();
@@ -1724,32 +1746,40 @@ function DashboardInner(){
             })()}
           </div>
 
-          {/* ── Weekly protein strip ────────────────────────────────────────
-               Was hardcoded to `false` for every past day with a note saying history
-               wasn't loaded — so six of seven slots were permanently empty. macro7
-               now supplies real totals. */}
+          {/* ── Protein · 7 days ───────────────────────────────────────────
+               Tap-selectable. Selection lives in one place (selDay) and both strips
+               read it, so a tap on either surfaces that day in BOTH headers.
+               Unlogged days render as a dashed outline rather than a filled block —
+               "logged badly" and "didn't log" are different facts and used to look
+               identical. */}
           {(()=>{
-            const today=new Date();const days=[];
-            for(let i=6;i>=0;i--){const d=new Date(today);d.setDate(today.getDate()-i);
-              days.push({key:localDateKey(d),dayName:d.toLocaleDateString("en-US",{weekday:"narrow"}),isToday:i===0});}
-            const byDate=Object.fromEntries((macro7||[]).map(d=>[d.date,d]));
-            const valFor=d=>d.isToday?totals.protein:(byDate[d.key]?byDate[d.key].protein:null);
-            const logged=days.map(valFor).filter(v=>v!=null&&v>0);
-            const avg=logged.length?Math.round(logged.reduce((a,b)=>a+b,0)/logged.length):null;
-            return(<div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <span className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>Protein · 7 days</span>
-                {avg&&<span className="mono" style={{fontSize:9,color:"var(--t-4)"}}>avg {avg}g / {TARGETS.protein}g</span>}
+            const logged=week7.filter(d=>d.protein!=null);
+            const avg=logged.length?Math.round(logged.reduce((a,b)=>a+b.protein,0)/logged.length):null;
+            const sel=selDay!=null?week7[selDay]:null;
+            const col=d=>d.protein==null?null:d.protein>=TARGETS.protein?"var(--c-success)":d.protein>=TARGETS.protein*0.7?"var(--c-warn)":"var(--t-5)";
+            return(<div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 14px 11px",marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7,gap:8}}>
+                <span className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,flexShrink:0}}>Protein · 7 days</span>
+                <span className="mono" style={{fontSize:9,color:sel&&sel.protein!=null?(sel.protein>=TARGETS.protein?"var(--c-success)":"var(--t-2)"):"var(--t-4)",textAlign:"right"}}>
+                  {sel?(sel.protein==null?`${sel.label} · not logged`:`${sel.label} · ${sel.protein}g P · ${sel.fat}g F · ${sel.carbs}g C`)
+                     :(avg?`avg ${avg}g / ${TARGETS.protein}g`:`no data yet`)}
+                </span>
               </div>
-              <div style={{display:"flex",gap:4}}>
-                {days.map(d=>{
-                  const v=valFor(d);
-                  const bg=v==null||v===0?"var(--elev-3)":v>=TARGETS.protein?"var(--c-success)":v>=TARGETS.protein*0.7?"var(--c-warn)":"var(--elev-3)";
-                  return(<div key={d.key} style={{flex:1,textAlign:"center"}}>
-                    <div className="mono" style={{fontSize:8,color:d.isToday?"var(--accent)":"var(--t-5)",marginBottom:3}}>{d.dayName}</div>
-                    <div style={{height:4,borderRadius:2,background:bg}}/>
+              <div style={{display:"flex",gap:5}}>
+                {week7.map((d,i)=>{
+                  const c=col(d), dim=selDay!=null&&selDay!==i;
+                  return(<div key={d.key} onClick={()=>pickDay(i)} role="button" tabIndex={0}
+                    aria-label={`${d.label}, ${d.protein==null?"not logged":d.protein+" grams protein"}`}
+                    onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();pickDay(i);}}}
+                    style={{flex:1,cursor:"pointer",padding:"6px 0",marginTop:-6,marginBottom:-6}}>
+                    <div style={{height:c?5:3,borderRadius:2,background:c||"transparent",border:c?"none":"1px dashed var(--elev-3)",
+                      opacity:dim?.3:1,transition:"opacity .18s var(--ease-out)"}}/>
                   </div>);
                 })}
+              </div>
+              <div style={{display:"flex",gap:5,marginTop:4}}>
+                {week7.map((d,i)=>(<div key={d.key} className="mono" style={{flex:1,textAlign:"center",fontSize:8,
+                  color:selDay===i?"var(--accent)":d.isToday?"var(--accent)":"var(--t-5)",opacity:selDay!=null&&selDay!==i?.4:1}}>{d.n}</div>))}
               </div>
             </div>);
           })()}
@@ -1790,47 +1820,55 @@ function DashboardInner(){
             })()}
           </div>
 
-          {/* ── Calories · 7 days ──────────────────────────────────────────────
-               Columns rather than the protein strip's flat blocks, because "hit"
-               is two-sided for calories: under target is not automatically a win.
-               Height carries magnitude (293 and 1,190 are both "under" but they are
-               not the same day) and the hairline carries the target, so no legend
-               is needed. Green = within ±10% of target, warn = over, muted = under. */}
+          {/* ── Calories · 7 days ──────────────────────────────────────────
+               Columns, not blocks: for calories "hit" is two-sided, and 293 vs 1,190
+               are both "under" but are not the same day — height carries that.
+               The ±10% band is drawn as a SHADED ZONE rather than a hairline. With a
+               single line, a day 4% over sat visually on the line while being coloured
+               "over", so the classification looked arbitrary. A visible band makes the
+               rule self-evident. */}
           {(()=>{
-            const today=new Date();const days=[];
-            for(let i=6;i>=0;i--){const d=new Date(today);d.setDate(today.getDate()-i);
-              days.push({key:localDateKey(d),dayName:d.toLocaleDateString("en-US",{weekday:"narrow"}),isToday:i===0});}
-            const byDate=Object.fromEntries((macro7||[]).map(d=>[d.date,d]));
-            const valFor=d=>d.isToday?totals.cal:(byDate[d.key]?byDate[d.key].cal:null);
-            const vals=days.map(valFor);
-            const logged=vals.filter(v=>v!=null&&v>0);
+            const logged=week7.filter(d=>d.cal!=null);
             if(logged.length===0)return null;
-            const avg=Math.round(logged.reduce((a,b)=>a+b,0)/logged.length);
+            const avg=Math.round(logged.reduce((a,b)=>a+b.cal,0)/logged.length);
             const lo=TARGETS.cal*0.9, hi=TARGETS.cal*1.1;
-            const onTarget=logged.filter(v=>v>=lo&&v<=hi).length;
-            const H=46, scaleMax=Math.max(TARGETS.cal*1.35,...logged);
-            const targetTop=H-(TARGETS.cal/scaleMax)*H;
+            const onTarget=logged.filter(d=>d.cal>=lo&&d.cal<=hi).length;
+            const H=52, scaleMax=Math.max(TARGETS.cal*1.35,...logged.map(d=>d.cal));
+            const yOf=v=>H-(v/scaleMax)*H;
+            const bandTop=yOf(hi), bandH=Math.max(3,yOf(lo)-yOf(hi));
+            const sel=selDay!=null?week7[selDay]:null;
+            const col=d=>d.cal==null?null:d.cal>hi?"var(--c-warn)":d.cal>=lo?"var(--c-success)":"var(--t-5)";
             return(<div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 14px 11px",marginBottom:14}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9}}>
-                <span className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>Calories · 7 days</span>
-                <span className="mono" style={{fontSize:9,color:"var(--t-4)"}}>{onTarget} on target · avg {avg.toLocaleString()}</span>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9,gap:8}}>
+                <span className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,flexShrink:0}}>Calories · 7 days</span>
+                <span className="mono" style={{fontSize:9,textAlign:"right",color:sel&&sel.cal!=null?(sel.cal>hi?"var(--c-warn)":sel.cal>=lo?"var(--c-success)":"var(--t-2)"):"var(--t-4)"}}>
+                  {sel?(sel.cal==null?`${sel.label} · not logged`
+                        :`${sel.label} · ${sel.cal.toLocaleString()} kcal · ${sel.cal-TARGETS.cal>0?"+":""}${(sel.cal-TARGETS.cal).toLocaleString()} vs target`)
+                     :`${onTarget} on target · avg ${avg.toLocaleString()}`}
+                </span>
               </div>
               <div style={{position:"relative",height:H}}>
-                <div style={{position:"absolute",left:0,right:0,top:targetTop,height:1,background:"var(--t-5)",opacity:.65}}/>
-                <span className="mono" style={{position:"absolute",right:0,top:Math.max(0,targetTop-10),fontSize:7.5,color:"var(--t-5)"}}>{TARGETS.cal.toLocaleString()}</span>
-                <div style={{display:"flex",gap:4,height:H,alignItems:"flex-end"}}>
-                  {days.map((d,i)=>{
-                    const v=vals[i];
-                    const h=v==null||v===0?2:Math.max(2,Math.round((v/scaleMax)*H));
-                    const bg=v==null||v===0?"var(--elev-3)":v>hi?"var(--c-warn)":v>=lo?"var(--c-success)":"var(--t-5)";
-                    return(<div key={d.key} style={{flex:1,display:"flex",alignItems:"flex-end"}}>
-                      <div style={{width:"100%",height:h,borderRadius:"2px 2px 0 0",background:bg,opacity:v==null||v===0?.5:1,transition:"height .5s var(--ease-out)"}}/>
+                <div style={{position:"absolute",left:0,right:0,top:bandTop,height:bandH,background:"var(--c-success)",opacity:.10,
+                  borderTop:"1px solid var(--c-success)",borderBottom:"1px solid var(--c-success)",pointerEvents:"none"}}/>
+                <span className="mono" style={{position:"absolute",right:0,top:Math.max(0,bandTop-10),fontSize:7.5,color:"var(--t-5)",pointerEvents:"none"}}>{TARGETS.cal.toLocaleString()} ±10%</span>
+                <div style={{display:"flex",gap:5,height:H,alignItems:"flex-end",position:"relative"}}>
+                  {week7.map((d,i)=>{
+                    const c=col(d), dim=selDay!=null&&selDay!==i;
+                    const h=d.cal==null?10:Math.max(3,Math.round((d.cal/scaleMax)*H));
+                    return(<div key={d.key} onClick={()=>pickDay(i)} role="button" tabIndex={0}
+                      aria-label={`${d.label}, ${d.cal==null?"not logged":d.cal+" calories"}`}
+                      onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();pickDay(i);}}}
+                      style={{flex:1,display:"flex",alignItems:"flex-end",height:H,cursor:"pointer"}}>
+                      <div style={{width:"100%",height:h,borderRadius:"2px 2px 0 0",background:c||"transparent",
+                        border:c?"none":"1px dashed var(--elev-3)",opacity:dim?.3:1,
+                        transition:"height .5s var(--ease-out), opacity .18s var(--ease-out)"}}/>
                     </div>);
                   })}
                 </div>
               </div>
-              <div style={{display:"flex",gap:4,marginTop:4}}>
-                {days.map(d=>(<div key={d.key} className="mono" style={{flex:1,textAlign:"center",fontSize:8,color:d.isToday?"var(--accent)":"var(--t-5)"}}>{d.dayName}</div>))}
+              <div style={{display:"flex",gap:5,marginTop:4}}>
+                {week7.map((d,i)=>(<div key={d.key} className="mono" style={{flex:1,textAlign:"center",fontSize:8,
+                  color:selDay===i||d.isToday?"var(--accent)":"var(--t-5)",opacity:selDay!=null&&selDay!==i?.4:1}}>{d.n}</div>))}
               </div>
             </div>);
           })()}
@@ -2083,12 +2121,31 @@ function DashboardInner(){
                 </button>))}
               </div>
               {filtered.length===0&&<div style={{textAlign:"center",padding:"32px 0",color:"var(--t-4)",fontSize:13}}>{libSearch?`No matches for "${libSearch}"${libCat!=="All"?` in ${libCat}`:""}`:mealDict.length===0?"No meals logged yet":"No meals in this category"}</div>}
+              {/* ── Collapsed by default ────────────────────────────────────────
+                   Every group open at once made this page enormously long and gave no
+                   sense of what's in it. Groups now start closed and show their count,
+                   so the whole library fits on one screen as a menu.
+                   Two exceptions, both deliberate: an active search auto-expands
+                   (hiding matches behind a tap would make search useless), and picking
+                   a single category is already an explicit narrowing, so that stays flat. */}
               {(libCat==="All"?tagOrder:["All"]).map(tag=>{
                 const items=libCat==="All"?grouped[tag]:filtered;
                 if(!items||items.length===0)return null;
-                return(<div key={tag} style={{marginBottom:libCat==="All"?16:0}}>
-                  {libCat==="All"&&<div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:6,paddingTop:4,borderTop:"1px solid var(--line-soft)"}}>{tag} · {items.length}</div>}
-                  {items.map((m,i)=>(<div key={i} style={{display:"flex",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--line-soft)",gap:8}}>
+                const collapsible=libCat==="All"&&!libSearch;
+                const open=!collapsible||!!openCats[tag];
+                return(<div key={tag} style={{marginBottom:libCat==="All"?(open?16:0):0}}>
+                  {libCat==="All"&&(<div onClick={()=>collapsible&&setOpenCats(o=>({...o,[tag]:!o[tag]}))}
+                    role={collapsible?"button":undefined} tabIndex={collapsible?0:undefined} aria-expanded={collapsible?open:undefined}
+                    onKeyDown={e=>{if(collapsible&&(e.key==="Enter"||e.key===" ")){e.preventDefault();setOpenCats(o=>({...o,[tag]:!o[tag]}));}}}
+                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,paddingTop:10,paddingBottom:open?6:10,
+                      borderTop:"1px solid var(--line-soft)",cursor:collapsible?"pointer":"default"}}>
+                    <span className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>{tag}</span>
+                    <span style={{display:"flex",alignItems:"center",gap:6}}>
+                      <span className="mono" style={{fontSize:9.5,color:"var(--t-5)"}}>{items.length}</span>
+                      {collapsible&&<Icon n={open?"chevUp":"chevDown"} s={12} c="var(--t-4)"/>}
+                    </span>
+                  </div>)}
+                  {open&&items.map((m,i)=>(<div key={i} className="rise" style={{display:"flex",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--line-soft)",gap:8}}>
                     <div onClick={()=>{saveMacro([...meals,{name:m.name,protein:m.protein,fat:m.fat,carbs:m.carbs,tag:m.tag,id:Date.now()}],whey.scoops);setMacroSub("log");showToast(`${m.name} added`,"success");}} style={{flex:1,minWidth:0,cursor:"pointer"}}>
                       <div style={{fontSize:12.5,color:"var(--t-1)",fontWeight:500,marginBottom:1}}>{m.name}</div>
                       <div className="mono" style={{display:"flex",gap:8,fontSize:10}}>

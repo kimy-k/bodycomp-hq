@@ -362,6 +362,7 @@ function DashboardInner(){
           startDate:s.start_date,
           totalWeeks:s.total_weeks,
           cycleEnd:s.cycle_end,
+          resumeDate:s.resume_date,
           note:s.note,
           _stackId:s.id, /* opaque ref for editing */
         };
@@ -2183,6 +2184,40 @@ function DashboardInner(){
             </div>);})}</div>);
           })()}
 
+          {/* Resuming Soon — completed/break peptides with upcoming resume dates */}
+          {(()=>{
+            const today=todayKey();
+            const resuming=userPeps.filter(p=>(p.status==="completed"||p.status==="break")&&p.resumeDate&&p.resumeDate>today)
+              .map(p=>{const d=Math.ceil((new Date(p.resumeDate+"T12:00:00")-new Date(today+"T12:00:00"))/(86400000));return{...p,daysUntil:d};})
+              .sort((a,b)=>a.daysUntil-b.daysUntil);
+            const onHold=userPeps.filter(p=>(p.status==="break")&&!p.resumeDate&&p.enabled);
+            if(resuming.length===0&&onHold.length===0)return null;
+            return(<div style={{marginBottom:16}}>
+              <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>Resuming soon</div>
+              {resuming.map(p=>{const soon=p.daysUntil<=7;const color=soon?"var(--accent)":"var(--t-3)";return(
+                <div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:`3px solid ${color}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <span style={{fontSize:13,fontWeight:600,color:p.color||"var(--t-1)"}}>{p.name}</span>
+                    <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:2}}>{p.dose}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <span className="mono" style={{fontSize:14,fontWeight:700,color:color}}>{p.daysUntil}d</span>
+                    <div className="mono" style={{fontSize:9,color:"var(--t-4)"}}>{new Date(p.resumeDate+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
+                  </div>
+                </div>
+              );})}
+              {onHold.map(p=>(
+                <div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:"3px solid var(--t-5)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center",opacity:.6}}>
+                  <div>
+                    <span style={{fontSize:13,fontWeight:600,color:p.color||"var(--t-1)"}}>{p.name}</span>
+                    <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:2}}>{p.dose}</div>
+                  </div>
+                  <span className="mono" style={{fontSize:10,fontWeight:600,color:"var(--t-4)",letterSpacing:".04em"}}>ON HOLD</span>
+                </div>
+              ))}
+            </div>);
+          })()}
+
           {/* Streak + date nav */}
           {(()=>{
             const pepDateObj=new Date(pepDate+"T12:00:00");
@@ -2997,57 +3032,109 @@ function DashboardInner(){
         </>)}
 
         {pepSub==="supply"&&(<>
-          <H2 sub="Sealed vials in your fridge">Unreconstituted Supply</H2>
+          <H2 sub="Sealed vials + burn rate">Supply Health</H2>
           {supply.filter(s=>s.quantity>0).length===0?<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="vial" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No sealed vials tracked yet</div></div>:(<>
             {(()=>{
-              /* Group by peptide_id, merge rows */
+              /* Build supply health cards with burn rate */
               const grouped={};
               supply.filter(s=>s.quantity>0).forEach(s=>{
-                if(!grouped[s.peptide_id])grouped[s.peptide_id]={pepId:s.peptide_id,rows:[],totalQty:0};
+                if(!grouped[s.peptide_id])grouped[s.peptide_id]={pepId:s.peptide_id,rows:[],totalQty:0,totalValue:0};
                 grouped[s.peptide_id].rows.push(s);
                 grouped[s.peptide_id].totalQty+=s.quantity;
+                grouped[s.peptide_id].totalValue+=s.quantity*Number(s.cost_per_vial||0);
               });
               const pepLookup=Object.fromEntries(userPeps.map(p=>[p.id,p]));
-              return Object.values(grouped).sort((a,b)=>a.pepId.localeCompare(b.pepId)).map(g=>{
+              /* Enrich with burn rate */
+              const cards=Object.values(grouped).map(g=>{
                 const pep=pepLookup[g.pepId];
-                const pepName=pep?.name||g.pepId;
-                const pepColor=pep?.color||"var(--accent)";
-                return(<div key={g.pepId} className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",marginBottom:10,overflow:"hidden"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid var(--line-soft)"}}>
-                    <span style={{fontSize:14,fontWeight:600,color:pepColor}}>{pepName}</span>
-                    <span className="mono" style={{fontSize:22,fontWeight:700,color:"var(--t-1)"}}>{g.totalQty}<span style={{fontSize:11,color:"var(--t-4)",marginLeft:2}}>vials</span></span>
-                  </div>
-                  {g.rows.map(s=>(<div key={s.id} style={{padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid var(--line-soft)"}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                        <span className="mono" style={{fontSize:11,color:"var(--t-2)"}}>{s.quantity}× {s.mg_per_vial}mg</span>
-                        {s.vendor&&<span className="mono" style={{fontSize:9.5,color:"var(--accent)",background:"var(--accent-soft)",padding:"1px 7px",borderRadius:999,letterSpacing:".04em"}}>{s.vendor}</span>}
+                const inv=pep?inventoryFor(pep):null;
+                const dosesPerVial=inv?.totalDosesInVial||0;
+                const currentRemaining=inv?.dosesRemaining||0;
+                const currentDaysLeft=inv?.daysSupply||0;
+                const dosesPerWeek=pep?.schedule?.length||1;
+                const sharedRate=householdDosesPerWeek[g.pepId]||dosesPerWeek;
+                /* Total runway: current vial remaining + sealed vials */
+                const sealedDoses=g.totalQty*dosesPerVial;
+                const totalDoses=currentRemaining+sealedDoses;
+                const weeksOfSupply=sharedRate>0?Math.round(totalDoses/sharedRate):999;
+                const daysOfSupply=weeksOfSupply*7;
+                const status=pep?.status||"unknown";
+                return{...g,pep,inv,dosesPerVial,currentRemaining,currentDaysLeft,sealedDoses,totalDoses,weeksOfSupply,daysOfSupply,sharedRate,status,
+                  pepName:pep?.name||g.pepId,pepColor:pep?.color||"var(--accent)"};
+              }).sort((a,b)=>a.weeksOfSupply-b.weeksOfSupply);
+              const urgencyColor=(weeks)=>weeks<=2?"var(--c-danger)":weeks<=6?"var(--c-warn)":"var(--c-success)";
+              const urgencyLabel=(weeks)=>weeks<=2?"REORDER NOW":weeks<=4?"Getting low":weeks<=8?"OK":"Well stocked";
+              const barPct=(weeks)=>Math.min(100,weeks/12*100);
+              return(<>
+                {/* Summary bar */}
+                <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+                  {[{label:"Total vials",val:cards.reduce((s,c)=>s+c.totalQty,0),color:"var(--accent)"},
+                    {label:"Total value",val:"₱"+cards.reduce((s,c)=>s+c.totalValue,0).toLocaleString(),color:"var(--t-1)"},
+                    {label:"Low stock",val:cards.filter(c=>c.weeksOfSupply<=4).length,color:cards.some(c=>c.weeksOfSupply<=2)?"var(--c-danger)":"var(--c-warn)"}
+                  ].map((s,i)=>(<div key={i} style={{flex:"1 1 90px",background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"12px 14px",textAlign:"center"}}>
+                    <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".08em",textTransform:"uppercase",marginBottom:4}}>{s.label}</div>
+                    <div className="mono" style={{fontSize:20,fontWeight:700,color:s.color}}>{s.val}</div>
+                  </div>))}
+                </div>
+                {/* Per-peptide supply cards sorted by urgency */}
+                {cards.map(c=>{const uc=urgencyColor(c.weeksOfSupply);const isActive=c.status==="active";return(
+                  <div key={c.pepId} className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",marginBottom:10,overflow:"hidden",borderLeft:`3px solid ${uc}`}}>
+                    <div style={{padding:"12px 16px"}}>
+                      {/* Header: name + urgency */}
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontSize:14,fontWeight:600,color:c.pepColor}}>{c.pepName}</span>
+                          {!isActive&&<span className="mono" style={{fontSize:8,padding:"2px 6px",borderRadius:999,background:"var(--elev-2)",color:"var(--t-4)",letterSpacing:".06em"}}>{c.status}</span>}
+                        </div>
+                        <span className="mono" style={{fontSize:10,fontWeight:700,color:uc,letterSpacing:".04em"}}>{urgencyLabel(c.weeksOfSupply)}</span>
                       </div>
-                      <div style={{display:"flex",gap:10,marginTop:3}}>
-                        {s.cost_per_vial&&<span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>₱{Number(s.cost_per_vial).toLocaleString()}/vial</span>}
-                        {s.purchase_date&&<span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>{new Date(s.purchase_date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>}
+                      {/* Supply bar */}
+                      <div style={{marginBottom:8}}>
+                        <div className="hbar" style={{height:6,borderRadius:3}}>
+                          <i style={{width:`${barPct(c.weeksOfSupply)}%`,background:uc,borderRadius:3,opacity:.7}}/>
+                        </div>
+                      </div>
+                      {/* Stats row */}
+                      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4}}>
+                        <div>
+                          <span className="mono" style={{fontSize:20,fontWeight:700,color:"var(--t-1)"}}>{c.totalQty}</span>
+                          <span className="mono" style={{fontSize:10,color:"var(--t-4)",marginLeft:3}}>sealed</span>
+                          {c.currentRemaining>0&&<span className="mono" style={{fontSize:10,color:"var(--t-4)",marginLeft:6}}>+{c.currentRemaining} in open vial</span>}
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <span className="mono" style={{fontSize:16,fontWeight:700,color:uc}}>{c.weeksOfSupply}</span>
+                          <span className="mono" style={{fontSize:10,color:"var(--t-4)",marginLeft:2}}>weeks</span>
+                        </div>
+                      </div>
+                      {/* Burn rate detail */}
+                      <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:6}}>
+                        {c.dosesPerVial>0&&<>{c.dosesPerVial} doses/vial · {c.sharedRate}/week burn rate · {c.totalDoses} total doses</>}
+                        {c.totalValue>0&&<> · ₱{c.totalValue.toLocaleString()}</>}
                       </div>
                     </div>
-                    <button onClick={async()=>{
-                      if(!window.confirm(`Open 1 ${pepName} vial from ${s.vendor||"stock"}?\n\nThis will:\n• Subtract 1 from sealed supply\n• Create a new batch (you'll set reconstitution details)`))return;
-                      /* Decrement supply quantity */
-                      const newQty=s.quantity-1;
-                      const res=await fetch(`${SB}/peptide_supply?id=eq.${s.id}&user_id=eq.${s.user_id}`,{method:"PATCH",headers:{...hdr,Prefer:"return=minimal"},body:JSON.stringify({quantity:newQty})}).catch(()=>null);
-                      if(res&&res.ok){
-                        setSupply(supply.map(x=>x.id===s.id?{...x,quantity:newQty}:x));
-                        /* Pre-fill the new batch form */
-                        setNewBatch({peptide_id:g.pepId,date_recon:todayKey(),mg_total:String(s.mg_per_vial),ml_bac:"",storage:"",expiry_date:"",notes:`From ${s.vendor||"stock"} supply`,cost:s.cost_per_vial?String(s.cost_per_vial):"",currency:s.currency||"PHP",vendor:s.vendor||""});
-                        setPepSub("batches");setAddingBatch(true);
-                        showToast(`Opened 1 ${pepName} vial · fill in reconstitution details`,"success");
-                      }else{showToast("Couldn't update supply","error");}
-                    }} className="touch" style={{padding:"6px 12px",borderRadius:999,border:"1px solid var(--accent)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5,flexShrink:0}}><Icon n="vial" s={11} c="var(--accent)" sw={1.7}/> Open Vial</button>
-                  </div>))}
-                </div>);
-              });
+                    {/* Expand: individual rows + Open Vial */}
+                    {c.rows.map(s=>(<div key={s.id} style={{padding:"8px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:"1px solid var(--line-soft)"}}>
+                      <div>
+                        <span className="mono" style={{fontSize:11,color:"var(--t-2)"}}>{s.quantity}× {s.mg_per_vial}mg</span>
+                        {s.vendor&&<span className="mono" style={{fontSize:9,color:"var(--accent)",background:"var(--accent-soft)",padding:"1px 7px",borderRadius:999,letterSpacing:".04em",marginLeft:6}}>{s.vendor}</span>}
+                        {s.cost_per_vial&&<span className="mono" style={{fontSize:9,color:"var(--t-4)",marginLeft:6}}>₱{Number(s.cost_per_vial).toLocaleString()}/ea</span>}
+                      </div>
+                      <button onClick={async()=>{
+                        if(!window.confirm(`Open 1 ${c.pepName} vial from ${s.vendor||"stock"}?\n\nThis will:\n• Subtract 1 from sealed supply\n• Create a new batch (you'll set reconstitution details)`))return;
+                        const newQty=s.quantity-1;
+                        const res=await fetch(`${SB}/peptide_supply?id=eq.${s.id}&user_id=eq.${s.user_id}`,{method:"PATCH",headers:{...hdr,Prefer:"return=minimal"},body:JSON.stringify({quantity:newQty})}).catch(()=>null);
+                        if(res&&res.ok){
+                          setSupply(supply.map(x=>x.id===s.id?{...x,quantity:newQty}:x));
+                          setNewBatch({peptide_id:c.pepId,date_recon:todayKey(),mg_total:String(s.mg_per_vial),ml_bac:"",storage:"",expiry_date:"",notes:`From ${s.vendor||"stock"} supply`,cost:s.cost_per_vial?String(s.cost_per_vial):"",currency:s.currency||"PHP",vendor:s.vendor||""});
+                          setPepSub("batches");setAddingBatch(true);
+                          showToast(`Opened 1 ${c.pepName} vial · fill in reconstitution details`,"success");
+                        }else{showToast("Couldn't update supply","error");}
+                      }} className="touch" style={{padding:"5px 10px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",fontSize:10,fontWeight:600,cursor:"pointer",flexShrink:0}}>Open</button>
+                    </div>))}
+                  </div>
+                );})}
+              </>);
             })()}
-            <div className="mono" style={{fontSize:10,color:"var(--t-4)",textAlign:"center",marginTop:12,letterSpacing:".03em"}}>
-              Total: {supply.filter(s=>s.quantity>0).reduce((sum,s)=>sum+s.quantity,0)} sealed vials · ₱{supply.filter(s=>s.quantity>0).reduce((sum,s)=>sum+(s.quantity*Number(s.cost_per_vial||0)),0).toLocaleString()} invested
-            </div>
           </>)}
         </>)}
       </>)}

@@ -126,6 +126,7 @@ function DashboardInner(){
 
   /* ═══ MACRO STATE ═══ */
   const MEAL_TAGS=["Lunch","Snack","Dinner","Breakfast","Other"];
+  const [macro7,setMacro7]=useState([]); /* last 8 days of totals — powers both 7-day strips */
   const [meals,setMeals]=useState([]);const [wheyScoops,setWheyScoops]=useState(null); /* null = not loaded yet → fall back to configured default */const [macroSub,setMacroSub]=useState("log");const [mLoading,setMLoading]=useState(true);const [histDays,setHistDays]=useState([]);const [adding,setAdding]=useState(false);const [newMeal,setNewMeal]=useState({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});
   /* Meal dictionary — all unique meals ever logged, sorted by frequency. Powers autocomplete. */
   const [mealDict,setMealDict]=useState([]);
@@ -246,6 +247,22 @@ function DashboardInner(){
     db.setConfig("favs",mine);
   };
 
+  /* The 7-day strips used to read histDays, which only loads on the History
+     sub-tab — so on the Log tab every past day rendered empty. This loads a small
+     window whenever the Macros tab is open, regardless of sub-tab. */
+  useEffect(()=>{if(tab!=="macros")return;(async()=>{
+    const rows=await db.list("daily_macros",8);
+    if(!Array.isArray(rows))return;
+    setMacro7(rows.map(md=>{
+      let t={cal:0,protein:0,fat:0,carbs:0};
+      (md.meals||[]).forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});
+      const sc=md.whey_scoops!=null?+md.whey_scoops:(md.whey===false?0:(wheyCfg.enabled?wheyCfg.maxScoops:0));
+      if(wheyCfg.enabled&&sc>0){t.protein+=wheyCfg.perScoop*sc;t.fat+=sc*0.5;t.carbs+=sc*2;}
+      t.cal=calcCal(t.protein,t.fat,t.carbs);
+      return{date:md.date,...t};
+    }));
+  })();},[tab,db,wheyCfg,macroDate,meals,wheyScoops]);
+
   useEffect(()=>{if(macroSub!=="history"||tab!=="macros")return;(async()=>{
     const rows=await db.list("daily_macros",14);
     const res=rows.map(md=>{let t={cal:0,protein:0,fat:0,carbs:0};(md.meals||[]).forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});t.cal=calcCal(t.protein,t.fat,t.carbs);if(md.whey!==false&&whey.enabled){t.protein+=whey.protein;t.fat+=whey.fat;t.carbs+=whey.carbs;t.cal+=calcCal(whey.protein,whey.fat,whey.carbs);}return{date:md.date,...t,meals:md.meals||[]};});
@@ -253,6 +270,23 @@ function DashboardInner(){
   })();},[macroSub,tab]);
   const totals=useMemo(()=>{let t={protein:0,fat:0,carbs:0};meals.forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});if(whey.enabled&&whey.scoops>0){t.protein+=whey.protein;t.fat+=whey.fat;t.carbs+=whey.carbs;}t.cal=calcCal(t.protein,t.fat,t.carbs);return t;},[meals,whey]);
   const rem={cal:TARGETS.cal-totals.cal,protein:TARGETS.protein-totals.protein};
+  /* Day window used by both pacing lines. Under an hour left, quoting a per-hour
+     rate produces absurd numbers ("need 215g/hr") — state the plain gap instead. */
+  const DAY_START=7, DAY_END=22;
+  const pacing=(consumed,target)=>{
+    const now=new Date();
+    const curH=now.getHours()+now.getMinutes()/60;
+    if(curH<DAY_START+1||curH>DAY_END)return null;
+    const elapsed=(curH-DAY_START)/(DAY_END-DAY_START);
+    const hoursLeft=DAY_END-curH;
+    const shortfall=Math.max(0,target-consumed);
+    const expected=Math.round(target*elapsed);
+    const projected=Math.round(consumed+(consumed/(curH-DAY_START))*hoursLeft);
+    return{elapsed,hoursLeft,shortfall,expected,projected,
+      onPace:projected>=target,
+      lastHour:hoursLeft<1,
+      minsLeft:Math.round(hoursLeft*60)};
+  };
   const weekAvgProtein=useMemo(()=>{if(histDays.length===0)return null;const recent=histDays.slice(0,7);return Math.round(recent.reduce((s,d)=>s+d.protein,0)/recent.length);},[histDays]);
   const addMeal=()=>{if(!newMeal.name)return;const m={name:newMeal.name,protein:+(newMeal.protein||0),fat:+(newMeal.fat||0),carbs:+(newMeal.carbs||0),tag:newMeal.tag||"Other",id:Date.now()};saveMacro([...meals,m],whey.scoops);setNewMeal({name:"",protein:"",fat:"",carbs:"",tag:"Lunch"});setAdding(false);};
   const removeMeal=id=>saveMacro(meals.filter(m=>m.id!==id),whey.scoops);
@@ -1624,64 +1658,12 @@ function DashboardInner(){
               {!isToday&&<div style={{padding:"8px 14px",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",borderLeft:"3px solid var(--c-warn)",borderRadius:"var(--r-sm)",fontSize:11,color:"var(--t-2)",marginBottom:12,display:"flex",alignItems:"center",gap:8}}><Icon n="warn" s={13} c="var(--c-warn)"/> Editing <strong style={{margin:"0 3px"}}>{dayLabel}</strong></div>}
             </>);
           })()}
-          {/* Protein — compact featured card */}
-          <div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"12px 16px",marginBottom:10,borderLeft:"3px solid var(--c-protein)"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-              <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-                <span className="mono" style={{fontSize:9.5,color:"var(--c-protein)",letterSpacing:".10em",fontWeight:600,textTransform:"uppercase"}}>Protein</span>
-                {weekAvgProtein&&<span className="mono" style={{fontSize:9,color:"var(--t-4)"}}>7d avg {weekAvgProtein}g</span>}
-              </div>
-              <span className="mono" style={{fontSize:10,color:rem.protein>0?"var(--t-3)":"var(--c-success)"}}>{rem.protein>0?`${Math.round(rem.protein)}g left`:"✓ hit"}</span>
-            </div>
-            <div style={{display:"flex",alignItems:"baseline",gap:5,marginBottom:6}}>
-              <span className="serif tabular" style={{fontSize:36,color:totals.protein>=TARGETS.protein?"var(--c-success)":"var(--c-protein)",fontStyle:"italic",lineHeight:1,letterSpacing:"-0.02em"}}>{Math.round(totals.protein)}</span>
-              <span className="serif" style={{fontSize:16,color:"var(--t-4)",fontStyle:"italic"}}>/ {TARGETS.protein}g</span>
-            </div>
-            <div className="hbar" style={{marginBottom:0}}><i style={{width:`${Math.min(100,totals.protein/TARGETS.protein*100)}%`,background:totals.protein>=TARGETS.protein?"var(--c-success)":"var(--c-protein)"}}/></div>
-            {rem.protein>0&&(()=>{
-              const now=new Date();
-              const startH=7, endH=22;
-              const curH=now.getHours()+now.getMinutes()/60;
-              if(curH<startH+1||curH>endH-0.5)return null;
-              const hoursLeft=endH-curH;
-              const pace=totals.protein/(curH-startH);
-              const projected=Math.round(totals.protein+pace*hoursLeft);
-              const onPace=projected>=TARGETS.protein;
-              const needRate=Math.round(rem.protein/hoursLeft);
-              return(<div className="mono" style={{fontSize:9.5,color:onPace?"var(--c-success)":"var(--t-4)",marginTop:4}}>
-                {onPace?`On pace for ${projected}g by ${endH-12} PM`:`Behind pace · need ${needRate}g/hr to hit target by ${endH-12} PM.`}
-              </div>);
-            })()}
-          </div>
-
-          {/* Weekly protein strip — 7-day hit/miss */}
-          {mealDict.length>0&&(()=>{
-            const today=new Date();const days=[];
-            for(let i=6;i>=0;i--){const d=new Date(today);d.setDate(today.getDate()-i);days.push({key:localDateKey(d),dayName:d.toLocaleDateString("en-US",{weekday:"narrow"}),isToday:i===0});}
-            /* Build quick lookup from mealDict's source (we already loaded 90 days) */
-            return(<div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <span className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>Protein · 7 days</span>
-                {weekAvgProtein&&<span className="mono" style={{fontSize:9,color:"var(--t-4)"}}>avg {weekAvgProtein}g / {TARGETS.protein}g</span>}
-              </div>
-              <div style={{display:"flex",gap:4}}>
-                {days.map(d=>{
-                  /* Check if protein target was hit on this day — use histDays or current day */
-                  const isCurrentDay=d.isToday;
-                  const hit=isCurrentDay?totals.protein>=TARGETS.protein:false;
-                  const partial=isCurrentDay?totals.protein>=TARGETS.protein*0.7:false;
-                  /* For past days we'd need histDays loaded — show placeholder if not available */
-                  return(<div key={d.key} style={{flex:1,textAlign:"center"}}>
-                    <div className="mono" style={{fontSize:8,color:d.isToday?"var(--accent)":"var(--t-5)",marginBottom:3}}>{d.dayName}</div>
-                    <div style={{height:4,borderRadius:2,background:isCurrentDay?(hit?"var(--c-success)":partial?"var(--c-warn)":"var(--elev-3)"):"var(--elev-3)"}}/>
-                  </div>);
-                })}
-              </div>
-            </div>);
-          })()}
-
-          {/* TDEE strip — auto-pulls from latest InBody scan when available */}
-          {userConfig?.height&&userConfig?.age&&(<div className="rise r1" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"14px 16px",marginBottom:12}}>
+          {/* ── Setup band — the day's frame, stated once ────────────────────────
+                 These four values are fixed for the day; nothing below them is. They
+                 sit up top as context, deliberately at reference weight (16px) rather
+                 than hero weight — at 22px they out-shouted the live numbers and the
+                 whole region stopped being read. Keep them quiet. */}
+          {userConfig?.height&&userConfig?.age&&(<div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 12px 8px",marginBottom:12}}>
             {(()=>{
               const latestScan=data.length>0?data[data.length-1]:null;
               const w=latestScan?.weight||userConfig.weight;
@@ -1701,15 +1683,15 @@ function DashboardInner(){
               const defPct=Math.round(deficit/tdee*100);
               return(<>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                {[["BMR",Math.round(bmr),"var(--c-carbs)"],["TDEE",tdee,"var(--c-weight)"],["Target",TARGETS.cal,"var(--t-1)"],[deficit>0?"Deficit":"Surplus",deficit>0?`−${deficit}`:`+${Math.abs(deficit)}`,deficit>0?"var(--c-success)":"var(--c-danger)",defPct]].map(([l,v,c,p],i)=>(
+                {[["BMR",Math.round(bmr),"var(--c-carbs)"],["TDEE",tdee,"var(--c-weight)"],["Target",TARGETS.cal,"var(--t-1)"],[deficit>0?"Planned def.":"Planned surp.",deficit>0?`−${deficit}`:`+${Math.abs(deficit)}`,deficit>0?"var(--c-success)":"var(--c-danger)",defPct]].map(([l,v,c,p],i)=>(
                   <div key={i} style={{textAlign:"center",flex:1}}>
-                    <div style={{fontSize:9.5,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:2}}>{l}</div>
-                    <div className="serif tabular" style={{fontSize:22,color:c,fontStyle:"italic",lineHeight:1}}>{v}</div>
-                    {p&&<div className="mono" style={{fontSize:9,color:"var(--t-4)",marginTop:1}}>{p}%</div>}
+                    <div style={{fontSize:8.5,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:1}}>{l}</div>
+                    <div className="serif tabular" style={{fontSize:16,color:c,lineHeight:1.1}}>{v}</div>
+                    {p&&<div className="mono" style={{fontSize:8.5,color:"var(--t-5)",marginLeft:3}}>{p}%</div>}
                   </div>
                 ))}
               </div>
-              <div className="mono" style={{fontSize:9,color:scanStale?"var(--c-warn)":"var(--t-4)",marginTop:8,textAlign:"center",letterSpacing:".02em"}}>
+              <div className="mono" style={{fontSize:8.5,color:scanStale?"var(--c-warn)":"var(--t-5)",marginTop:7,textAlign:"center",letterSpacing:".02em"}}>
                 {latestScan?`${bmrLabel} · ${w}kg from ${latestScan.label} scan${lm?` · ${lm}kg lean`:""}`:`${bmrLabel} · ${w}kg from settings`}
                 {scanStale&&` · ⚠ scan is ${scanAge}d old`}
               </div>
@@ -1717,21 +1699,162 @@ function DashboardInner(){
             })()}
           </div>)}
 
-          {/* Secondary macros with progress rings — Wave A. Vertical stack:
-              label on top, ring centered, value below, target at bottom.
-              Symmetric layout = visually balanced. */}
-          <div style={{display:"flex",gap:8,marginBottom:14}}>
-            {[{k:"cal",l:"Cal",v:totals.cal,t:TARGETS.cal,c:"var(--c-cal)"},{k:"fat",l:"Fat",v:Math.round(totals.fat),t:TARGETS.fat,c:"var(--c-fat)"},{k:"carbs",l:"Carbs",v:Math.round(totals.carbs),t:TARGETS.carbs,c:"var(--c-carbs)"}].map((m,i)=>{
-              const pct=Math.max(0,Math.min(100,(m.v/m.t)*100));
-              const r=18, c=2*Math.PI*r, off=c-(pct/100)*c;
-              return(<div key={m.k} className="rise" style={{animationDelay:`${0.04+i*0.04}s`,flex:1,background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 8px 12px",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                <div style={{fontSize:9.5,color:"var(--t-3)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>{m.l}</div>
-                <svg width="44" height="44" viewBox="0 0 44 44" style={{transform:"rotate(-90deg)",marginTop:2,marginBottom:1}}>
-                  <circle cx="22" cy="22" r={r} fill="none" stroke="var(--elev-3)" strokeWidth="3"/>
-                  <circle cx="22" cy="22" r={r} fill="none" stroke={m.c} strokeWidth="3" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} style={{transition:"stroke-dashoffset .4s var(--ease-out)"}}/>
-                </svg>
-                <div className="serif tabular" style={{fontSize:20,color:m.c,fontStyle:"italic",lineHeight:1,letterSpacing:"-0.01em"}}>{m.v}</div>
-                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".02em"}}>/ {m.t}</div>
+          {/* Protein — compact featured card */}
+          <div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"12px 16px",marginBottom:10,borderLeft:"3px solid var(--c-protein)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+                <span className="mono" style={{fontSize:9.5,color:"var(--c-protein)",letterSpacing:".10em",fontWeight:600,textTransform:"uppercase"}}>Protein</span>
+                {weekAvgProtein&&<span className="mono" style={{fontSize:9,color:"var(--t-4)"}}>7d avg {weekAvgProtein}g</span>}
+              </div>
+              <span className="mono" style={{fontSize:10,color:rem.protein>0?"var(--t-3)":"var(--c-success)"}}>{rem.protein>0?`${Math.round(rem.protein)}g left`:"✓ hit"}</span>
+            </div>
+            <div style={{display:"flex",alignItems:"baseline",gap:5,marginBottom:6}}>
+              <span className="serif tabular" style={{fontSize:36,color:totals.protein>=TARGETS.protein?"var(--c-success)":"var(--c-protein)",fontStyle:"italic",lineHeight:1,letterSpacing:"-0.02em"}}>{Math.round(totals.protein)}</span>
+              <span className="serif" style={{fontSize:16,color:"var(--t-4)",fontStyle:"italic"}}>/ {TARGETS.protein}g</span>
+            </div>
+            <div className="hbar" style={{marginBottom:0}}><i style={{width:`${Math.min(100,totals.protein/TARGETS.protein*100)}%`,background:totals.protein>=TARGETS.protein?"var(--c-success)":"var(--c-protein)"}}/></div>
+            {rem.protein>0&&(()=>{
+              const pc=pacing(totals.protein,TARGETS.protein);
+              if(!pc)return null;
+              return(<div className="mono" style={{fontSize:9.5,color:pc.onPace?"var(--c-success)":"var(--t-4)",marginTop:4}}>
+                {pc.onPace?`On pace for ${pc.projected}g by ${DAY_END-12} PM`
+                  :pc.lastHour?`Behind pace · ${Math.round(pc.shortfall)}g short with ~${pc.minsLeft} min left.`
+                  :`Behind pace · need ${Math.round(pc.shortfall/pc.hoursLeft)}g/hr to hit target by ${DAY_END-12} PM.`}
+              </div>);
+            })()}
+          </div>
+
+          {/* ── Weekly protein strip ────────────────────────────────────────
+               Was hardcoded to `false` for every past day with a note saying history
+               wasn't loaded — so six of seven slots were permanently empty. macro7
+               now supplies real totals. */}
+          {(()=>{
+            const today=new Date();const days=[];
+            for(let i=6;i>=0;i--){const d=new Date(today);d.setDate(today.getDate()-i);
+              days.push({key:localDateKey(d),dayName:d.toLocaleDateString("en-US",{weekday:"narrow"}),isToday:i===0});}
+            const byDate=Object.fromEntries((macro7||[]).map(d=>[d.date,d]));
+            const valFor=d=>d.isToday?totals.protein:(byDate[d.key]?byDate[d.key].protein:null);
+            const logged=days.map(valFor).filter(v=>v!=null&&v>0);
+            const avg=logged.length?Math.round(logged.reduce((a,b)=>a+b,0)/logged.length):null;
+            return(<div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>Protein · 7 days</span>
+                {avg&&<span className="mono" style={{fontSize:9,color:"var(--t-4)"}}>avg {avg}g / {TARGETS.protein}g</span>}
+              </div>
+              <div style={{display:"flex",gap:4}}>
+                {days.map(d=>{
+                  const v=valFor(d);
+                  const bg=v==null||v===0?"var(--elev-3)":v>=TARGETS.protein?"var(--c-success)":v>=TARGETS.protein*0.7?"var(--c-warn)":"var(--elev-3)";
+                  return(<div key={d.key} style={{flex:1,textAlign:"center"}}>
+                    <div className="mono" style={{fontSize:8,color:d.isToday?"var(--accent)":"var(--t-5)",marginBottom:3}}>{d.dayName}</div>
+                    <div style={{height:4,borderRadius:2,background:bg}}/>
+                  </div>);
+                })}
+              </div>
+            </div>);
+          })()}
+
+          {/* ── Calories left — the number that moves when you eat ─────────────
+               Remaining, not consumed: "1,147 left" maps onto a decision about the
+               next meal; "293 eaten" is a fact about the past. The pace marker is
+               borrowed from the protein card, which is the pattern that already works.
+               Deliberate: under target reads WARN, never SUCCESS. Rewarding a large
+               shortfall on a cut is the wrong nudge to repeat daily. */}
+          <div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"14px 16px",marginBottom:10,borderLeft:"3px solid var(--c-cal)"}}>
+            {(()=>{
+              const left=TARGETS.cal-totals.cal;
+              const pc=pacing(totals.cal,TARGETS.cal);
+              const over=left<0;
+              const behind=pc&&!pc.onPace&&!over;
+              return(<>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                  <span className="mono" style={{fontSize:9.5,color:"var(--c-cal)",letterSpacing:".10em",fontWeight:600,textTransform:"uppercase"}}>{over?"Over target":"Calories left"}</span>
+                  <span className="mono" style={{fontSize:10,color:"var(--t-3)"}}>{totals.cal.toLocaleString()} of {TARGETS.cal.toLocaleString()}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:3}}>
+                  <span className="serif tabular" style={{fontSize:38,color:over?"var(--c-warn)":"var(--t-1)",lineHeight:1.05,letterSpacing:"-0.02em"}}>{Math.abs(left).toLocaleString()}</span>
+                  {behind&&<span style={{fontSize:12,color:"var(--c-warn)"}}>behind pace</span>}
+                  {pc&&pc.onPace&&!over&&<span style={{fontSize:12,color:"var(--c-success)"}}>on pace</span>}
+                </div>
+                <div className="hbar" style={{height:8,borderRadius:4,marginTop:12,overflow:"visible"}}>
+                  <i style={{width:`${Math.min(100,totals.cal/TARGETS.cal*100)}%`,background:over?"var(--c-warn)":"var(--c-cal)",borderRadius:4}}/>
+                  {pc&&<span style={{position:"absolute",left:`${Math.min(100,pc.elapsed*100)}%`,top:-4,bottom:-4,width:2,background:"var(--c-warn)",borderRadius:1}}/>}
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:5}}>
+                  <span className="mono" style={{fontSize:9,color:"var(--t-5)"}}>eaten</span>
+                  {pc&&<span className="mono" style={{fontSize:9,color:pc.onPace?"var(--c-success)":"var(--t-4)"}}>
+                    {pc.lastHour?`${Math.round(pc.shortfall).toLocaleString()} short with ~${pc.minsLeft} min left`:`on-pace ≈ ${pc.expected.toLocaleString()}`}
+                  </span>}
+                </div>
+              </>);
+            })()}
+          </div>
+
+          {/* ── Calories · 7 days ──────────────────────────────────────────────
+               Columns rather than the protein strip's flat blocks, because "hit"
+               is two-sided for calories: under target is not automatically a win.
+               Height carries magnitude (293 and 1,190 are both "under" but they are
+               not the same day) and the hairline carries the target, so no legend
+               is needed. Green = within ±10% of target, warn = over, muted = under. */}
+          {(()=>{
+            const today=new Date();const days=[];
+            for(let i=6;i>=0;i--){const d=new Date(today);d.setDate(today.getDate()-i);
+              days.push({key:localDateKey(d),dayName:d.toLocaleDateString("en-US",{weekday:"narrow"}),isToday:i===0});}
+            const byDate=Object.fromEntries((macro7||[]).map(d=>[d.date,d]));
+            const valFor=d=>d.isToday?totals.cal:(byDate[d.key]?byDate[d.key].cal:null);
+            const vals=days.map(valFor);
+            const logged=vals.filter(v=>v!=null&&v>0);
+            if(logged.length===0)return null;
+            const avg=Math.round(logged.reduce((a,b)=>a+b,0)/logged.length);
+            const lo=TARGETS.cal*0.9, hi=TARGETS.cal*1.1;
+            const onTarget=logged.filter(v=>v>=lo&&v<=hi).length;
+            const H=46, scaleMax=Math.max(TARGETS.cal*1.35,...logged);
+            const targetTop=H-(TARGETS.cal/scaleMax)*H;
+            return(<div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"10px 14px 11px",marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9}}>
+                <span className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>Calories · 7 days</span>
+                <span className="mono" style={{fontSize:9,color:"var(--t-4)"}}>{onTarget} on target · avg {avg.toLocaleString()}</span>
+              </div>
+              <div style={{position:"relative",height:H}}>
+                <div style={{position:"absolute",left:0,right:0,top:targetTop,height:1,background:"var(--t-5)",opacity:.65}}/>
+                <span className="mono" style={{position:"absolute",right:0,top:Math.max(0,targetTop-10),fontSize:7.5,color:"var(--t-5)"}}>{TARGETS.cal.toLocaleString()}</span>
+                <div style={{display:"flex",gap:4,height:H,alignItems:"flex-end"}}>
+                  {days.map((d,i)=>{
+                    const v=vals[i];
+                    const h=v==null||v===0?2:Math.max(2,Math.round((v/scaleMax)*H));
+                    const bg=v==null||v===0?"var(--elev-3)":v>hi?"var(--c-warn)":v>=lo?"var(--c-success)":"var(--t-5)";
+                    return(<div key={d.key} style={{flex:1,display:"flex",alignItems:"flex-end"}}>
+                      <div style={{width:"100%",height:h,borderRadius:"2px 2px 0 0",background:bg,opacity:v==null||v===0?.5:1,transition:"height .5s var(--ease-out)"}}/>
+                    </div>);
+                  })}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:4,marginTop:4}}>
+                {days.map(d=>(<div key={d.key} className="mono" style={{flex:1,textAlign:"center",fontSize:8,color:d.isToday?"var(--accent)":"var(--t-5)"}}>{d.dayName}</div>))}
+              </div>
+            </div>);
+          })()}
+
+          {/* ── Fat + carbs — bars, not rings ─────────────────────────────────
+               Rings at 44px can't be compared: two arcs starting at 12 o'clock with
+               no shared baseline hide a 29% vs 31% difference entirely. Bars share a
+               left edge, so the two read against each other and against every other
+               bar on the page. Calories left the trio because equal-sized rings
+               asserted that calories, fat and carbs matter equally — they don't.
+               One card because these two are peers you glance at, not drive by. */}
+          <div className="rise" style={{background:"var(--elev-1)",borderRadius:"var(--r-md)",padding:"12px 16px",marginBottom:14}}>
+            {[{k:"fat",l:"Fat",v:Math.round(totals.fat),t:TARGETS.fat,c:"var(--c-fat)"},
+              {k:"carbs",l:"Carbs",v:Math.round(totals.carbs),t:TARGETS.carbs,c:"var(--c-carbs)"}].map((m,i)=>{
+              const left=m.t-m.v;
+              const over=left<0;
+              return(<div key={m.k} style={{marginBottom:i===0?11:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
+                  <span className="mono" style={{fontSize:9.5,color:m.c,letterSpacing:".10em",fontWeight:600,textTransform:"uppercase"}}>{m.l}</span>
+                  <span className="mono" style={{fontSize:10,color:"var(--t-4)"}}>
+                    <span className="tabular" style={{color:"var(--t-2)"}}>{m.v}</span> / {m.t}g · {over?<span style={{color:"var(--c-warn)"}}>{Math.abs(left)} over</span>:`${left} left`}
+                  </span>
+                </div>
+                <div className="hbar"><i style={{width:`${Math.min(100,(m.v/m.t)*100)}%`,background:over?"var(--c-warn)":m.c}}/></div>
               </div>);
             })}
           </div>

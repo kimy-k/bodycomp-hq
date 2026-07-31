@@ -3111,18 +3111,36 @@ function DashboardInner(){
               const cards=Object.values(grouped).map(g=>{
                 const pep=pepLookup[g.pepId];
                 const inv=pep?inventoryFor(pep):null;
-                const dosesPerVial=inv?.totalDosesInVial||0;
                 const currentRemaining=inv?.dosesRemaining||0;
                 const currentDaysLeft=inv?.daysSupply||0;
                 const dosesPerWeek=pep?.schedule?.length||1;
                 const sharedRate=householdDosesPerWeek[g.pepId]||dosesPerWeek;
-                /* Total runway: current vial remaining + sealed vials */
-                const sealedDoses=g.totalQty*dosesPerVial;
+                /* ── Doses per vial WITHOUT requiring an open batch ───────────────
+                   inventoryFor() returns null when nothing is currently mixed, which
+                   used to zero out dosesPerVial → sealedDoses → weeksOfSupply. Net
+                   effect: a peptide with 5 sealed vials and no open one reported
+                   "0 weeks" and counted as LOW STOCK — backwards, and it hit exactly
+                   the peptides that are fully stocked but between vials.
+                   mg-per-dose is knowable without mixing: prefer the batch's real
+                   concentration when there is one, else parse the stack dose string. */
+                /* When nothing is usable, say WHY — an expired vial and no vial at all
+                   are different problems with different fixes. */
+                const staleBatch=!inv?(batches||[]).filter(b=>b.peptide_id===g.pepId&&!b.exhausted).sort((a,b)=>String(b.date_recon).localeCompare(String(a.date_recon)))[0]:null;
+                const staleExpired=staleBatch&&staleBatch.expiry_date&&staleBatch.expiry_date<todayKey()?staleBatch.expiry_date:null;
+                const mgPerDose=inv?.mgPerDose||(pep?mgFromDoseStr(pep.dose):null)||0;
+                const estPerVial=mgPerDose>0?Math.floor((Number(g.rows[0]?.mg_per_vial)||0)/mgPerDose):0;
+                const dosesPerVial=inv?.totalDosesInVial||estPerVial;
+                const dosesEstimated=!inv?.totalDosesInVial&&estPerVial>0;
+                /* Sum per row so mixed vial sizes (5mg + 10mg) count correctly,
+                   instead of totalQty × one vial's dose count. */
+                const sealedDoses=mgPerDose>0
+                  ? g.rows.reduce((sum,r)=>sum+(r.quantity||0)*Math.floor((Number(r.mg_per_vial)||0)/mgPerDose),0)
+                  : g.totalQty*dosesPerVial;
                 const totalDoses=currentRemaining+sealedDoses;
                 const weeksOfSupply=sharedRate>0?Math.round(totalDoses/sharedRate):999;
                 const daysOfSupply=weeksOfSupply*7;
                 const status=pep?.status||"unknown";
-                return{...g,pep,inv,dosesPerVial,currentRemaining,currentDaysLeft,sealedDoses,totalDoses,weeksOfSupply,daysOfSupply,sharedRate,status,
+                return{...g,pep,inv,dosesPerVial,dosesEstimated,mgPerDose,staleExpired,currentRemaining,currentDaysLeft,sealedDoses,totalDoses,weeksOfSupply,daysOfSupply,sharedRate,status,
                   pepName:pep?.name||g.pepId,pepColor:pep?.color||"var(--accent)"};
               }).sort((a,b)=>a.weeksOfSupply-b.weeksOfSupply);
               const urgencyColor=(weeks)=>weeks<=2?"var(--c-danger)":weeks<=6?"var(--c-warn)":"var(--c-success)";
@@ -3163,6 +3181,7 @@ function DashboardInner(){
                           <span className="mono" style={{fontSize:20,fontWeight:700,color:"var(--t-1)"}}>{c.totalQty}</span>
                           <span className="mono" style={{fontSize:10,color:"var(--t-4)",marginLeft:3}}>sealed</span>
                           {c.currentRemaining>0&&<span className="mono" style={{fontSize:10,color:"var(--t-4)",marginLeft:6}}>+{c.currentRemaining} in open vial</span>}
+                          {!c.inv&&<span className="mono" style={{fontSize:10,color:c.staleExpired?"var(--c-warn)":"var(--t-4)",marginLeft:6}}>· {c.staleExpired?`open vial expired ${new Date(c.staleExpired+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}`:"none mixed"}</span>}
                         </div>
                         <div style={{textAlign:"right"}}>
                           <span className="mono" style={{fontSize:16,fontWeight:700,color:uc}}>{c.weeksOfSupply}</span>
@@ -3171,7 +3190,8 @@ function DashboardInner(){
                       </div>
                       {/* Burn rate detail */}
                       <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:6}}>
-                        {c.dosesPerVial>0&&<>{c.dosesPerVial} doses/vial · {c.sharedRate}/week burn rate · {c.totalDoses} total doses</>}
+                        {c.dosesPerVial>0&&<>{c.dosesPerVial} doses/vial{c.dosesEstimated&&<span style={{opacity:.65}}> (est.)</span>} · {c.sharedRate}/week burn rate · {c.totalDoses} total doses</>}
+                        {c.dosesPerVial===0&&<>{c.pep?"Mix a vial to see doses/vial and runway":"Not in your stack — enable it to track runway"}</>}
                         {c.totalValue>0&&<> · ₱{c.totalValue.toLocaleString()}</>}
                       </div>
                     </div>

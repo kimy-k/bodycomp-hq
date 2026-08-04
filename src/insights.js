@@ -8,7 +8,7 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
      column existed. Returns null when no whey was taken that day. */
   const wheyOf = d => {
     if (!whey?.enabled) return null;
-    const s = d?.whey_scoops != null ? +d.whey_scoops : (d?.whey === false ? 0 : (whey.scoops || 0));
+    const s = d?.whey_scoops != null ? +d.whey_scoops : (d?.whey === false ? 0 : (whey.scoops || 0)); /* numeric: half-scoops supported */
     if (!(s > 0)) return null;
     const per = whey.perScoop || (whey.scoops ? whey.protein / whey.scoops : 0);
     return { protein: per * s, fat: +(s * 0.5).toFixed(1), carbs: s * 2 };

@@ -209,10 +209,14 @@ function DashboardInner(){
      `whey` is TODAY's actual intake, driven by wheyScoops state, because it
      isn't always the usual amount. Macros must reflect the day, not the default. */
   const wheyCfg=useMemo(()=>{const perScoop=+(userConfig?.wheyProtein||25);const maxScoops=Math.max(1,+(userConfig?.wheyScoops||2));return{perScoop,maxScoops,enabled:perScoop>0};},[userConfig]);
+  /* Half-scoops are real: a 1.5-scoop day is common and used to be untrackable,
+     forcing a round up or down that quietly mis-stated ~12g of protein. */
+  const scoopLabel=n=>n===0.5?"\u00bd":Number.isInteger(n)?String(n):`${Math.floor(n)}\u00bd`;
   const whey=useMemo(()=>{
-    const s=Math.max(0,wheyScoops==null?wheyCfg.maxScoops:wheyScoops);
-    return{protein:wheyCfg.perScoop*s,fat:+(s*0.5).toFixed(1),carbs:s*2,scoops:s,perScoop:wheyCfg.perScoop,maxScoops:wheyCfg.maxScoops,
-      enabled:wheyCfg.enabled,label:s>0?`Whey · ${s} scoop${s!==1?"s":""}`:"Whey · none today"};
+    const s=Math.max(0,wheyScoops==null?wheyCfg.maxScoops:+wheyScoops);
+    return{protein:+(wheyCfg.perScoop*s).toFixed(1),fat:+(s*0.5).toFixed(1),carbs:+(s*2).toFixed(1),
+      scoops:s,perScoop:wheyCfg.perScoop,maxScoops:wheyCfg.maxScoops,enabled:wheyCfg.enabled,
+      label:s>0?`Whey \u00b7 ${scoopLabel(s)} scoop${s===1?"":"s"}`:"Whey \u00b7 none today"};
   },[wheyCfg,wheyScoops]);
 
   /* P18: macroDate lets the user back-edit a past day's macros. Defaults to today.
@@ -236,7 +240,7 @@ function DashboardInner(){
      function of it (scoops > 0) — never set independently — so the legacy boolean
      column can't disagree with the count. */
   const saveMacro=useCallback((m,scoops)=>{
-    const s=Math.max(0,+scoops||0);
+    const s=Math.max(0,Math.round((+scoops||0)*2)/2); /* snap to nearest half */
     setMeals(m);setWheyScoops(s);
     db.upsert("daily_macros",{date:macroDate,meals:m,whey_scoops:s,whey:s>0});
   },[macroDate]);
@@ -982,7 +986,16 @@ function DashboardInner(){
   const [addingSupply,setAddingSupply]=useState(false);
   const [newSupply,setNewSupply]=useState({peptide_id:"",quantity:"1",mg_per_vial:"",vendor:"",cost_per_vial:"",currency:"PHP",purchase_date:todayKey(),notes:""});
   useEffect(()=>{if(tab!=="peptides")return;(async()=>{const rows=await db.listShared("peptide_supply",200,"created_at");setSupply(rows||[]);})();},[tab,db]);
-  const supplyFor=pepId=>supply.filter(s=>s.peptide_id===pepId&&s.quantity>0).reduce((sum,s)=>sum+s.quantity,0);
+  /* A row with a FUTURE arrives_on is ordered but not delivered. It must never
+     count toward runway — otherwise the app reports stock that isn't in the house
+     and suppresses reorder alerts. NULL arrives_on = on hand (all legacy rows). */
+  const isOnHand=s=>!s.arrives_on||s.arrives_on<=todayKey();
+  const supplyFor=pepId=>supply.filter(s=>s.peptide_id===pepId&&s.quantity>0&&isOnHand(s)).reduce((sum,s)=>sum+s.quantity,0);
+  const incomingFor=pepId=>{
+    const rows=supply.filter(s=>s.peptide_id===pepId&&s.quantity>0&&!isOnHand(s));
+    if(rows.length===0)return null;
+    return{qty:rows.reduce((n,s)=>n+s.quantity,0),eta:rows.map(s=>s.arrives_on).sort()[0]};
+  };
   /* ═══ TITRATION LADDER — planned dose ramp steps (titration_steps table) ═══ */
   const [titrationSteps,setTitrationSteps]=useState([]);
   useEffect(()=>{if(tab!=="peptides"&&tab!=="overview")return;(async()=>{const rows=await db.listShared("titration_steps",200,"created_at");setTitrationSteps(rows||[]);})();},[tab,db]);
@@ -1904,7 +1917,11 @@ function DashboardInner(){
                so a 1-scoop day is a single tap rather than an untrackable event. */}
           {whey.enabled&&(()=>{
             const on=whey.scoops>0;
-            const opts=[0,...Array.from({length:Math.max(2,whey.maxScoops)},(_,i)=>i+1)];
+            /* Half steps only when the usual amount is small (<=2), where the
+               difference is proportionally large. Above that, whole scoops keep the
+               control to at most 5 targets — a 6-button row is unusable on a phone. */
+            const mx=Math.max(2,whey.maxScoops);
+            const opts=mx<=2?[0,1,1.5,2]:[0,...Array.from({length:mx},(_,i)=>i+1)];
             return(<div style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:on?"var(--accent-soft)":"var(--elev-1)",border:on?"1px solid var(--accent-line)":"1px solid transparent",borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:18,transition:"all .2s var(--ease-out)",minHeight:54}}>
               <div style={{textAlign:"left",minWidth:0}}>
                 <div style={{fontSize:13.5,fontWeight:600,color:"var(--t-1)"}}>{whey.label}</div>
@@ -1915,10 +1932,10 @@ function DashboardInner(){
               <div style={{display:"flex",gap:3,background:"var(--elev-2)",borderRadius:999,padding:3,flexShrink:0}}>
                 {opts.map(n=>{const sel=whey.scoops===n;return(
                   <button key={n} onClick={()=>setScoops(n)} className="touch" aria-label={n===0?"No whey today":`${n} scoop${n===1?"":"s"}`} aria-pressed={sel}
-                    style={{minWidth:34,height:28,borderRadius:999,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",
+                    style={{minWidth:32,height:28,borderRadius:999,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",
                       background:sel?(n===0?"var(--elev-3)":"var(--accent)"):"transparent",
                       color:sel?(n===0?"var(--t-2)":"var(--bg)"):"var(--t-4)",transition:"all .18s var(--ease-out)"}}>
-                    {n===0?"Off":n}
+                    {n===0?"Off":scoopLabel(n)}
                   </button>);})}
               </div>
             </div>);
@@ -3313,11 +3330,11 @@ function DashboardInner(){
 
         {pepSub==="supply"&&(<>
           <H2 sub="Sealed vials + burn rate">Supply Health</H2>
-          {supply.filter(s=>s.quantity>0).length===0?<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="vial" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No sealed vials tracked yet</div></div>:(<>
+          {supply.filter(s=>s.quantity>0&&isOnHand(s)).length===0?<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="vial" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No sealed vials tracked yet</div></div>:(<>
             {(()=>{
               /* Build supply health cards with burn rate */
               const grouped={};
-              supply.filter(s=>s.quantity>0).forEach(s=>{
+              supply.filter(s=>s.quantity>0&&isOnHand(s)).forEach(s=>{
                 if(!grouped[s.peptide_id])grouped[s.peptide_id]={pepId:s.peptide_id,rows:[],totalQty:0,totalValue:0};
                 grouped[s.peptide_id].rows.push(s);
                 grouped[s.peptide_id].totalQty+=s.quantity;
@@ -3410,6 +3427,9 @@ function DashboardInner(){
                         {c.dosesPerVial>0&&<>{c.dosesPerVial} doses/vial{c.dosesEstimated&&<span style={{opacity:.65}}> (est.)</span>} · {c.sharedRate}/week burn rate · {c.totalDoses} total doses</>}
                         {c.dosesPerVial===0&&<>{c.pep?"Mix a vial to see doses/vial and runway":"Not in your stack — enable it to track runway"}</>}
                         {c.totalValue>0&&<> · ₱{c.totalValue.toLocaleString()}</>}
+                        {(()=>{const inc=incomingFor(c.pepId);if(!inc)return null;
+                          const d=Math.max(0,Math.ceil((new Date(inc.eta+"T12:00:00")-new Date(todayKey()+"T12:00:00"))/86400000));
+                          return(<> · <span style={{color:"var(--accent)"}}>+{inc.qty} in transit, ~{d}d</span></>);})()}
                       </div>
                     </div>
                     {/* Expand: individual rows + Open Vial */}

@@ -2422,26 +2422,23 @@ function DashboardInner(){
         })()}
 
         {pepSub==="today"&&(<>
-          {/* Supply alerts — use live inventory from shared batches when available, else hardcoded supplyNote */}
+          {/* ── Needs attention + Plan ahead ──
+               Urgency is encoded exactly once: the countdown text. A true
+               emergency (≤5 days of supply, or a bump that's due) gets the only
+               card and the only button on the tab; everything else demotes to
+               quiet hairline rows under "Plan ahead". No stripes, badges, or
+               warning icons — grouping carries the urgency. */}
           {(()=>{
-            const enriched=userPeps.filter(p=>isPeptideLive(p)).map(p=>{const inv=inventoryFor(p);const sealed=supplyFor(p.id);return{peptide:p,daysSupply:inv?.daysSupply,dosesRemaining:inv?.dosesRemaining,sealedVials:sealed,liveNote:inv?`${inv.dosesRemaining}/${inv.totalDosesInVial} doses left in current vial${sealed?` · ${sealed} sealed`:""}`:`${sealed?sealed+" sealed vials":"No batch"}`,isLive:!!inv};}).filter(x=>x.daysSupply!=null&&x.daysSupply<=14&&x.sealedVials===0).sort((a,b)=>a.daysSupply-b.daysSupply);
-            if(enriched.length===0)return null;
-            return(<div style={{marginBottom:16}}>{enriched.map(({peptide:p,daysSupply,dosesRemaining,liveNote,isLive})=>{const urgent=daysSupply<=7;return(<div key={p.id} className="rise" style={{background:urgent?"color-mix(in oklch, var(--c-danger) 10%, var(--elev-1))":"color-mix(in oklch, var(--c-warn) 8%, var(--elev-1))",borderLeft:`3px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:urgent?"var(--c-danger)":"var(--c-warn)"}}><Icon n="warn" s={15} c={urgent?"var(--c-danger)":"var(--c-warn)"} sw={2}/> {p.name}{isLive&&<span className="mono" style={{fontSize:9,color:"var(--accent)",background:"var(--accent-soft)",padding:"1px 6px",borderRadius:999,letterSpacing:".06em",fontWeight:600,marginLeft:4}}>LIVE</span>}</span>
-                <span className="mono" style={{fontSize:11.5,fontWeight:600,color:urgent?"var(--c-danger)":"var(--c-warn)"}}>{daysSupply}d left</span>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,gap:10}}>
-                <div style={{fontSize:11,color:"var(--t-3)",flex:1,minWidth:0}}>{liveNote}</div>
-                <button onClick={()=>setReorderModal({...p,daysSupply,dosesLeft:dosesRemaining,supplyNote:liveNote})} className="touch" style={{padding:"5px 11px",borderRadius:999,border:`1px solid ${urgent?"var(--c-danger)":"var(--c-warn)"}`,background:`color-mix(in oklch, ${urgent?"var(--c-danger)":"var(--c-warn)"} 14%, transparent)`,color:urgent?"var(--c-danger)":"var(--c-warn)",fontSize:11,fontWeight:600,cursor:"pointer",flexShrink:0,display:"inline-flex",alignItems:"center",gap:4}}>Reorder →</button>
-              </div>
-            </div>);})}</div>);
-          })()}
-
-          {/* Titration alerts — "Time to bump" for peptides with dose ladders */}
-          {(()=>{
-            const alerts=userPeps.filter(p=>isPeptideLive(p)).map(p=>{const d=daysUntilBump(p.id);const next=nextStepFor(p.id);const cur=currentStepFor(p.id);if(d===null||d>14)return null;return{peptide:p,days:d,nextStep:next,nextDose:next?.dose,curDose:cur?.dose,nextDate:next?.planned_date};}).filter(Boolean).sort((a,b)=>a.days-b.days);
-            if(alerts.length===0)return null;
+            const supplyAlerts=userPeps.filter(p=>isPeptideLive(p)).map(p=>{const inv=inventoryFor(p);const sealed=supplyFor(p.id);return{peptide:p,daysSupply:inv?.daysSupply,dosesRemaining:inv?.dosesRemaining,totalDoses:inv?.totalDosesInVial,sealedVials:sealed};}).filter(x=>x.daysSupply!=null&&x.daysSupply<=14&&x.sealedVials===0).sort((a,b)=>a.daysSupply-b.daysSupply);
+            const bumps=userPeps.filter(p=>isPeptideLive(p)).map(p=>{const d=daysUntilBump(p.id);const next=nextStepFor(p.id);const cur=currentStepFor(p.id);if(d===null||d>14)return null;return{peptide:p,days:d,nextStep:next,nextDose:next?.dose,curDose:cur?.dose,nextDate:next?.planned_date};}).filter(Boolean).sort((a,b)=>a.days-b.days);
+            const urgent=supplyAlerts.filter(x=>x.daysSupply<=5);
+            const readyBumps=bumps.filter(b=>b.days<=0);
+            const plan=[
+              ...supplyAlerts.filter(x=>x.daysSupply>5).map(x=>({kind:"supply",days:x.daysSupply,...x})),
+              ...bumps.filter(b=>b.days>0).map(b=>({kind:"bump",...b})),
+            ].sort((a,b)=>a.days-b.days);
+            if(urgent.length+readyBumps.length+plan.length===0)return null;
+            const fmtDay=d=>new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"});
             const confirmBump=async(alert)=>{
               const step=alert.nextStep;if(!step)return;
               /* 1. Mark this step as completed with today's date */
@@ -2466,19 +2463,48 @@ function DashboardInner(){
               const rows=await db.listShared("titration_steps",200,"created_at");setTitrationSteps(rows||[]);
               showToast(`Delayed 7 days → ${new Date(nd+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}`,"info");
             };
-            return(<div style={{marginBottom:16}}>{alerts.map((alert)=>{const{peptide:p,days,nextDose,curDose,nextDate}=alert;const ready=days<=0;const color=ready?"var(--accent)":"var(--c-info,#60a5fa)";return(<div key={p.id} className="rise" style={{background:`color-mix(in oklch, ${color} 10%, var(--elev-1))`,borderLeft:`3px solid ${color}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:color}}><Icon n="trending-up" s={15} c={color} sw={2}/> {p.name}</span>
-                <span className="mono" style={{fontSize:11.5,fontWeight:600,color:color}}>{ready?"Ready now":`${days}d to bump`}</span>
-              </div>
-              <div style={{fontSize:11,color:"var(--t-3)",marginTop:4}}>{curDose} → <span style={{color:"var(--accent)",fontWeight:600}}>{nextDose}</span>{nextDate?` · planned ${new Date(nextDate+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}`:""}</div>
-              {ready&&<div style={{display:"flex",gap:8,marginTop:8}}>
-                <button onClick={()=>confirmBump(alert)} className="touch" style={{flex:1,padding:"7px 0",borderRadius:999,border:"none",background:"var(--accent)",color:"var(--bg)",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
-                  <Icon n="check" s={14} c="var(--bg)" sw={2.5}/> I bumped to {nextDose}
-                </button>
-                <button onClick={()=>delayBump(alert)} className="touch" style={{padding:"7px 14px",borderRadius:999,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",fontSize:11,fontWeight:600,cursor:"pointer"}}>+7d</button>
-              </div>}
-            </div>);})}</div>);
+            return(<div style={{marginBottom:16}}>
+              {urgent.map(({peptide:p,daysSupply,dosesRemaining,totalDoses})=>(
+                <div key={p.id} className="rise" style={{background:"color-mix(in oklch, var(--c-danger) 7%, var(--elev-1))",border:"1px solid color-mix(in oklch, var(--c-danger) 22%, transparent)",borderRadius:"var(--r-sm)",padding:"13px 15px",marginBottom:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                    <span style={{fontSize:15,fontWeight:700,color:"var(--t-1)"}}>{p.name}</span>
+                    <span className="mono" style={{fontSize:12,fontWeight:700,color:"var(--c-danger)"}}>{daysSupply<=0?"last dose":`${daysSupply} day${daysSupply===1?"":"s"} left`}</span>
+                  </div>
+                  <div style={{fontSize:12,color:"var(--t-3)",marginTop:4}}>{dosesRemaining} of {totalDoses} doses left in current vial</div>
+                  <button onClick={()=>setReorderModal({...p,daysSupply,dosesLeft:dosesRemaining,supplyNote:`${dosesRemaining}/${totalDoses} doses left in current vial`})} className="touch" style={{width:"100%",marginTop:11,padding:"10px 0",borderRadius:10,border:"none",background:"var(--c-danger)",color:"var(--bg)",fontSize:13,fontWeight:700,cursor:"pointer"}}>Reorder {p.name} →</button>
+                </div>
+              ))}
+              {readyBumps.map(alert=>{const{peptide:p,nextDose,curDose}=alert;return(
+                <div key={p.id} className="rise" style={{background:"color-mix(in oklch, var(--accent) 7%, var(--elev-1))",border:"1px solid color-mix(in oklch, var(--accent) 22%, transparent)",borderRadius:"var(--r-sm)",padding:"13px 15px",marginBottom:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                    <span style={{fontSize:15,fontWeight:700,color:"var(--t-1)"}}>{p.name}</span>
+                    <span className="mono" style={{fontSize:12,fontWeight:700,color:"var(--accent)"}}>ready to bump</span>
+                  </div>
+                  <div style={{fontSize:12,color:"var(--t-3)",marginTop:4}}>{curDose} → <span style={{color:"var(--accent)",fontWeight:600}}>{nextDose}</span></div>
+                  <div style={{display:"flex",gap:8,marginTop:11}}>
+                    <button onClick={()=>confirmBump(alert)} className="touch" style={{flex:1,padding:"10px 0",borderRadius:10,border:"none",background:"var(--accent)",color:"var(--bg)",fontSize:13,fontWeight:700,cursor:"pointer"}}>I bumped to {nextDose}</button>
+                    <button onClick={()=>delayBump(alert)} className="touch" style={{padding:"10px 14px",borderRadius:10,border:"1px solid var(--line-soft)",background:"var(--elev-2)",color:"var(--t-3)",fontSize:12,fontWeight:600,cursor:"pointer"}}>+7d</button>
+                  </div>
+                </div>
+              );})}
+              {plan.length>0&&(<>
+                <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",margin:"14px 0 2px",fontWeight:600}}>Plan ahead</div>
+                {plan.map((it,i)=>{const p=it.peptide;return(
+                  <div key={`${it.kind}-${p.id}`} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"10px 2px",borderTop:i===0?"none":"1px solid var(--line-soft)"}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:13.5,fontWeight:600,color:"var(--t-1)"}}>{it.kind==="bump"?`${p.name} bump`:p.name}</div>
+                      <div style={{fontSize:11.5,color:"var(--t-4)",marginTop:2}}>{it.kind==="bump"?`${it.curDose} → ${it.nextDose}${it.nextDate?` · ${fmtDay(it.nextDate)}`:""}`:`${it.dosesRemaining} of ${it.totalDoses} doses left`}</div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      {it.kind==="supply"?(<>
+                        <div className="mono" style={{fontSize:11.5,fontWeight:600,color:"var(--c-warn)"}}>{it.days}d left</div>
+                        <button onClick={()=>setReorderModal({...p,daysSupply:it.days,dosesLeft:it.dosesRemaining,supplyNote:`${it.dosesRemaining}/${it.totalDoses} doses left in current vial`})} className="touch" style={{background:"none",border:"none",padding:0,color:"var(--accent)",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>Reorder</button>
+                      </>):(<div className="mono" style={{fontSize:11.5,fontWeight:600,color:"var(--t-3)"}}>{it.days}d</div>)}
+                    </div>
+                  </div>
+                );})}
+              </>)}
+            </div>);
           })()}
 
           {/* ── Coming up — every peptide that isn't running but has a date ──
@@ -2493,26 +2519,26 @@ function DashboardInner(){
             const onHold=userPeps.filter(p=>isPeptideOnHold(p)&&p.status==="break");
             if(coming.length===0&&onHold.length===0)return null;
             return(<div style={{marginBottom:16}}>
-              <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>Coming up</div>
-              {coming.map(p=>{const soon=p.daysUntil<=7;const color=soon?"var(--accent)":"var(--t-3)";return(
-                <div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:`3px solid ${color}`,borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div>
-                    <span style={{fontSize:13,fontWeight:600,color:p.color||"var(--t-1)"}}>{p.name}</span>
+              <div className="mono" style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",marginBottom:2,fontWeight:600}}>Coming up</div>
+              {coming.map((p,i)=>(
+                <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"10px 2px",borderTop:i===0?"none":"1px solid var(--line-soft)"}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:13.5,fontWeight:600,color:p.color||"var(--t-1)"}}>{p.name}</div>
                     <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:2}}>{p.dose}</div>
                   </div>
-                  <div style={{textAlign:"right"}}>
-                    <span className="mono" style={{fontSize:14,fontWeight:700,color:color}}>{p.daysUntil===0?"today":`${p.daysUntil}d`}</span>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <span className="mono" style={{fontSize:11.5,fontWeight:600,color:p.daysUntil<=1?"var(--t-2)":"var(--t-4)"}}>{p.daysUntil===0?"today":p.daysUntil===1?"tomorrow":`${p.daysUntil}d`}</span>
                     <div className="mono" style={{fontSize:9,color:"var(--t-4)"}}>{new Date(p.upDate+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
                   </div>
                 </div>
-              );})}
-              {onHold.map(p=>(
-                <div key={p.id} className="rise" style={{background:"var(--elev-1)",borderLeft:"3px solid var(--t-5)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center",opacity:.6}}>
-                  <div>
-                    <span style={{fontSize:13,fontWeight:600,color:p.color||"var(--t-1)"}}>{p.name}</span>
+              ))}
+              {onHold.map((p,i)=>(
+                <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"10px 2px",borderTop:coming.length===0&&i===0?"none":"1px solid var(--line-soft)",opacity:.6}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:13.5,fontWeight:600,color:p.color||"var(--t-1)"}}>{p.name}</div>
                     <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:2}}>{p.dose}</div>
                   </div>
-                  <span className="mono" style={{fontSize:10,fontWeight:600,color:"var(--t-4)",letterSpacing:".04em"}}>ON HOLD</span>
+                  <span className="mono" style={{fontSize:10,fontWeight:600,color:"var(--t-4)"}}>on hold</span>
                 </div>
               ))}
             </div>);

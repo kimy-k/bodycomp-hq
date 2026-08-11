@@ -480,6 +480,8 @@ export const CHANGELOG = [
     {icon:"body",text:"Deficit is now a setting (slider, 0–30%) instead of hardcoded calories"},
     {icon:"warn",text:"Fixed: macros page and insights used different TDEE formulas and disagreed by ~130 kcal — both now use Katch-McArdle"},
     {icon:"check",text:"Sustainability warning threshold tightened from 25% to 20% deficit"},
+    {icon:"target",text:"Projections rebuilt — scenarios now derive from YOUR deficit, with TDEE recalculated monthly so loss decelerates realistically"},
+    {icon:"body",text:"Projections model lean-mass cost of harder deficits, and Actual Pace uses regression over 70 days instead of two scans"},
   ]},
   {v:"2026.07.31a", date:"2026-07-31", title:"Supply Health, Auto-Status & Shared Vials", items:[
     {icon:"peps",   text:"Supply Health — sealed vials, weeks of supply, and weekly burn rate for every peptide, sorted so whatever runs out first is at the top"},

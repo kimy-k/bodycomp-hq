@@ -25,48 +25,123 @@ export const addDays = (date, n) => {
 /** Build 12-month body-fat projections under conservative / on-track / aggressive scenarios.
  *  Uses actual observed fat-loss rate when ≥3 scans spanning ≥14 days exist.
  *  Takes enriched scans array + the most recent scan; returns {scenarios, projections}. */
-export const buildProj = (last, allScans) => {
-  /* Try to compute actual observed monthly fat-loss rate from scan history */
-  let actualRate = null;
-  if (allScans && allScans.length >= 3) {
-    /* Find a scan 21-60 days ago as baseline */
-    const now = new Date(last.date + "T12:00:00");
-    let baseline = null;
-    for (let i = allScans.length - 2; i >= 0; i--) {
-      const d = (now - new Date(allScans[i].date + "T12:00:00")) / 86400000;
-      if (d >= 14 && d <= 60) { baseline = allScans[i]; break; }
+/* Energy density of body fat. ~7,700 kcal per kg (3,500 per lb). */
+export const FAT_KCAL_PER_KG = 7700;
+/* Essential-fat floor by sex — projections must never curve below this. Replaces
+   a hardcoded 8kg fat floor that was body-size blind (19% BF for Kim, 14% for Bea). */
+export const MIN_BF_PCT = {female: 12, male: 5};
+
+/* Share of total loss that comes off as LEAN tissue, as a function of how hard
+   the deficit is. Zero up to 10%, rising to 20% at a 30% deficit. This is what
+   makes an aggressive cut look less attractive than a moderate one: body fat %
+   is a RATIO, so shedding lean mass works against the number you care about. */
+export const leanLossFraction = deficitPct =>
+  Math.min(0.20, Math.max(0, (deficitPct - 10) / 100));
+
+/* Project one scenario forward 12 months, recomputing TDEE each month.
+   Fixed kg/month is wrong: as mass comes off, BMR falls, so the same deficit
+   PERCENT yields fewer absolute kcal and loss decelerates. Because targets are
+   themselves derived from TDEE, holding deficitPct constant is what the app
+   actually does month to month. */
+const runPlan = (last, deficitPct, mult, minBf, months = 12) => {
+  let lean = last.leanMass, fat = last.fatMass;
+  const out = [];
+  const leanFrac = leanLossFraction(deficitPct);
+  for (let m = 0; m <= months; m++) {
+    if (m > 0) {
+      const bmr = 370 + 21.6 * lean;
+      const tdee = bmr * mult;
+      const kcalDeficit = tdee * (deficitPct / 100);
+      const total = kcalDeficit * 30.44 / FAT_KCAL_PER_KG;
+      const floor = lean * minBf / (100 - minBf);
+      fat = Math.max(floor, fat - total * (1 - leanFrac));
+      lean = Math.max(lean * 0.85, lean - total * leanFrac);
     }
-    if (baseline) {
-      const days = (now - new Date(baseline.date + "T12:00:00")) / 86400000;
-      const fatLost = baseline.fatMass - last.fatMass;  /* positive = lost fat */
-      actualRate = +(fatLost / days * 30).toFixed(2);   /* kg fat lost per month */
-    }
+    out.push({bf: +((fat / (lean + fat)) * 100).toFixed(1), fat: +fat.toFixed(2), lean: +lean.toFixed(2)});
   }
+  return out;
+};
+
+/* Project a flat measured rate forward (used for Actual Pace). */
+const runFlat = (last, kgPerMonth, minBf, months = 12) => {
+  const out = [];
+  for (let m = 0; m <= months; m++) {
+    const floor = last.leanMass * minBf / (100 - minBf);
+    const fat = Math.max(floor, last.fatMass - kgPerMonth * m);
+    out.push({bf: +((fat / (last.leanMass + fat)) * 100).toFixed(1), fat: +fat.toFixed(2), lean: last.leanMass});
+  }
+  return out;
+};
+
+/* Measured fat-loss rate, kg/month. Least-squares regression over every scan in
+   the last 70 days rather than differencing two endpoints — single InBody
+   readings swing with hydration and glycogen, and a 2-point rate inherits that
+   noise wholesale. Returns null when there is not enough signal to be honest. */
+export const measuredRate = (last, allScans, windowDays = 70) => {
+  if (!allScans || allScans.length < 3) return null;
+  const now = new Date(last.date + "T12:00:00");
+  const pts = allScans
+    .map(s => ({x: (now - new Date(s.date + "T12:00:00")) / 86400000, y: s.fatMass}))
+    .filter(p => p.x >= 0 && p.x <= windowDays && isFinite(p.y));
+  if (pts.length < 3) return null;
+  const span = Math.max(...pts.map(p => p.x)) - Math.min(...pts.map(p => p.x));
+  if (span < 21) return null;               /* too short a window to mean anything */
+  const n = pts.length;
+  const mx = pts.reduce((a, p) => a + p.x, 0) / n;
+  const my = pts.reduce((a, p) => a + p.y, 0) / n;
+  const den = pts.reduce((a, p) => a + (p.x - mx) ** 2, 0);
+  if (!den) return null;
+  const slope = pts.reduce((a, p) => a + (p.x - mx) * (p.y - my), 0) / den;
+  /* x counts days BACKWARD, so a positive slope means fat mass was higher in the
+     past — i.e. fat is being lost now. kg/month. */
+  return {rate: +(slope * 30.44).toFixed(2), n, spanDays: Math.round(span)};
+};
+
+/* Build projection scenarios anchored on the user's ACTUAL plan.
+   opts: {deficitPct, activity, gender} */
+export const buildProj = (last, allScans, opts = {}) => {
+  const deficitPct = Number.isFinite(opts.deficitPct) ? opts.deficitPct : 15;
+  const mult = ({sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725})[opts.activity] || 1.375;
+  const minBf = MIN_BF_PCT[opts.gender === "male" ? "male" : "female"];
+
+  const lighter = Math.max(5, deficitPct - 5);
+  const harder = Math.min(30, deficitPct + 5);
 
   const sc = [
-    {name: "Conservative", rate: 0.6, color: "oklch(0.80 0.15 75)"},
-    {name: "On Track",     rate: 1.0, color: "oklch(0.76 0.16 295)"},
-    {name: "Aggressive",   rate: 1.4, color: "oklch(0.76 0.18 155)"},
+    {name: "Your Plan", primary: true, deficitPct, note: `${deficitPct}% deficit`, color: "oklch(0.76 0.16 295)"},
+    {name: "Lighter", deficitPct: lighter, note: `${lighter}% deficit`, color: "oklch(0.80 0.15 75)"},
+    {name: "Harder", deficitPct: harder, note: `${harder}% deficit`, color: "oklch(0.76 0.18 155)"},
   ];
-  /* Insert actual observed rate as the primary scenario when available */
-  if (actualRate !== null && isFinite(actualRate)) {
+
+  const meas = measuredRate(last, allScans);
+  if (meas) {
     sc.unshift({
       name: "Actual Pace",
-      rate: Math.max(actualRate, -1),  /* cap reverse at -1 to keep chart readable */
-      color: actualRate > 0 ? "oklch(0.78 0.20 170)" : "oklch(0.70 0.20 25)",
+      measured: true,
+      rateFixed: meas.rate,
+      note: `measured · ${meas.n} scans / ${meas.spanDays}d`,
+      color: meas.rate > 0 ? "oklch(0.78 0.20 170)" : "oklch(0.70 0.20 25)",
     });
   }
+
+  const series = {};
+  sc.forEach(s => {
+    series[s.name] = s.measured ? runFlat(last, s.rateFixed, minBf)
+                                : runPlan(last, s.deficitPct, mult, minBf);
+    /* Headline kg/mo = first-month fat change — the rate that applies right now,
+       before adaptation slows it. */
+    s.rate = s.measured ? s.rateFixed
+      : +(series[s.name][0].fat - series[s.name][1].fat).toFixed(2);
+    /* Projected lean mass change over 12 months — the cost of the deficit. */
+    s.leanDelta = +(series[s.name][12].lean - series[s.name][0].lean).toFixed(1);
+  });
 
   const p = [];
   for (let m = 0; m <= 12; m++) {
     const dt = new Date(last.date);
     dt.setMonth(dt.getMonth() + m);
     const e = {month: m, label: dt.toLocaleDateString("en-US", {month: "short", year: "2-digit"})};
-    sc.forEach(s => {
-      const fm = Math.max(last.fatMass - s.rate * m, 8);
-      const tw = last.leanMass + fm;
-      e[s.name] = +((fm / tw) * 100).toFixed(1);
-    });
+    sc.forEach(s => { e[s.name] = series[s.name][m].bf; });
     p.push(e);
   }
   return {scenarios: sc, projections: p};

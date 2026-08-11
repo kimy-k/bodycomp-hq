@@ -128,7 +128,7 @@ function DashboardInner(){
   const goalPct=userConfig?.goalBf||30;
   const fatToLose=data.length>0?+(last.fatMass-(last.leanMass/(1-goalPct/100))*goalPct/100).toFixed(1):0;
   const pctDone=(()=>{if(data.length===0)return 0;const denom=first.fatPct-goalPct;if(!denom||denom<=0)return 100;const v=+(((first.fatPct-last.fatPct)/denom)*100).toFixed(0);return Math.max(0,Math.min(100,isFinite(v)?v:0));})();
-  const {scenarios,projections}=useMemo(()=>buildProj(last, data),[last, data]);
+  const {scenarios,projections}=useMemo(()=>buildProj(last, data, {deficitPct:userConfig?.deficitPct??15, activity:userConfig?.activity, gender:userConfig?.gender}),[last, data, userConfig]);
   /* Find the first month each scenario's projected body fat drops to/below the user's goal */
   const etaMonths=scenarios.map(s=>{const h=projections.find(p=>p[s.name]<=goalPct);return{...s,months:h?h.month:">12"};});
 
@@ -1107,7 +1107,7 @@ function DashboardInner(){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
           <div>
             <div className="mono" style={{fontSize:10,color:"var(--t-3)",letterSpacing:".20em",textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Goal · {goalPct}% body fat</div>
-            <div className="mono" style={{fontSize:11,color:"var(--t-4)",letterSpacing:".04em"}}>{fatToLose>0?`${fatToLose}kg to go`:"Goal reached"}{(()=>{const onTrack=etaMonths.find(s=>s.name==="On Track");if(!onTrack||onTrack.months===">12"||!fatToLose||fatToLose<=0)return null;const mo=typeof onTrack.months==="number"?onTrack.months:parseInt(onTrack.months);if(!mo||isNaN(mo))return null;const eta=new Date();eta.setMonth(eta.getMonth()+mo);const label=eta.toLocaleDateString("en-US",{month:"short",year:"numeric"});return ` · ${label} at current rate`;})()}</div>
+            <div className="mono" style={{fontSize:11,color:"var(--t-4)",letterSpacing:".04em"}}>{fatToLose>0?`${fatToLose}kg to go`:"Goal reached"}{(()=>{const onTrack=etaMonths.find(s=>s.primary);if(!onTrack||onTrack.months===">12"||!fatToLose||fatToLose<=0)return null;const mo=typeof onTrack.months==="number"?onTrack.months:parseInt(onTrack.months);if(!mo||isNaN(mo))return null;const eta=new Date();eta.setMonth(eta.getMonth()+mo);const label=eta.toLocaleDateString("en-US",{month:"short",year:"numeric"});return ` · ${label} at current rate`;})()}</div>
           </div>
           <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
             <div style={{fontFamily:"Inter, ui-sans-serif, system-ui, sans-serif",fontSize:32,color:"var(--accent)",lineHeight:1,fontWeight:800,letterSpacing:"-0.04em"}}>{pctDone}<span className="mono" style={{fontSize:13,color:"var(--t-4)",fontWeight:600,letterSpacing:".04em"}}>%</span></div>
@@ -3469,11 +3469,13 @@ function DashboardInner(){
       </>)}
 
       {tab==="projection"&&(<>
-        <H2 sub="3 scenarios from your current scan">Timeline to {goalPct}%</H2>
+        <H2 sub="Modelled from your deficit — TDEE recalculated each month">Timeline to {goalPct}%</H2>
         <div style={{display:"flex",gap:8,marginBottom:22,flexWrap:"wrap"}}>{etaMonths.map((s,i)=>(<div key={i} className="rise" style={{animationDelay:`${i*0.06}s`,flex:"1 1 92px",background:"var(--elev-1)",borderLeft:`3px solid ${s.color}`,borderRadius:"var(--r-sm)",padding:"14px 12px",textAlign:"center"}}>
           <div style={{fontSize:9.5,color:"var(--t-3)",textTransform:"uppercase",letterSpacing:".10em",marginBottom:6,fontWeight:600}}>{s.name}</div>
           <div className="serif tabular" style={{fontSize:38,color:s.color,fontStyle:"italic",lineHeight:.95}}>{s.months}<span style={{fontSize:14,color:"var(--t-3)",marginLeft:1}}>mo</span></div>
           <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:4,letterSpacing:".01em"}}>{s.rate} kg / mo</div>
+          <div className="mono" style={{fontSize:9,color:"var(--t-5)",marginTop:2,letterSpacing:".01em"}}>{s.note}</div>
+          {s.leanDelta!=null&&s.leanDelta<0&&<div className="mono" style={{fontSize:9,color:"var(--c-warn)",marginTop:2}}>{s.leanDelta}kg lean / yr</div>}
         </div>))}</div>
         <div className="rise r4" style={cBox}><ResponsiveContainer width="100%" height={260}>
           <LineChart data={projections} margin={{top:10,right:14,left:4,bottom:0}}>
@@ -3483,7 +3485,7 @@ function DashboardInner(){
             <Tooltip content={<Tip/>}/>
             <Legend iconType="circle" iconSize={7} wrapperStyle={{fontSize:11,color:"var(--t-3)",fontFamily:"Geist Mono",paddingTop:4}}/>
             <ReferenceLine y={goalPct} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth={1.5} strokeOpacity={0.6} label={{value:`${goalPct}% goal`,position:"insideBottomRight",fill:"var(--accent)",fontSize:10,fontFamily:"Geist Mono"}}/>
-            {scenarios.map(s=>(<Line key={s.name} type="monotone" dataKey={s.name} stroke={s.color} strokeWidth={2} name={s.name} dot={false} strokeDasharray={s.name==="On Track"?"0":"5 4"}/>))}
+            {scenarios.map(s=>(<Line key={s.name} type="monotone" dataKey={s.name} stroke={s.color} strokeWidth={2} name={s.name} dot={false} strokeDasharray={s.primary?"0":"5 4"}/>))}
           </LineChart>
         </ResponsiveContainer></div>
       </>)}

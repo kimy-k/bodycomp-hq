@@ -278,3 +278,63 @@ export const sharedActiveComponents = (pep, others) => {
   }
   return comp.filter(c => active.has(c));
 };
+
+/* ── Energy model ──────────────────────────────────────────────────────────
+   Single source of truth for BMR / TDEE / macro targets.
+
+   Katch-McArdle (lean mass) when an InBody scan exists; Mifflin-St Jeor as
+   fallback. Targets DERIVE from the latest scan rather than being stored
+   constants, so a Saturday scan moves Sunday's targets automatically.
+
+   Previously three call sites computed TDEE independently — Dashboard used
+   Katch-McArdle, insights.js used Mifflin off a stale config weight — and
+   disagreed by ~130 kcal. Everything routes through here now. */
+export const ACTIVITY_MULT = {sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725};
+
+/* A deficit above this is flagged as aggressive rather than sustainable.
+   Was 25 — too permissive for a lifter trying to hold lean mass in a cut. */
+export const SUSTAINABLE_DEFICIT_PCT = 20;
+
+export const energyModel = ({
+  leanMass = null, weight = null, height = null, age = null,
+  gender = "female", activity = "light",
+  deficitPct = 15, proteinPerKgLean = 4.4, fatPctKcal = 0.29,
+} = {}) => {
+  const mult = ACTIVITY_MULT[activity] || 1.375;
+  const bmrKM = leanMass ? 370 + 21.6 * leanMass : null;
+  const bmrMSJ = (weight && height && age)
+    ? (gender === "male" ? 10*weight + 6.25*height - 5*age + 5
+                         : 10*weight + 6.25*height - 5*age - 161)
+    : null;
+  const bmr = bmrKM || bmrMSJ;
+  if (!bmr) return null;
+
+  const tdee = Math.round(bmr * mult);
+  const cal = Math.round(tdee * (1 - deficitPct/100) / 10) * 10;
+  /* Protein scales off LEAN mass, not bodyweight — in a cut, bodyweight falls
+     and a bodyweight-derived target would cut protein exactly when it matters most. */
+  const protein = leanMass ? Math.round(leanMass * proteinPerKgLean)
+                           : Math.round((weight || 0) * 2.9);
+  const fat = Math.round(cal * fatPctKcal / 9);
+  const carbs = Math.max(0, Math.round((cal - protein*4 - fat*9) / 4));
+
+  return {
+    bmr: Math.round(bmr),
+    bmrLabel: bmrKM ? "Katch-McArdle" : "Mifflin-St Jeor",
+    mult, tdee, deficitPct,
+    deficit: tdee - cal,
+    sustainable: deficitPct <= SUSTAINABLE_DEFICIT_PCT,
+    cal, protein, fat, carbs,
+  };
+};
+
+/* Build the energy model from a user config + the most recent scan. */
+export const energyFromConfig = (cfg, latestScan) => energyModel({
+  leanMass: latestScan?.leanMass ?? null,
+  weight: latestScan?.weight ?? cfg?.weight ?? null,
+  height: cfg?.height, age: cfg?.age, gender: cfg?.gender,
+  activity: cfg?.activity,
+  deficitPct: cfg?.deficitPct ?? 15,
+  proteinPerKgLean: cfg?.proteinPerKgLean ?? 4.4,
+  fatPctKcal: cfg?.fatPctKcal ?? 0.29,
+});

@@ -475,6 +475,12 @@ export const recommendedReconFor = pepId => {
 
 /* ═══ CHANGELOG — shown in "What's New" sheet on first load after update ═══ */
 export const CHANGELOG = [
+  {v:"2026.08.11a", date:"2026-08-11", title:"Live Macro Targets", items:[
+    {icon:"target",text:"Targets now recalculate from your latest InBody scan — a Saturday scan moves Sunday's numbers"},
+    {icon:"body",text:"Deficit is now a setting (slider, 0–30%) instead of hardcoded calories"},
+    {icon:"warn",text:"Fixed: macros page and insights used different TDEE formulas and disagreed by ~130 kcal — both now use Katch-McArdle"},
+    {icon:"check",text:"Sustainability warning threshold tightened from 25% to 20% deficit"},
+  ]},
   {v:"2026.07.31a", date:"2026-07-31", title:"Supply Health, Auto-Status & Shared Vials", items:[
     {icon:"peps",   text:"Supply Health — sealed vials, weeks of supply, and weekly burn rate for every peptide, sorted so whatever runs out first is at the top"},
     {icon:"plus",   text:"Open a sealed vial in one tap — it subtracts from your supply and starts a new batch with the details already filled in"},

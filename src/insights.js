@@ -1,3 +1,5 @@
+import {energyFromConfig, SUSTAINABLE_DEFICIT_PCT} from "./bcq-math.js";
+
 /* ═══ INSIGHTS ENGINE ═══
    Pure function: takes all data streams + targets, returns ranked insight array.
    Each insight has a guard clause — degrades gracefully on sparse data. */
@@ -386,10 +388,9 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
 
   /* 8. Energy balance (deficit) */
   if (macroHist && macroHist.length >= 5 && userConfig?.weight && userConfig?.height && userConfig?.age) {
-    const w = userConfig.weight, h = userConfig.height, a = userConfig.age;
-    const bmr = userConfig.gender === "male" ? 10*w + 6.25*h - 5*a + 5 : 10*w + 6.25*h - 5*a - 161;
-    const mult = ({sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725})[userConfig.activity] || 1.375;
-    const tdee = Math.round(bmr * mult);
+    /* Katch-McArdle off the latest scan — was Mifflin off a config weight that goes
+       stale, which disagreed with the macros page by ~130 kcal. */
+    const tdee = energyFromConfig(userConfig, scans && scans.length ? scans[scans.length-1] : null)?.tdee || 0;
     const last7 = macroHist.filter(d => inLast(d.date, 7));
     if (last7.length >= 3 && tdee > 0) {
       const cals = last7.map(d => {
@@ -402,7 +403,7 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
       const def = tdee - avg;
       const pct = Math.round(def / tdee * 100);
       if (Math.abs(pct) >= 5) {
-        const sustainable = def > 0 && pct <= 25;
+        const sustainable = def > 0 && pct <= SUSTAINABLE_DEFICIT_PCT;
         out.push({
           id: "energy",
           icon: "macros",
@@ -428,10 +429,7 @@ export const computeInsights = ({pepHist, macroHist, whoopHist, wellnessHist, me
     if (baseline) {
       const wDelta = +(last.weight - baseline.weight).toFixed(1);
       const days = Math.round(daysAgo(baseline.date) - daysAgo(last.date));
-      const w = userConfig.weight, h = userConfig.height, a = userConfig.age;
-      const bmr = userConfig.gender === "male" ? 10*w + 6.25*h - 5*a + 5 : 10*w + 6.25*h - 5*a - 161;
-      const mult = ({sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725})[userConfig.activity] || 1.375;
-      const tdee = Math.round(bmr * mult);
+      const tdee = energyFromConfig(userConfig, scans && scans.length ? scans[scans.length-1] : null)?.tdee || 0;
       const last14 = macroHist.filter(d => inLast(d.date, 14));
       if (last14.length >= 5 && tdee > 0) {
         const cals = last14.map(d => {

@@ -2,6 +2,8 @@ import { Fragment, useState, useEffect, useMemo, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ReferenceLine, Legend, Cell } from "recharts";
 import {
   enrich,
+  energyFromConfig,
+  ACTIVITY_MULT,
   daysSinceRecon,
   isPastPGStability as isPastPGStability_pure,
   parseTimeStr,
@@ -92,7 +94,6 @@ function DashboardInner(){
   const defaultProfile=userId?(PROFILES[userId]||PROFILES.kim):PROFILES.kim;
   const profile=userConfig?{...defaultProfile,name:userConfig.name||defaultProfile.name,targets:userConfig.targets||defaultProfile.targets}:defaultProfile;
   const db=useMemo(()=>makeDb(userId||"_none_",msg=>showToast(msg,"error")),[userId,showToast]);
-  const TARGETS=profile.targets;
 
   const [onboarded,setOnboarded]=useState(null);
   useEffect(()=>{(async()=>{const ob=await db.getConfig("onboarded");const cfg=await db.getConfig("profile");if(cfg)setUserConfig(cfg);setOnboarded(!!ob);})();},[db]);
@@ -116,6 +117,13 @@ function DashboardInner(){
   const monthly=useMemo(()=>calcMonthly(data),[data]);
   const first=data[0]||{fatPct:40,weight:60,muscle:18,fatMass:24,leanMass:36};
   const last=data.length>0?data[data.length-1]:first;
+  /* Targets derive from the latest InBody scan via the shared energy model, so a
+     new scan updates tomorrow's targets automatically. userConfig.autoTargets===false
+     falls back to the manually stored numbers. */
+  const energy=useMemo(()=>data.length>0?energyFromConfig(userConfig,data[data.length-1]):null,[userConfig,data]);
+  const TARGETS=useMemo(()=>(userConfig?.autoTargets!==false&&energy)
+    ?{cal:energy.cal,protein:energy.protein,fat:energy.fat,carbs:energy.carbs}
+    :(userConfig?.targets||defaultProfile.targets),[userConfig,energy,defaultProfile]);
   const best=data.length>0?data.reduce((a,b)=>b.fatPct<a.fatPct?b:a):first;
   const goalPct=userConfig?.goalBf||30;
   const fatToLose=data.length>0?+(last.fatMass-(last.leanMass/(1-goalPct/100))*goalPct/100).toFixed(1):0;
@@ -796,7 +804,7 @@ function DashboardInner(){
         whoopBaseline.avgRecovery=avg(whoop7.map(w=>w.recovery));whoopBaseline.avgRhr=avg(whoop7.map(w=>w.rhr));whoopBaseline.avgHrv=avg(whoop7.map(w=>w.hrv));
       }
       const activePeps=userPeps.filter(p=>p.status==="active").map(p=>({id:p.id,name:p.label||p.id,dose:p.dose,schedule:p.schedule,timing:p.timing}));
-      const tdee=data.length>0?Math.round((370+21.6*(data[data.length-1].leanMass||33.7))*({sedentary:1.2,light:1.375,moderate:1.55,active:1.725}[userConfig?.activity]||1.375)):2042;
+      const tdee=energy?.tdee||2042;
 
       const resp=await fetch("/api/ai/analysis",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({macros:macros7,scans:recentScans,whoop:whoop7,peptides:activePeps,pepCorr,whoopBaseline,targets:{protein:TARGETS.protein,cal:TARGETS.cal},tdee,profile:{gender:userConfig?.gender,height:userConfig?.height,goalBf:goalPct}})});
       const result=await resp.json();
@@ -1126,7 +1134,7 @@ function DashboardInner(){
           </button>
         </div>
       </div></>)}
-      {showSettings&&<Settings db={db} userId={userId} userConfig={userConfig} defaultProfile={defaultProfile} peptideStack={peptideStack} onStackToggle={async(pepId,enabled)=>{
+      {showSettings&&<Settings db={db} userId={userId} userConfig={userConfig} defaultProfile={defaultProfile} peptideStack={peptideStack} latestScan={data.length>0?data[data.length-1]:null} onStackToggle={async(pepId,enabled)=>{
         /* If enabling and no row exists yet (new peptide added to catalog later), seed from DEFAULT_STACK */
         const existing=peptideStack.find(s=>s.peptide_id===pepId);
         let patch={enabled};
@@ -1702,20 +1710,14 @@ function DashboardInner(){
             {(()=>{
               const latestScan=data.length>0?data[data.length-1]:null;
               const w=latestScan?.weight||userConfig.weight;
-              const lm=latestScan?.leanMass||null;
-              const h=userConfig.height,a=userConfig.age;
               const scanDate=latestScan?.date?new Date(latestScan.date+"T12:00:00"):null;
               const scanAge=scanDate?Math.round((Date.now()-scanDate)/86400000):null;
               const scanStale=scanAge!==null&&scanAge>14;
-              /* Katch-McArdle (uses lean mass) is more accurate than Mifflin when InBody data exists */
-              const bmrKM=lm?370+21.6*lm:null;
-              const bmrMSJ=userConfig.gender==="male"?10*w+6.25*h-5*a+5:10*w+6.25*h-5*a-161;
-              const bmr=bmrKM||bmrMSJ;
-              const bmrLabel=bmrKM?"Katch-McArdle":"Mifflin-St Jeor";
-              const mult={sedentary:1.2,light:1.375,moderate:1.55,active:1.725}[userConfig.activity]||1.375;
-              const tdee=Math.round(bmr*mult);
+              /* All BMR/TDEE math lives in bcq-math energyModel — one formula, one answer. */
+              const em=energy||energyFromConfig(userConfig,latestScan);
+              const bmr=em?.bmr||0,bmrLabel=em?.bmrLabel||"—",tdee=em?.tdee||0;
               const deficit=tdee-TARGETS.cal;
-              const defPct=Math.round(deficit/tdee*100);
+              const defPct=tdee?Math.round(deficit/tdee*100):0;
               return(<>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
                 {[["BMR",Math.round(bmr),"var(--c-carbs)"],["TDEE",tdee,"var(--c-weight)"],["Target",TARGETS.cal,"var(--t-1)"],[deficit>0?"Planned def.":"Planned surp.",deficit>0?`−${deficit}`:`+${Math.abs(deficit)}`,deficit>0?"var(--c-success)":"var(--c-danger)",defPct]].map(([l,v,c,p],i)=>(
@@ -2320,7 +2322,7 @@ function DashboardInner(){
             const latestScan=data.length>0?data[data.length-1]:null;
             const lm=latestScan?.leanMass||null;
             const bmr=lm?370+21.6*lm:(userConfig?.gender==="male"?10*(userConfig?.weight||55)+6.25*(userConfig?.height||155)-5*(userConfig?.age||30)+5:10*(userConfig?.weight||55)+6.25*(userConfig?.height||155)-5*(userConfig?.age||30)-161);
-            const tdee=Math.round(bmr*({sedentary:1.2,light:1.375,moderate:1.55,active:1.725}[userConfig?.activity]||1.375));
+            const tdee=energy?.tdee||Math.round(bmr*(ACTIVITY_MULT[userConfig?.activity]||1.375));
             const avgDeficit=tdee-avgCal;
             return(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,marginBottom:14}}>
               {[
@@ -2342,7 +2344,7 @@ function DashboardInner(){
             const latestScan=data.length>0?data[data.length-1]:null;
             const lm=latestScan?.leanMass||null;
             const bmr=lm?370+21.6*lm:(userConfig?.gender==="male"?10*(userConfig?.weight||55)+6.25*(userConfig?.height||155)-5*(userConfig?.age||30)+5:10*(userConfig?.weight||55)+6.25*(userConfig?.height||155)-5*(userConfig?.age||30)-161);
-            const tdee=Math.round(bmr*({sedentary:1.2,light:1.375,moderate:1.55,active:1.725}[userConfig?.activity]||1.375));
+            const tdee=energy?.tdee||Math.round(bmr*(ACTIVITY_MULT[userConfig?.activity]||1.375));
             return daysList.map((dk,i)=>{
               const hd=histDays.find(h=>h.date===dk);
               const dateObj=new Date(dk+"T12:00:00");

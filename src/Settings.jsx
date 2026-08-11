@@ -2,12 +2,13 @@
    Editable profile, goals, macros, whey, peptide stack manager, notif setup, export, switch user.
    Reads userConfig + peptideStack from parent, writes via onSave / onStackToggle callbacks. */
 
+import {energyFromConfig} from "./bcq-math.js";
 import {useState} from "react";
 import {Icon} from "./Icon.jsx";
 import {STYLE} from "./styles.js";
 import {PROFILES, PEPTIDES} from "./data.js";
 
-export function Settings({db,userId,userConfig,defaultProfile,peptideStack,onStackToggle,onClose,onSave,notifEnabled,notifPerm,requestNotifPermission,disableNotifs,sendTestPush,exportData,exporting,switchUser}){
+export function Settings({db,userId,userConfig,defaultProfile,peptideStack,latestScan,onStackToggle,onClose,onSave,notifEnabled,notifPerm,requestNotifPermission,disableNotifs,sendTestPush,exportData,exporting,switchUser}){
   // Initialize form state from existing userConfig, falling back to PROFILES defaults
   const init = {
     name: userConfig?.name || defaultProfile?.name || "",
@@ -17,6 +18,8 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,onSta
     weight: userConfig?.weight || "",
     activity: userConfig?.activity || "light",
     goalBf: userConfig?.goalBf || 30,
+    autoTargets: userConfig?.autoTargets !== false,
+    deficitPct: userConfig?.deficitPct ?? 15,
     targetCal: userConfig?.targets?.cal ?? defaultProfile?.targets?.cal ?? "",
     targetProtein: userConfig?.targets?.protein ?? defaultProfile?.targets?.protein ?? "",
     targetFat: userConfig?.targets?.fat ?? defaultProfile?.targets?.fat ?? "",
@@ -40,6 +43,8 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,onSta
       weight: +(d.weight||0),
       activity: d.activity,
       goalBf: +(d.goalBf||30),
+      autoTargets: !!d.autoTargets,
+      deficitPct: +(d.deficitPct||15),
       targets: {
         cal: +(d.targetCal||defaultProfile?.targets?.cal||1600),
         protein: +(d.targetProtein||defaultProfile?.targets?.protein||120),
@@ -98,8 +103,31 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,onSta
         {/* Macro plan */}
         <div className="rise r3" style={section}>
           <h2 className="serif" style={{fontSize:20,margin:"0 0 4px",fontStyle:"italic",color:"var(--t-1)",fontWeight:400,letterSpacing:"-0.015em"}}>Daily plan</h2>
-          <p style={{fontSize:11.5,color:"var(--t-3)",margin:"0 0 14px"}}>From your nutritionist or meal-plan app.</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <p style={{fontSize:11.5,color:"var(--t-3)",margin:"0 0 14px"}}>{d.autoTargets?"Recalculated from your latest InBody scan.":"Manual — from your nutritionist or meal-plan app."}</p>
+
+          {/* Auto-target toggle: derive targets from the newest scan instead of storing constants */}
+          <button onClick={()=>up("autoTargets",!d.autoTargets)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"11px 14px",borderRadius:"var(--r-sm)",border:`1px solid ${d.autoTargets?"var(--accent-line)":"var(--line-soft)"}`,background:d.autoTargets?"var(--accent-soft)":"transparent",cursor:"pointer",textAlign:"left",minHeight:46,marginBottom:12}}>
+            <div><div style={{fontSize:13,color:d.autoTargets?"var(--t-1)":"var(--t-2)",fontWeight:600}}>Auto-update from scans</div><div style={{fontSize:11,color:"var(--t-4)",marginTop:1}}>Targets follow your body composition</div></div>
+            {d.autoTargets&&<Icon n="check" s={16} c="var(--accent)" sw={2}/>}
+          </button>
+
+          {d.autoTargets&&(()=>{
+            const em=energyFromConfig({...userConfig,activity:d.activity,deficitPct:+(d.deficitPct||15),height:+d.height,age:+d.age,gender:d.gender,weight:+d.weight},latestScan);
+            return(<div style={{marginBottom:14}}>
+              <label style={{fontSize:10,color:"var(--t-3)",fontWeight:600,letterSpacing:".06em",display:"block",marginBottom:6,textTransform:"uppercase"}}>Deficit · {d.deficitPct}%{+d.deficitPct>20&&<span style={{color:"var(--c-warn)"}}> · aggressive</span>}</label>
+              <input type="range" min="0" max="30" step="1" value={d.deficitPct} onChange={e=>up("deficitPct",e.target.value)} style={{width:"100%",accentColor:+d.deficitPct>20?"var(--c-warn)":"var(--accent)"}}/>
+              {em&&<div style={{display:"flex",justifyContent:"space-between",marginTop:8,padding:"10px 12px",borderRadius:"var(--r-sm)",background:"var(--surface-2)"}}>
+                {[["TDEE",em.tdee],["kcal",em.cal],["P",em.protein],["F",em.fat],["C",em.carbs]].map(([l,v])=>(
+                  <div key={l} style={{textAlign:"center",flex:1}}>
+                    <div style={{fontSize:8.5,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600}}>{l}</div>
+                    <div className="serif tabular" style={{fontSize:16,color:"var(--t-1)"}}>{v}</div>
+                  </div>))}
+              </div>}
+              {!em&&<p style={{fontSize:11,color:"var(--c-warn)",margin:"8px 0 0"}}>Add an InBody scan to enable auto-targets.</p>}
+            </div>);
+          })()}
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,opacity:d.autoTargets?0.45:1,pointerEvents:d.autoTargets?"none":"auto"}}>
             {[["targetCal","Calories","var(--c-cal)","kcal"],["targetProtein","Protein","var(--c-protein)","g"],["targetFat","Fat","var(--c-fat)","g"],["targetCarbs","Carbs","var(--c-carbs)","g"]].map(([k,l,c,u])=>(<div key={k}><label style={{fontSize:10,color:c,fontWeight:600,letterSpacing:".06em",display:"block",marginBottom:4,textTransform:"uppercase"}}>{l} · {u}</label><input type="number" value={d[k]} onChange={e=>up(k,e.target.value)} className="bcq-input mono" style={{textAlign:"center",fontWeight:600}}/></div>))}
           </div>
         </div>

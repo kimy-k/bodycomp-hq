@@ -1710,6 +1710,7 @@ function DashboardInner(){
             {(()=>{
               const latestScan=data.length>0?data[data.length-1]:null;
               const w=latestScan?.weight||userConfig.weight;
+              const lm=latestScan?.leanMass||null;
               const scanDate=latestScan?.date?new Date(latestScan.date+"T12:00:00"):null;
               const scanAge=scanDate?Math.round((Date.now()-scanDate)/86400000):null;
               const scanStale=scanAge!==null&&scanAge>14;
@@ -3332,7 +3333,7 @@ function DashboardInner(){
 
         {pepSub==="supply"&&(<>
           <H2 sub="Sealed vials + burn rate">Supply Health</H2>
-          {supply.filter(s=>s.quantity>0&&isOnHand(s)).length===0?<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="vial" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No sealed vials tracked yet</div></div>:(<>
+          {supply.filter(s=>s.quantity>0).length===0?<div style={{textAlign:"center",padding:"48px 0",color:"var(--t-4)",fontSize:13}}><Icon n="vial" s={28} c="var(--t-5)"/><div style={{marginTop:10}}>No sealed vials tracked yet</div></div>:(<>
             {(()=>{
               /* Build supply health cards with burn rate */
               const grouped={};
@@ -3341,6 +3342,12 @@ function DashboardInner(){
                 grouped[s.peptide_id].rows.push(s);
                 grouped[s.peptide_id].totalQty+=s.quantity;
                 grouped[s.peptide_id].totalValue+=s.quantity*Number(s.cost_per_vial||0);
+              });
+              /* Zero sealed on hand but a delivery inbound must STILL render — that is
+                 precisely the case you most need to see (Klow vanished from Supply
+                 entirely before this). Empty group => card shows 0 on hand + ETA chip. */
+              supply.filter(s=>s.quantity>0&&!isOnHand(s)).forEach(s=>{
+                if(!grouped[s.peptide_id])grouped[s.peptide_id]={pepId:s.peptide_id,rows:[],totalQty:0,totalValue:0,inboundOnly:true};
               });
               const pepLookup=Object.fromEntries(userPeps.map(p=>[p.id,p]));
               /* Enrich with burn rate */
@@ -3427,7 +3434,7 @@ function DashboardInner(){
                       {/* Burn rate detail */}
                       <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:6}}>
                         {c.dosesPerVial>0&&<>{c.dosesPerVial} doses/vial{c.dosesEstimated&&<span style={{opacity:.65}}> (est.)</span>} · {c.sharedRate}/week burn rate · {c.totalDoses} total doses</>}
-                        {c.dosesPerVial===0&&<>{c.pep?"Mix a vial to see doses/vial and runway":"Not in your stack — enable it to track runway"}</>}
+                        {c.dosesPerVial===0&&<>{c.inboundOnly?"No sealed vials left":(c.pep?"Mix a vial to see doses/vial and runway":"Not in your stack — enable it to track runway")}</>}
                         {c.totalValue>0&&<> · ₱{c.totalValue.toLocaleString()}</>}
                         {(()=>{const inc=incomingFor(c.pepId);if(!inc)return null;
                           const d=Math.max(0,Math.ceil((new Date(inc.eta+"T12:00:00")-new Date(todayKey()+"T12:00:00"))/86400000));

@@ -483,6 +483,8 @@ export const CHANGELOG = [
     {icon:"target",text:"Projections rebuilt — scenarios now derive from YOUR deficit, with TDEE recalculated monthly so loss decelerates realistically"},
     {icon:"body",text:"Projections model lean-mass cost of harder deficits, and Actual Pace uses regression over 70 days instead of two scans"},
     {icon:"warn",text:"Fixed: adding a sealed vial crashed the app (undefined user reference in the supply save handler)"},
+    {icon:"target",text:"Needs mixing: peptides running with no open vial now show the last recipe — mg, BAC volume, mg/mL, units per dose"},
+    {icon:"body",text:"Shelf life is inferred from your own history per peptide (MOTS-c 14d, reta 28d), with one-tap Mix same as last time"},
   ]},
   {v:"2026.07.31a", date:"2026-07-31", title:"Supply Health, Auto-Status & Shared Vials", items:[
     {icon:"peps",   text:"Supply Health — sealed vials, weeks of supply, and weekly burn rate for every peptide, sorted so whatever runs out first is at the top"},

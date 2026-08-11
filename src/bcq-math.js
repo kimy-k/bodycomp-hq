@@ -338,3 +338,54 @@ export const energyFromConfig = (cfg, latestScan) => energyModel({
   proteinPerKgLean: cfg?.proteinPerKgLean ?? 4.4,
   fatPctKcal: cfg?.fatPctKcal ?? 0.29,
 });
+
+/* ── Reconstitution recall ────────────────────────────────────────────────
+   "How did I mix this last time, and how long does it keep?"
+
+   Shelf life is DERIVED from the user's own history rather than a constant:
+   MOTS-c has consistently run a 14-day window, reta 28. A hardcoded number
+   would be wrong for one of them. Median of (expiry - recon) across that
+   peptide's batches, so a single mis-typed expiry doesn't skew it. */
+export const lastMixFor = (pepId, batches) => {
+  if (!pepId || !batches?.length) return null;
+  const mine = batches
+    .filter(b => b.peptide_id === pepId && b.date_recon)
+    .sort((a, b) => (a.date_recon < b.date_recon ? 1 : -1));
+  if (!mine.length) return null;
+  const last = mine[0];
+
+  const spans = mine
+    .filter(b => b.expiry_date && b.date_recon)
+    .map(b => Math.round(
+      (new Date(b.expiry_date + "T12:00:00") - new Date(b.date_recon + "T12:00:00")) / 86400000))
+    .filter(d => d > 0 && d < 400)
+    .sort((a, b) => a - b);
+  const shelfDays = spans.length
+    ? spans[Math.floor(spans.length / 2)]
+    : null;
+
+  const mgPerMl = (last.mg_total && last.ml_bac) ? +(last.mg_total / last.ml_bac).toFixed(2) : null;
+  return {
+    batch: last,
+    mgTotal: +last.mg_total,
+    mlBac: +last.ml_bac,
+    mgPerMl,
+    storage: last.storage || null,
+    vendor: last.vendor || null,
+    shelfDays,
+    shelfFrom: spans.length,          /* how many batches the window is inferred from */
+    daysSince: Math.round((Date.now() - new Date(last.date_recon + "T12:00:00")) / 86400000),
+  };
+};
+
+/* Units on a U-100 syringe for a given mg dose at a given concentration. */
+export const unitsForDose = (mgDose, mgPerMl) =>
+  (!mgDose || !mgPerMl) ? null : Math.round((mgDose / mgPerMl) * 100);
+
+/* expiry = recon + shelf life, as a YYYY-MM-DD string. */
+export const expiryFrom = (reconDate, shelfDays) => {
+  if (!reconDate || !shelfDays) return "";
+  const d = new Date(reconDate + "T12:00:00");
+  d.setDate(d.getDate() + shelfDays);
+  return d.toISOString().slice(0, 10);
+};

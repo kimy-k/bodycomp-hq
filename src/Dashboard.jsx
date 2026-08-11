@@ -4,6 +4,9 @@ import {
   enrich,
   energyFromConfig,
   ACTIVITY_MULT,
+  lastMixFor,
+  unitsForDose,
+  expiryFrom,
   daysSinceRecon,
   isPastPGStability as isPastPGStability_pure,
   parseTimeStr,
@@ -3191,6 +3194,53 @@ function DashboardInner(){
                   {a.action&&a.btn&&<button onClick={a.action} className="touch" style={{padding:"5px 12px",borderRadius:999,border:`1px solid ${a.color}`,background:"transparent",color:a.color,fontSize:10,fontWeight:600,cursor:"pointer",flexShrink:0}}>{a.btn}</button>}
                 </div>))}
               </div>)}
+
+              {/* ── Needs mixing ──────────────────────────────────────────
+                 A peptide that is running (or resuming) with NO open vial had
+                 nowhere to appear: Open Vials filters on i.b, so it vanished
+                 and the last recipe was buried in the collapsed "used up" list.
+                 This is the "how did I mix this last time" answer, up front. */}
+              {(()=>{
+                const fmtShort=d=>d?new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
+                const needMix=inventory.filter(i=>!i.b&&(isPeptideLive(i.p)||isPeptideUpcoming(i.p)))
+                  .map(i=>({...i,mix:lastMixFor(i.p.id,batches),when:upcomingDateFor(i.p)}));
+                if(!needMix.length)return null;
+                return(<div style={{marginBottom:16}}>
+                  <div className="mono" style={{fontSize:9,color:"var(--c-warn)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Needs mixing</div>
+                  {needMix.map(i=>{
+                    const m=i.mix;
+                    const units=m?unitsForDose(mgFromDoseStr(i.p.dose),m.mgPerMl):null;
+                    const newExpiry=m?.shelfDays?expiryFrom(todayKey(),m.shelfDays):null;
+                    return(<div key={i.p.id} style={{background:"var(--elev-1)",borderRadius:"var(--r-sm)",padding:"12px 14px",marginBottom:6,borderLeft:"3px solid var(--c-warn)"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <div style={{width:5,height:5,borderRadius:3,background:i.p.color}}/>
+                          <span style={{fontSize:13,fontWeight:600,color:"var(--t-1)"}}>{i.p.name}</span>
+                        </div>
+                        <span className="mono" style={{fontSize:10,color:"var(--c-warn)"}}>
+                          {i.when?`resumes ${fmtShort(i.when)}`:"no open vial"}
+                        </span>
+                      </div>
+                      {m?(<>
+                        <div className="mono" style={{fontSize:11,color:"var(--t-2)",lineHeight:1.5}}>
+                          Last mixed {fmtShort(m.batch.date_recon)} · {m.mgTotal}mg + {m.mlBac}mL BAC = <strong style={{color:"var(--t-1)"}}>{m.mgPerMl}mg/mL</strong>
+                          {units?<> · {i.p.dose?.split(" ")[0]||""} = <strong style={{color:"var(--t-1)"}}>{units}u</strong></>:null}
+                        </div>
+                        <div className="mono" style={{fontSize:10,color:"var(--t-4)",marginTop:3}}>
+                          {m.shelfDays?<>Shelf life <strong style={{color:"var(--t-3)"}}>{m.shelfDays}d</strong> (your last {m.shelfFrom} vial{m.shelfFrom>1?"s":""}){newExpiry?<> → mix today, expires {fmtShort(newExpiry)}</>:null}</>:"No expiry recorded on past vials — set one when you mix"}
+                          {m.storage?` · ${m.storage}`:""}
+                        </div>
+                        <button onClick={()=>{setAddingSupply(false);setAddingBatch(true);setNewBatch({peptide_id:i.p.id,date_recon:todayKey(),mg_total:String(m.mgTotal),ml_bac:String(m.mlBac),storage:m.storage||"fridge",expiry_date:newExpiry||"",notes:"",cost:"",currency:"PHP",vendor:m.vendor||""});}}
+                          className="touch" style={{marginTop:9,padding:"7px 11px",borderRadius:"var(--r-sm)",border:"1px solid var(--accent-line)",background:"var(--accent-soft)",color:"var(--accent)",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
+                          Mix same as last time
+                        </button>
+                      </>):(
+                        <div className="mono" style={{fontSize:11,color:"var(--t-4)"}}>No previous batch on record — no mix to recall.</div>
+                      )}
+                    </div>);
+                  })}
+                </div>);
+              })()}
 
               {/* ── Section 2: Inventory at a glance ── */}
               <div style={{marginBottom:16}}>

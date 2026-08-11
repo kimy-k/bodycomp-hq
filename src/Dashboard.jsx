@@ -3300,7 +3300,12 @@ function DashboardInner(){
                   const sealed=supplyFor(p.id);
                   if(!sealed||sealed<=0)return null;
                   const cat=PEPTIDES.find(c=>c.id===p.id);
-                  return{p,sealed,status:p.status,color:cat?.color||"var(--t-4)"};
+                  /* A peptide resuming tomorrow and one paused indefinitely both
+                     read as "completed" here. Surface the resume date so the
+                     difference is visible without opening the Stack tab. */
+                  const due=upcomingDateFor(p);
+                  const dueIn=due?Math.round((new Date(due+"T12:00:00")-new Date(pepDate+"T12:00:00"))/86400000):null;
+                  return{p,sealed,status:p.status,due,dueIn,color:cat?.color||"var(--t-4)"};
                 }).filter(Boolean);
                 if(reserves.length===0)return null;
                 return(<div style={{marginBottom:16}}>
@@ -3313,6 +3318,7 @@ function DashboardInner(){
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
                       <span className="serif tabular" style={{fontSize:15,color:"var(--t-2)",fontStyle:"italic"}}>{r.sealed}</span>
                       <span className="mono" style={{fontSize:9,color:r.status==="break"?"var(--c-warn)":"var(--t-4)",background:r.status==="break"?"color-mix(in oklch, var(--c-warn) 10%, transparent)":"var(--elev-2)",padding:"2px 8px",borderRadius:999,letterSpacing:".06em",fontWeight:600}}>{r.status}</span>
+                      {r.due&&<span className="mono" style={{fontSize:9,color:r.dueIn<=7?"var(--c-warn)":"var(--t-4)",fontWeight:600}}>{r.dueIn<=0?"today":r.dueIn===1?"tomorrow":`${r.dueIn}d`}</span>}
                     </div>
                   </div>))}
                 </div>);

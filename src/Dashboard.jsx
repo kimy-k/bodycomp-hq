@@ -3027,7 +3027,7 @@ function DashboardInner(){
             </div>
             <button onClick={async()=>{
               if(!newSupply.peptide_id||!newSupply.quantity||!newSupply.mg_per_vial){showToast("Fill in peptide, quantity, and mg","warn");return;}
-              const row={user_id:activeUser,peptide_id:newSupply.peptide_id,quantity:+newSupply.quantity,mg_per_vial:+newSupply.mg_per_vial,vendor:newSupply.vendor||null,cost_per_vial:newSupply.cost_per_vial?+newSupply.cost_per_vial:null,currency:newSupply.currency,purchase_date:newSupply.purchase_date||null,notes:newSupply.notes||null};
+              const row={user_id:userId,peptide_id:newSupply.peptide_id,quantity:+newSupply.quantity,mg_per_vial:+newSupply.mg_per_vial,vendor:newSupply.vendor||null,cost_per_vial:newSupply.cost_per_vial?+newSupply.cost_per_vial:null,currency:newSupply.currency,purchase_date:newSupply.purchase_date||null,notes:newSupply.notes||null};
               const resp=await fetch(`${SB}/peptide_supply`,{method:"POST",headers:{...hdr,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify(row)});
               if(!resp.ok){const t=await resp.text().catch(()=>"");showToast("Error: "+(t||resp.status),"warn");return;}
               showToast(`${newSupply.quantity} ${PEPTIDES.find(p=>p.id===newSupply.peptide_id)?.name||newSupply.peptide_id} vial${+newSupply.quantity>1?"s":""} added`,"success");

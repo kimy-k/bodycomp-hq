@@ -6,6 +6,9 @@
 import {describe, it, expect} from "vitest";
 import {
   enrich,
+  lastMixFor,
+  unitsForDose,
+  expiryFrom,
   daysSinceRecon,
   isPastPGStability,
   parseTimeStr,
@@ -533,5 +536,88 @@ describe("sharedActiveComponents (overlap-aware break flag)", () => {
   it("handles missing/empty inputs safely", () => {
     expect(sharedActiveComponents(null, [klow])).toEqual([]);
     expect(sharedActiveComponents(glow, null)).toEqual([]);
+  });
+});
+
+/* ── Reconstitution recall ──────────────────────────────────────────────── */
+describe("lastMixFor", () => {
+  const batches = [
+    {peptide_id: "motsc", date_recon: "2026-06-07", mg_total: 10, ml_bac: 2, expiry_date: "2026-06-21"},
+    {peptide_id: "motsc", date_recon: "2026-06-21", mg_total: 10, ml_bac: 2, expiry_date: "2026-07-05"},
+    {peptide_id: "motsc", date_recon: "2026-06-29", mg_total: 10, ml_bac: 2, expiry_date: "2026-07-13"},
+    {peptide_id: "motsc", date_recon: "2026-07-06", mg_total: 10, ml_bac: 2, expiry_date: "2026-07-20", storage: "fridge"},
+    {peptide_id: "reta",  date_recon: "2026-08-09", mg_total: 10, ml_bac: 1, expiry_date: "2026-09-06"},
+  ];
+
+  it("returns the most recent batch regardless of array order", () => {
+    expect(lastMixFor("motsc", batches).batch.date_recon).toBe("2026-07-06");
+  });
+
+  it("computes concentration from mg and BAC volume", () => {
+    expect(lastMixFor("motsc", batches).mgPerMl).toBe(5);
+    expect(lastMixFor("reta", batches).mgPerMl).toBe(10);
+  });
+
+  it("infers shelf life per peptide from that peptide's own history", () => {
+    /* The point of deriving rather than hardcoding: one constant would be
+       wrong for one of these two. */
+    expect(lastMixFor("motsc", batches).shelfDays).toBe(14);
+    expect(lastMixFor("reta", batches).shelfDays).toBe(28);
+  });
+
+  it("reports how many batches the shelf-life window came from", () => {
+    expect(lastMixFor("motsc", batches).shelfFrom).toBe(4);
+  });
+
+  it("takes the median so one mistyped expiry cannot skew the window", () => {
+    const skewed = [...batches, {peptide_id: "motsc", date_recon: "2026-07-06", mg_total: 10, ml_bac: 2, expiry_date: "2027-07-06"}];
+    expect(lastMixFor("motsc", skewed).shelfDays).toBe(14);
+  });
+
+  it("returns null shelfDays when no past vial recorded an expiry", () => {
+    const noExpiry = [{peptide_id: "nad", date_recon: "2026-07-01", mg_total: 100, ml_bac: 2}];
+    const m = lastMixFor("nad", noExpiry);
+    expect(m.shelfDays).toBeNull();
+    expect(m.mgPerMl).toBe(50);
+  });
+
+  it("carries storage forward for prefill", () => {
+    expect(lastMixFor("motsc", batches).storage).toBe("fridge");
+  });
+
+  it("returns null for an unknown peptide or empty history", () => {
+    expect(lastMixFor("tirz", batches)).toBeNull();
+    expect(lastMixFor("motsc", [])).toBeNull();
+    expect(lastMixFor(null, batches)).toBeNull();
+  });
+});
+
+describe("unitsForDose", () => {
+  it("converts mg to U-100 units at a given concentration", () => {
+    expect(unitsForDose(2, 5)).toBe(40);    /* MOTS-c 2mg @ 5mg/mL */
+    expect(unitsForDose(3, 10)).toBe(30);   /* reta 3mg @ 10mg/mL */
+    expect(unitsForDose(4.5, 10)).toBe(45);
+  });
+
+  it("returns null on missing inputs rather than NaN", () => {
+    expect(unitsForDose(null, 5)).toBeNull();
+    expect(unitsForDose(2, null)).toBeNull();
+    expect(unitsForDose(2, 0)).toBeNull();
+  });
+});
+
+describe("expiryFrom", () => {
+  it("adds the shelf-life window to the recon date", () => {
+    expect(expiryFrom("2026-08-12", 14)).toBe("2026-08-26");
+    expect(expiryFrom("2026-08-09", 28)).toBe("2026-09-06");
+  });
+
+  it("crosses month and year boundaries correctly", () => {
+    expect(expiryFrom("2026-12-25", 14)).toBe("2027-01-08");
+  });
+
+  it("returns empty string when either input is missing", () => {
+    expect(expiryFrom("", 14)).toBe("");
+    expect(expiryFrom("2026-08-12", null)).toBe("");
   });
 });

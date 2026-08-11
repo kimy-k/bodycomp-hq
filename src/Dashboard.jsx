@@ -3202,8 +3202,13 @@ function DashboardInner(){
                  This is the "how did I mix this last time" answer, up front. */}
               {(()=>{
                 const fmtShort=d=>d?new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
-                const needMix=inventory.filter(i=>!i.b&&(isPeptideLive(i.p)||isPeptideUpcoming(i.p)))
-                  .map(i=>({...i,mix:lastMixFor(i.p.id,batches),when:upcomingDateFor(i.p)}));
+                /* Build from userPeps, NOT inventory — inventory is already
+                   filtered to isPeptideLive, so a peptide that is RESUMING
+                   (completed/paused with a resume_date) never enters it. That
+                   is precisely the case this section exists for. */
+                const needMix=userPeps
+                  .filter(p=>(isPeptideLive(p)||isPeptideUpcoming(p))&&!activeBatches.some(b=>b.peptide_id===p.id))
+                  .map(p=>({p,mix:lastMixFor(p.id,batches),when:upcomingDateFor(p)}));
                 if(!needMix.length)return null;
                 return(<div style={{marginBottom:16}}>
                   <div className="mono" style={{fontSize:9,color:"var(--c-warn)",letterSpacing:".12em",textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Needs mixing</div>

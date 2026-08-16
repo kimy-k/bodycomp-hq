@@ -1022,15 +1022,22 @@ function DashboardInner(){
     /* Auto-deduct from sealed supply: find matching supply entry and subtract 1 */
     try{
       const supplyRows=await db.listShared("peptide_supply",200,"created_at");
-      /* Match by peptide_id, prefer same vendor if specified */
-      const candidates=(supplyRows||[]).filter(s=>s.peptide_id===newBatch.peptide_id&&s.quantity>0);
+      /* Match by peptide_id, prefer same vendor if specified.
+         FIFO: oldest lot first, so June stock is used before August stock and
+         nothing sits ageing while fresher vials get opened. listShared returns
+         created_at.desc, so we must re-sort explicitly — do NOT rely on its order.
+         Undelivered rows (future arrives_on) are inert and can never be deducted. */
+      const lotAge=s=>s.purchase_date||(s.created_at||"").slice(0,10)||"0000-00-00";
+      const candidates=(supplyRows||[])
+        .filter(s=>s.peptide_id===newBatch.peptide_id&&s.quantity>0&&isOnHand(s))
+        .sort((a,b)=>lotAge(a).localeCompare(lotAge(b)));
       let match=newBatch.vendor?candidates.find(s=>s.vendor&&s.vendor.toLowerCase().includes(newBatch.vendor.toLowerCase())):null;
       if(!match&&candidates.length>0)match=candidates[0];
       if(match){
         const newQty=match.quantity-1;
         if(newQty<=0){await fetch(`${SB}/peptide_supply?id=eq.${match.id}`,{method:"DELETE",headers:hdr});}
         else{await fetch(`${SB}/peptide_supply?id=eq.${match.id}`,{method:"PATCH",headers:{...hdr,Prefer:"return=minimal"},body:JSON.stringify({quantity:newQty})});}
-        showToast(`Batch logged · 1 sealed vial deducted from supply`,"success");
+        showToast(`Batch logged · 1 vial off ${match.vendor||"supply"}${match.purchase_date?` (${match.purchase_date})`:""} · ${Math.max(newQty,0)} left in that lot`,"success");
       }else{showToast("Batch logged · shared with household","success");}
     }catch(e){console.warn("Supply deduct failed:",e);showToast("Batch logged · shared with household","success");}
     const rows=await db.listShared("peptide_batches",100,"date_recon");setBatches(rows||[]);

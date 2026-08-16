@@ -475,6 +475,12 @@ export const recommendedReconFor = pepId => {
 
 /* ═══ CHANGELOG — shown in "What's New" sheet on first load after update ═══ */
 export const CHANGELOG = [
+  {v:"2026.08.16a", date:"2026-08-16", title:"Oldest Vial First", items:[
+    {icon:"warn",text:"Fixed: opening a vial deducted from your newest box, leaving June stock to age. Supply now draws oldest lot first"},
+    {icon:"check",text:"Undelivered shipments can no longer be deducted from — in-transit rows stay inert until they land"},
+    {icon:"body",text:"Vial toast now names the lot it came off and how many are left in it"},
+    {icon:"check",text:"Aug 15 Pasabuy shipment marked delivered — NAD+, CJC+Ipa, Tesa, MOTS-c, Reta and Klow all counted as on hand"},
+  ]},
   {v:"2026.08.11a", date:"2026-08-11", title:"Live Macro Targets", items:[
     {icon:"target",text:"Targets now recalculate from your latest InBody scan — a Saturday scan moves Sunday's numbers"},
     {icon:"body",text:"Deficit is now a setting (slider, 0–30%) instead of hardcoded calories"},

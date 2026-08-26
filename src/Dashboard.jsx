@@ -230,6 +230,18 @@ function DashboardInner(){
       label:s>0?`Whey \u00b7 ${scoopLabel(s)} scoop${s===1?"":"s"}`:"Whey \u00b7 none today"};
   },[wheyCfg,wheyScoops]);
 
+  /* Per-row whey macros for a HISTORICAL daily_macros row. Any view that
+     aggregates past days must go through this — the `whey` memo above is
+     today's intake only, and using it across a range silently restates every
+     prior day at today's scoop count (a 1.5-scoop day reads as 2). Mirrors
+     wheyOf() in insights.js. Returns null when no whey was taken that day. */
+  const wheyForRow=useCallback(md=>{
+    if(!wheyCfg.enabled)return null;
+    const s=md?.whey_scoops!=null?+md.whey_scoops:(md?.whey===false?0:wheyCfg.maxScoops);
+    if(!(s>0))return null;
+    return{protein:+(wheyCfg.perScoop*s).toFixed(1),fat:+(s*0.5).toFixed(1),carbs:+(s*2).toFixed(1),scoops:s};
+  },[wheyCfg]);
+
   /* P18: macroDate lets the user back-edit a past day's macros. Defaults to today.
      Changing this re-runs the load effect below and reroutes saves to that date. */
   const [macroDate,setMacroDate]=useState(todayKey());
@@ -273,18 +285,18 @@ function DashboardInner(){
     setMacro7(rows.map(md=>{
       let t={cal:0,protein:0,fat:0,carbs:0};
       (md.meals||[]).forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});
-      const sc=md.whey_scoops!=null?+md.whey_scoops:(md.whey===false?0:(wheyCfg.enabled?wheyCfg.maxScoops:0));
-      if(wheyCfg.enabled&&sc>0){t.protein+=wheyCfg.perScoop*sc;t.fat+=sc*0.5;t.carbs+=sc*2;}
+      const w=wheyForRow(md);
+      if(w){t.protein+=w.protein;t.fat+=w.fat;t.carbs+=w.carbs;}
       t.cal=calcCal(t.protein,t.fat,t.carbs);
       return{date:md.date,...t};
     }));
-  })();},[tab,db,wheyCfg,macroDate,meals,wheyScoops]);
+  })();},[tab,db,wheyForRow,macroDate,meals,wheyScoops]);
 
   useEffect(()=>{if(macroSub!=="history"||tab!=="macros")return;(async()=>{
     const rows=await db.list("daily_macros",14);
-    const res=rows.map(md=>{let t={cal:0,protein:0,fat:0,carbs:0};(md.meals||[]).forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});t.cal=calcCal(t.protein,t.fat,t.carbs);if(md.whey!==false&&whey.enabled){t.protein+=whey.protein;t.fat+=whey.fat;t.carbs+=whey.carbs;t.cal+=calcCal(whey.protein,whey.fat,whey.carbs);}return{date:md.date,...t,meals:md.meals||[]};});
+    const res=rows.map(md=>{let t={cal:0,protein:0,fat:0,carbs:0};(md.meals||[]).forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});const w=wheyForRow(md);if(w){t.protein+=w.protein;t.fat+=w.fat;t.carbs+=w.carbs;}t.cal=calcCal(t.protein,t.fat,t.carbs);return{date:md.date,...t,meals:md.meals||[]};});
     setHistDays(res);
-  })();},[macroSub,tab]);
+  })();},[macroSub,tab,db,wheyForRow]);
   const totals=useMemo(()=>{let t={protein:0,fat:0,carbs:0};meals.forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});if(whey.enabled&&whey.scoops>0){t.protein+=whey.protein;t.fat+=whey.fat;t.carbs+=whey.carbs;}t.cal=calcCal(t.protein,t.fat,t.carbs);return t;},[meals,whey]);
   const rem={cal:TARGETS.cal-totals.cal,protein:TARGETS.protein-totals.protein};
   /* Day window used by both pacing lines. Under an hour left, quoting a per-hour
@@ -779,7 +791,7 @@ function DashboardInner(){
     if(!insightsLoaded)return;setAiLoading(true);
     try{
       /* Build data payload for Claude */
-      const macros7=(insightsData.macroHist||[]).filter(d=>{const age=(Date.now()-new Date(d.date+"T12:00:00"))/864e5;return age<=7;}).map(d=>{let p=0,f=0,c=0;(d.meals||[]).forEach(m=>{p+=+m.protein||0;f+=+m.fat||0;c+=+m.carbs||0;});if(d.whey!==false&&whey?.enabled){p+=whey.protein;f+=whey.fat;c+=whey.carbs;}return{date:d.date,protein:Math.round(p),fat:Math.round(f),carbs:Math.round(c),cal:calcCal(p,f,c)};});
+      const macros7=(insightsData.macroHist||[]).filter(d=>{const age=(Date.now()-new Date(d.date+"T12:00:00"))/864e5;return age<=7;}).map(d=>{let p=0,f=0,c=0;(d.meals||[]).forEach(m=>{p+=+m.protein||0;f+=+m.fat||0;c+=+m.carbs||0;});const w=wheyForRow(d);if(w){p+=w.protein;f+=w.fat;c+=w.carbs;}return{date:d.date,protein:Math.round(p),fat:Math.round(f),carbs:Math.round(c),cal:calcCal(p,f,c)};});
       const recentScans=data.slice(-3).map(s=>({date:s.date,weight:s.weight,fatPct:s.fatPct,muscle:s.muscle,leanMass:s.leanMass,fatMass:s.fatMass}));
       const whoop7=(insightsData.whoopHist||[]).filter(d=>{const age=(Date.now()-new Date(d.date+"T12:00:00"))/864e5;return age<=10;}).map(d=>({date:d.date,recovery:d.recovery,rhr:d.rhr,hrv:d.hrv_ms,sleep:d.sleep_hours}));
       /* Build peptide × whoop correlation data */
@@ -815,7 +827,7 @@ function DashboardInner(){
       setAiInsights(result.insights);
     }catch(err){console.error("AI analysis error:",err);setAiInsights([{severity:"warning",title:"Analysis unavailable",body:"Could not complete analysis. Tap refresh to retry.",tags:["system"]}]);}
     setAiLoading(false);
-  },[insightsLoaded,insightsData,data,userPeps,TARGETS,whey,goalPct,userConfig]);
+  },[insightsLoaded,insightsData,data,userPeps,TARGETS,whey,wheyForRow,goalPct,userConfig]);
   /* Auto-run on first load if no cached result */
   useEffect(()=>{if(insightsLoaded&&!aiInsights&&!aiLoading&&tab==="body")runAIAnalysis();},[insightsLoaded,tab]);
 
@@ -2301,11 +2313,14 @@ function DashboardInner(){
                       /* `whey` is the memo object — truthy even at 0 scoops — so this
                          used to add a hardcoded 225 kcal / 50g every time and write the
                          object into the boolean column. Use the actual day's values. */
+                      /* daily_macros has no cal/protein columns — totals are always
+                         derived from meals + whey_scoops. Sending them made PostgREST
+                         reject the whole row, so nothing saved while the toast still
+                         claimed success. Keep this payload identical to saveMacro(). */
                       const wOn=whey.enabled&&whey.scoops>0;
-                      const cal=updated.reduce((s,m)=>s+(+m.protein||0)*4+(+m.fat||0)*9+(+m.carbs||0)*4,0)+(wOn?calcCal(whey.protein,whey.fat,whey.carbs):0);
-                      const protein=updated.reduce((s,m)=>s+(+m.protein||0),0)+(wOn?whey.protein:0);
-                      await db.upsert("daily_macros",{date:macroDate,meals:updated,whey_scoops:whey.scoops,whey:wOn,cal,protein});
-                      setMeals(updated);
+                      const ok=await db.upsert("daily_macros",{date:macroDate,meals:updated,whey_scoops:whey.scoops,whey:wOn});
+                      if(!ok)return; /* upsert already toasted the failure */
+                      setMeals(updated);setWheyScoops(whey.scoops);
                       showToast(`${toLog.length} meals logged from ${d.day}`,"success");
                     }} className="touch" style={{width:"100%",padding:"10px",borderRadius:"var(--r-sm)",background:"var(--accent-soft)",color:"var(--accent)",border:"none",fontSize:12,fontWeight:600,cursor:"pointer"}}>
                       Log all {unlogged.length} matched meals from {d.day}

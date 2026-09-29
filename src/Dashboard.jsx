@@ -61,7 +61,12 @@ export function deriveStatus(s,today){
   /* On a resume pass, ignore a stale cycle_end from the PREVIOUS cycle — otherwise
      the row resumes and immediately re-completes in the same pass, netting no status
      change, so the patch never fires and the resume silently does nothing. */
-  if(!clearResume&&status==="active"&&s.cycle_end&&s.cycle_end<today){status="completed";}
+  /* Never re-complete off a cycle_end that predates the current start_date — that's
+     a stale date from the PREVIOUS cycle on a freshly-resumed row. Without this, a
+     resume consumed its resume_date and was re-completed one pass later (the
+     MOTS-c Aug 12 / CJC-IPA Sep 10 / Klow Sep 14 bug). */
+  const cycleEndIsStale=!!(s.start_date&&s.cycle_end&&s.cycle_end<s.start_date);
+  if(!clearResume&&!cycleEndIsStale&&status==="active"&&s.cycle_end&&s.cycle_end<today){status="completed";}
   const staleCycleEnd=clearResume&&!!s.cycle_end&&s.cycle_end<today;
   return {status,clearResume,staleCycleEnd};
 }
@@ -478,7 +483,7 @@ function DashboardInner(){
         const c=cat[s.peptide_id];
         if(!c)return null; /* peptide removed from catalog — skip */
         /* ── Auto-status: derive effective status from dates (see deriveStatus) ── */
-        const today=new Date().toISOString().slice(0,10);
+        const today=todayKey(); /* local Manila date — UTC lagged 8h, delaying transitions to 8am */
         const {status:effectiveStatus,staleCycleEnd}=deriveStatus(s,today);
         return {
           ...c,
@@ -502,7 +507,7 @@ function DashboardInner(){
        patch the DB so household queries, AI briefing, and all server-side reads stay in sync.
        Runs once per peptideStack change, only fires PATCH for actual mismatches. ── */
   useEffect(()=>{
-    const today=new Date().toISOString().slice(0,10);
+    const today=todayKey();
     const patches=peptideStack.filter(s=>s.enabled).map(s=>{
       const {status:expected,clearResume}=deriveStatus(s,today);
       /* Patch if status moved OR a resume_date was consumed — the latter must be
@@ -510,7 +515,15 @@ function DashboardInner(){
       if(expected===s.status&&!clearResume)return null;
       const body={};
       if(expected!==s.status)body.status=expected;
-      if(clearResume)body.resume_date=null;
+      if(clearResume){
+        body.resume_date=null;
+        /* Roll the cycle forward IN THE SAME PATCH. Leaving the previous cycle's
+           start_date/cycle_end in place is what killed MOTS-c (Aug 12), CJC-IPA
+           (Sep 10), and Klow (Sep 14): the next derivation saw active + past
+           cycle_end and re-completed the row seconds after resuming it. */
+        body.start_date=today;
+        body.cycle_end=s.total_weeks?addDays(today,s.total_weeks*7):null;
+      }
       return {id:s.id,peptide_id:s.peptide_id,from:s.status,to:expected,body};
     }).filter(Boolean);
     if(patches.length===0)return;

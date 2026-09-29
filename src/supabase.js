@@ -44,6 +44,44 @@ export const makeDb = (uid, onErr = () => {}) => ({
       return false;
     }
   },
+  /* ─── Atomic daily_peptides writes (P22). The old path upserted the WHOLE
+     checks object from in-memory state; any stale copy (second tab, PWA resumed
+     from background) silently reverted edited doses to the stack default.
+     These RPCs merge/remove exactly one peptide's entry server-side, so
+     concurrent writers can never clobber each other's peptides. */
+  async logPep(dateVal, pepId, entry) {
+    /* entry: {time, dose} to set, or null to remove this peptide's log.
+       Returns the row's full checks object (server truth) or null on failure. */
+    try {
+      const r = await fetch(`${SB}/rpc/pep_log`, {
+        method: "POST",
+        headers: hdr,
+        body: JSON.stringify({p_user: uid, p_date: dateVal, p_pep: pepId, p_entry: entry}),
+      });
+      if (!r.ok) throw new Error(`pep_log: ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      console.error("db logPep:", e);
+      onErr(`Couldn't save dose`);
+      return null;
+    }
+  },
+  async setPepSideEffects(dateVal, fx) {
+    /* Sets side_effects only — never touches checks. Returns saved array or null. */
+    try {
+      const r = await fetch(`${SB}/rpc/pep_side_effects`, {
+        method: "POST",
+        headers: hdr,
+        body: JSON.stringify({p_user: uid, p_date: dateVal, p_fx: fx}),
+      });
+      if (!r.ok) throw new Error(`pep_side_effects: ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      console.error("db setPepSideEffects:", e);
+      onErr(`Couldn't save side effects`);
+      return null;
+    }
+  },
   async list(table, limit = 14) {
     try {
       const r = await fetch(`${SB}/${table}?user_id=eq.${uid}&select=*&order=date.desc&limit=${limit}`, {headers: hdr});

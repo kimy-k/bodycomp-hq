@@ -385,11 +385,34 @@ function DashboardInner(){
     setPepLoading(false);
   })();},[pepDate,db]);
 
-  const savePep=useCallback((nd)=>{setPepData(nd);db.upsert("daily_peptides",{date:pepDate,checks:nd.checks,side_effects:nd.sideEffects});},[pepDate]);
+  /* Per-peptide atomic write (see supabase.js logPep). NEVER write the whole
+     checks object from local state — a stale copy (second tab, PWA resumed from
+     background) used to revert edited doses to the stack default (the CJC-IPA
+     16u→12u clobber, Sep 2026). Server returns the row's true checks; adopt it. */
+  const savePepEntry=useCallback(async(id,entry)=>{
+    const serverChecks=await db.logPep(pepDate,id,entry);
+    if(serverChecks&&typeof serverChecks==="object")setPepData(d=>({...d,checks:serverChecks}));
+  },[pepDate,db]);
 
-  const togglePep=(id,defaultDose)=>{const nc={...pepData.checks};if(nc[id]){delete nc[id];}else{nc[id]={time:new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),dose:defaultDose||""};}savePep({...pepData,checks:nc});};
-  const updateDose=(id,dose)=>{const nc={...pepData.checks};if(nc[id])nc[id]={...nc[id],dose};savePep({...pepData,checks:nc});};
-  const toggleSideFx=(fx)=>{const sf=[...pepData.sideEffects];const i=sf.indexOf(fx);if(i>=0)sf.splice(i,1);else sf.push(fx);savePep({...pepData,sideEffects:sf});};
+  const togglePep=(id,defaultDose)=>{
+    const cur=pepData.checks[id];
+    const entry=cur?null:{time:new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),dose:defaultDose||""};
+    /* optimistic local update, then reconcile with server truth */
+    const nc={...pepData.checks};if(entry)nc[id]=entry;else delete nc[id];
+    setPepData(d=>({...d,checks:nc}));
+    savePepEntry(id,entry);
+  };
+  const updateDose=(id,dose)=>{
+    const cur=pepData.checks[id];if(!cur)return;
+    const entry={...cur,dose};
+    setPepData(d=>({...d,checks:{...d.checks,[id]:entry}}));
+    savePepEntry(id,entry);
+  };
+  const toggleSideFx=(fx)=>{
+    const sf=[...pepData.sideEffects];const i=sf.indexOf(fx);if(i>=0)sf.splice(i,1);else sf.push(fx);
+    setPepData(d=>({...d,sideEffects:sf}));
+    db.setPepSideEffects(pepDate,sf);
+  };
 
   useEffect(()=>{if(tab!=="peptides"&&tab!=="today")return;(async()=>{
     const rows=await db.list("daily_peptides",21);
@@ -624,29 +647,25 @@ function DashboardInner(){
   const editPastDoseSave=useCallback(async(time,dose)=>{
     if(!editPastDose)return;
     const {peptideId,date}=editPastDose;
-    /* Fetch current row to merge, since upsert replaces the whole record */
-    const row=await db.get("daily_peptides",date);
-    const checks={...((row&&row.checks)||{})};
-    checks[peptideId]={time:time||new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),dose:dose||""};
-    const sideFx=(row&&row.side_effects)||[];
-    await db.upsert("daily_peptides",{date,checks,side_effects:sideFx});
+    /* Atomic single-key merge server-side (pep_log RPC) — no read-modify-write,
+       so a stale fetch can never resurrect an old dose for another peptide. */
+    const entry={time:time||new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),dose:dose||""};
+    const serverChecks=await db.logPep(date,peptideId,entry);
     /* Refresh views: pepHist (for grid/history), and if this was today, pepData */
     const rows=await db.list("daily_peptides",21);
     setPepHist(rows.map(r=>({date:r.date,checks:r.checks||{},sideEffects:r.side_effects||[]})));
-    if(date===day)setPepData({checks,sideEffects:sideFx});
+    if(date===day&&serverChecks)setPepData(d=>({...d,checks:serverChecks}));
     setEditPastDose(null);
     showToast(`Logged ${peptideId} for ${date===day?"today":date}`,"success");
   },[editPastDose,db,day,showToast]);
   const editPastDoseRemove=useCallback(async()=>{
     if(!editPastDose)return;
     const {peptideId,date}=editPastDose;
-    const row=await db.get("daily_peptides",date);
-    if(!row||!row.checks||!row.checks[peptideId]){setEditPastDose(null);return;}
-    const checks={...row.checks};delete checks[peptideId];
-    await db.upsert("daily_peptides",{date,checks,side_effects:row.side_effects||[]});
+    /* Atomic single-key removal server-side (pep_log RPC with null entry). */
+    const serverChecks=await db.logPep(date,peptideId,null);
     const rows=await db.list("daily_peptides",21);
     setPepHist(rows.map(r=>({date:r.date,checks:r.checks||{},sideEffects:r.side_effects||[]})));
-    if(date===day)setPepData({checks,sideEffects:row.side_effects||[]});
+    if(date===day&&serverChecks)setPepData(d=>({...d,checks:serverChecks}));
     setEditPastDose(null);
     showToast(`Removed ${peptideId} from ${date}`,"success");
   },[editPastDose,db,day,showToast]);

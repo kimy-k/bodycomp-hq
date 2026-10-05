@@ -23,6 +23,10 @@ import {
   costPerMonth,
   fmtCost,
   sharedActiveComponents,
+  theilSen,
+  adaptiveTDEE,
+  energyModel,
+  energyFromConfig,
 } from "./bcq-math.js";
 
 /* Fixed reference date for all time-dependent tests: May 17, 2026, noon UTC */
@@ -619,5 +623,151 @@ describe("expiryFrom", () => {
   it("returns empty string when either input is missing", () => {
     expect(expiryFrom("", 14)).toBe("");
     expect(expiryFrom("2026-08-12", null)).toBe("");
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+// theilSen
+// ════════════════════════════════════════════════════════════════
+describe("theilSen", () => {
+  it("recovers an exact linear slope", () => {
+    const pts = [0, 1, 2, 3, 4].map(x => ({x, y: 50 + 0.1 * x}));
+    expect(theilSen(pts)).toBeCloseTo(0.1, 6);
+  });
+
+  it("ignores a single outlier that would wreck least-squares", () => {
+    /* weekly scans, flat at 52.8, one depleted reading of 51.3 at the start */
+    const pts = [{x: 0, y: 51.3}, {x: 1, y: 52.3}, {x: 8, y: 53.1}, {x: 14, y: 52.7},
+                 {x: 15, y: 53.3}, {x: 21, y: 52.7}, {x: 22, y: 52.9}];
+    const slope = theilSen(pts);
+    /* OLS on these points gives 0.049 kg/day; Theil-Sen is ~37% lower */
+    expect(Math.abs(slope)).toBeLessThan(0.035);
+  });
+
+  it("returns null with fewer than two points", () => {
+    expect(theilSen([])).toBeNull();
+    expect(theilSen([{x: 0, y: 1}])).toBeNull();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+// adaptiveTDEE
+// ════════════════════════════════════════════════════════════════
+const T0 = new Date("2026-10-05T12:00:00Z");
+const d = n => { const t = new Date(T0.getTime() - n * 86400000); return t.toISOString().slice(0, 10); };
+
+describe("adaptiveTDEE", () => {
+  it("falls back to formula with too few scans", () => {
+    const r = adaptiveTDEE({scans: [{date: d(1), weight: 52}, {date: d(8), weight: 52}],
+                            macroDays: [], formulaTdee: 1740, now: T0});
+    expect(r.source).toBe("formula");
+    expect(r.tdee).toBe(1740);
+    expect(r.reason).toMatch(/scans/);
+  });
+
+  it("falls back to formula with thin logging", () => {
+    const scans = [0, 7, 14, 21, 28].map(n => ({date: d(n), weight: 52}));
+    const macroDays = [0, 1, 2].map(n => ({date: d(n), cal: 1600}));
+    const r = adaptiveTDEE({scans, macroDays, formulaTdee: 1740, now: T0});
+    expect(r.source).toBe("formula");
+    expect(r.reason).toMatch(/logged/);
+  });
+
+  it("measures maintenance when weight is flat", () => {
+    const scans = [0, 7, 14, 21, 28, 34].map(n => ({date: d(n), weight: 52.5}));
+    const macroDays = Array.from({length: 33}, (_, n) => ({date: d(n), cal: 1650}));
+    const r = adaptiveTDEE({scans, macroDays, formulaTdee: 1740, now: T0});
+    expect(r.source).toBe("adaptive");
+    expect(r.confidence).toBeGreaterThanOrEqual(0.85);
+    expect(r.adaptive).toBe(1650);
+    expect(r.slopeKgWk).toBe(0);
+  });
+
+  it("raises TDEE when weight falls on a given intake", () => {
+    /* losing 0.25 kg/wk on 1600 logged → burning ~1600 + 275 */
+    const scans = [0, 7, 14, 21, 28, 34].map(n => ({date: d(n), weight: 52 + n * (0.25 / 7)}));
+    const macroDays = Array.from({length: 33}, (_, n) => ({date: d(n), cal: 1600}));
+    const r = adaptiveTDEE({scans, macroDays, formulaTdee: 1740, now: T0});
+    expect(r.adaptive).toBeGreaterThan(1850);
+    expect(r.adaptive).toBeLessThan(1900);
+    expect(r.slopeKgWk).toBeCloseTo(-0.25, 1);
+  });
+
+  it("blends toward formula at partial confidence", () => {
+    const scans = [0, 7, 14].map(n => ({date: d(n), weight: 52.5}));   /* 3 scans → scanConf .25 */
+    const macroDays = Array.from({length: 33}, (_, n) => ({date: d(n), cal: 1500}));
+    const r = adaptiveTDEE({scans, macroDays, formulaTdee: 1740, now: T0});
+    expect(r.source).toBe("blended");
+    expect(r.tdee).toBeGreaterThan(1500);
+    expect(r.tdee).toBeLessThan(1740);
+  });
+
+  it("clamps an implausible result", () => {
+    /* gaining 2kg/wk on 1500 logged would imply TDEE ≈ −700 */
+    const scans = [0, 7, 14, 21, 28, 34].map(n => ({date: d(n), weight: 60 - n * (2 / 7)}));
+    const macroDays = Array.from({length: 33}, (_, n) => ({date: d(n), cal: 1500}));
+    const r = adaptiveTDEE({scans, macroDays, formulaTdee: 1740, now: T0});
+    expect(r.clamped).toBe(true);
+    expect(r.adaptive).toBe(Math.round(1740 * 0.7));
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+// energyFromConfig with history — Kim's real Sep 1 – Oct 4 data
+// ════════════════════════════════════════════════════════════════
+describe("energyFromConfig (adaptive)", () => {
+  const cfg = {height: 155, age: 33, gender: "female", activity: "moderate",
+               deficitPct: 12, proteinPerKgLean: 3.5, fatPctKcal: 0.25};
+  const latest = enrich({date: "2026-10-04", weight: 52.9, fatPct: 34.3});
+  /* real InBody readings — weight AND fat %, so fatMass is available */
+  const scans = [
+    ["2026-09-05", 51.3, 35.1], ["2026-09-06", 51.4, 34.2], ["2026-09-12", 51.3, 34.4], ["2026-09-13", 52.3, 33.1],
+    ["2026-09-20", 53.1, 33.5], ["2026-09-26", 52.7, 34.6], ["2026-09-27", 53.3, 33.8], ["2026-10-03", 52.7, 34.0],
+    ["2026-10-04", 52.9, 34.3],
+  ].map(([date, weight, fatPct]) => enrich({date, weight, fatPct}));
+  const macroDays = [
+    ["09-01",1298],["09-02",1679],["09-03",1718],["09-05",1789],["09-06",1959],["09-07",1937],
+    ["09-08",1171],["09-09",1599],["09-10",2146],["09-11",1173],["09-12",2070],["09-13",1894],
+    ["09-14",1953],["09-15",1811],["09-16",1847],["09-17",1648],["09-18",1837],["09-19",1788],
+    ["09-21",1742],["09-22",1522],["09-23",2316],["09-24",1770],["09-25",1958],["09-26",1993],
+    ["09-27",1962],["09-28",2051],["09-29",1250],["09-30",2591],["10-01",1685],["10-02",1396],
+    ["10-03",2305],["10-04",2526],
+  ].map(([md, cal]) => ({date: `2026-${md}`, cal}));
+
+  it("is untouched without history", () => {
+    const em = energyFromConfig(cfg, latest);
+    expect(em.tdeeSource).toBe("formula");
+    expect(em.tdee).toBe(em.formulaTdee);
+    expect(em.adaptive).toBeNull();
+  });
+
+  it("is untouched when adaptiveTdee is disabled in config", () => {
+    const em = energyFromConfig({...cfg, adaptiveTdee: false}, latest, {scans, macroDays, now: T0});
+    expect(em.tdeeSource).toBe("formula");
+  });
+
+  it("measures Kim's real TDEE from her real logs — on fat mass, not weight", () => {
+    const em = energyFromConfig(cfg, latest, {scans, macroDays, now: T0});
+    expect(em.formulaTdee).toBe(1739);
+    expect(em.adaptive.nScans).toBeGreaterThanOrEqual(7);
+    expect(em.adaptive.slopeBasis).toBe("fat mass");
+    expect(em.adaptive.source).toBe("adaptive");
+    /* Weight rose ~1.6 kg over the window (post-reta rehydration) but fat mass
+       was nearly flat. Weight-basis would have put TDEE near 1,300; fat-basis
+       lands near the formula, which is what her actual fat trend says. */
+    expect(em.adaptive.slopeWtKgWk).toBeGreaterThan(0.2);
+    expect(Math.abs(em.adaptive.slopeKgWk)).toBeLessThan(0.15);
+    expect(em.tdee).toBeGreaterThan(1600);
+    expect(em.tdee).toBeLessThan(1950);
+    /* macros still derive from the (now adaptive) TDEE */
+    expect(em.cal).toBe(Math.round(em.tdee * 0.88 / 10) * 10);
+    expect(em.protein).toBe(Math.round(latest.leanMass * 3.5));
+  });
+
+  it("falls back to weight slope when scans carry no fat mass", () => {
+    const bare = scans.map(({date, weight}) => ({date, weight}));
+    const em = energyFromConfig(cfg, latest, {scans: bare, macroDays, now: T0});
+    expect(em.adaptive.slopeBasis).toBe("weight");
+    expect(em.tdee).toBeLessThan(1500);   /* the rehydration month, misread as fat */
   });
 });

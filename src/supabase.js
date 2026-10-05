@@ -92,6 +92,32 @@ export const makeDb = (uid, onErr = () => {}) => ({
       return [];
     }
   },
+  /* Most recent workout of a given split strictly before a date — the
+     "vs last session" baseline. Same split only; see bcq-math compareSessions. */
+  async lastWorkoutOfSplit(split, beforeDate) {
+    try {
+      const q = `${SB}/workouts?user_id=eq.${uid}&split=eq.${encodeURIComponent(split)}&date=lt.${beforeDate}&select=*&order=date.desc&limit=1`;
+      const r = await fetch(q, {headers: hdr});
+      if (!r.ok) throw new Error(`workouts: ${r.status}`);
+      const d = await r.json();
+      return d[0] || null;
+    } catch (e) {
+      onErr("Couldn't load last session");
+      return null;
+    }
+  },
+  /* PATCH a single column on a (user, date) row; insert if missing. */
+  async setDayType(dateVal, dayType) {
+    try {
+      const r = await fetch(`${SB}/daily_macros?user_id=eq.${uid}&date=eq.${dateVal}`, {
+        method: "PATCH", headers: {...hdr, Prefer: "return=representation"},
+        body: JSON.stringify({day_type: dayType}),
+      });
+      const rows = r.ok ? await r.json() : [];
+      if (!rows.length) return this.upsert("daily_macros", {date: dateVal, meals: [], whey_scoops: 0, whey: false, day_type: dayType});
+      return true;
+    } catch (e) { onErr("Couldn't set day type"); return false; }
+  },
   async del(table, dateVal) {
     try {
       const r = await fetch(`${SB}/${table}?user_id=eq.${uid}&date=eq.${dateVal}`, {method: "DELETE", headers: hdr});

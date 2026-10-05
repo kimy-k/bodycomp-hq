@@ -27,6 +27,8 @@ import {
   adaptiveTDEE,
   energyModel,
   energyFromConfig,
+  targetsForDay,
+  sessionVolume, compareSessions, deltaLabel, topSet,
 } from "./bcq-math.js";
 
 /* Fixed reference date for all time-dependent tests: May 17, 2026, noon UTC */
@@ -769,5 +771,92 @@ describe("energyFromConfig (adaptive)", () => {
     const em = energyFromConfig(cfg, latest, {scans: bare, macroDays, now: T0});
     expect(em.adaptive.slopeBasis).toBe("weight");
     expect(em.tdee).toBeLessThan(1500);   /* the rehydration month, misread as fat */
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+// day-type periodisation
+// ════════════════════════════════════════════════════════════════
+describe("byDayType", () => {
+  const em = energyModel({leanMass: 34.8, activity: "moderate", deficitPct: 12, proteinPerKgLean: 3.5, fatPctKcal: 0.25});
+
+  it("holds protein and fat across day types; only carbs move", () => {
+    const {hard, normal, rest} = em.byDayType;
+    expect(hard.protein).toBe(normal.protein);
+    expect(rest.protein).toBe(normal.protein);
+    expect(hard.fat).toBe(normal.fat);
+    expect(rest.fat).toBe(normal.fat);
+    expect(hard.carbs).toBeGreaterThan(normal.carbs);
+    expect(rest.carbs).toBeLessThan(normal.carbs);
+  });
+
+  it("applies the default +150 / −100 offsets", () => {
+    expect(em.byDayType.hard.cal).toBe(em.cal + 150);
+    expect(em.byDayType.rest.cal).toBe(em.cal - 100);
+  });
+
+  it("respects custom offsets", () => {
+    const e2 = energyModel({leanMass: 34.8, activity: "moderate", deficitPct: 12, hardDayKcal: 250, restDayKcal: 50});
+    expect(e2.byDayType.hard.cal).toBe(e2.cal + 250);
+    expect(e2.byDayType.rest.cal).toBe(e2.cal - 50);
+  });
+
+  it("floors rest days at BMR × 1.25", () => {
+    /* aggressive deficit + big rest offset would push below the floor */
+    const e3 = energyModel({leanMass: 34.8, activity: "light", deficitPct: 25, restDayKcal: 400});
+    expect(e3.byDayType.rest.cal).toBe(e3.restFloor);
+    expect(e3.restFloor).toBe(Math.round(e3.bmr * 1.25));
+  });
+
+  it("targetsForDay falls back to normal for unknown / missing type", () => {
+    expect(targetsForDay(em, "normal")).toEqual(em.byDayType.normal);
+    expect(targetsForDay(em, null).cal).toBe(em.cal);
+    expect(targetsForDay(em, "bogus").cal).toBe(em.cal);
+    expect(targetsForDay(null, "hard")).toBeNull();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+// workout log
+// ════════════════════════════════════════════════════════════════
+describe("workout math", () => {
+  const prev = {split: "Lower A", exercises: [
+    {name: "Leg Curl", sets: [{w: 40, r: 8}, {w: 40, r: 8}, {w: 40, r: 7}]},
+    {name: "Hip Thrust", sets: [{w: 80, r: 8}, {w: 80, r: 8}, {w: 80, r: 8}]},
+    {name: "Smith Squat", sets: [{w: 50, r: 8}, {w: 50, r: 7}]},
+  ]};
+  const cur = {split: "Lower A", exercises: [
+    {name: "leg curl", sets: [{w: 40, r: 8}, {w: 40, r: 8}, {w: 40, r: 8}]},   /* +1 rep, same weight */
+    {name: "Hip Thrust", sets: [{w: 85, r: 8}, {w: 85, r: 6}, {w: 85, r: 6}]}, /* +5kg */
+    {name: "Smith Squat", sets: [{w: 50, r: 7}, {w: 50, r: 6}]},              /* −2 reps */
+    {name: "Calf Press", sets: [{w: 60, r: 12}]},                              /* new */
+  ]};
+
+  it("computes session volume", () => {
+    expect(sessionVolume(prev.exercises)).toBe(40*23 + 80*24 + 50*15);
+  });
+
+  it("finds the top set by weight then reps", () => {
+    expect(topSet({sets: [{w: 40, r: 8}, {w: 45, r: 5}, {w: 45, r: 6}]})).toEqual({w: 45, r: 6});
+  });
+
+  it("compares per exercise, case-insensitive on name", () => {
+    const c = compareSessions(cur, prev);
+    expect(c.map(x => x.verdict)).toEqual(["up", "up", "down", "new"]);
+    expect(deltaLabel(c[0])).toBe("+1 rep");
+    expect(deltaLabel(c[1])).toBe("+5kg");
+    expect(deltaLabel(c[2])).toBe("−2 reps");
+    expect(deltaLabel(c[3])).toBe("new");
+  });
+
+  it("weight change beats rep change", () => {
+    const c = compareSessions({exercises: [{name: "X", sets: [{w: 50, r: 5}]}]},
+                              {exercises: [{name: "X", sets: [{w: 45, r: 8}]}]});
+    expect(c[0].verdict).toBe("up");
+    expect(deltaLabel(c[0])).toBe("+5kg");
+  });
+
+  it("handles no previous session", () => {
+    expect(compareSessions(cur, null).every(x => x.verdict === "new")).toBe(true);
   });
 });

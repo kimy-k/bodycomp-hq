@@ -5,6 +5,7 @@
 export const Icon = ({n, s = 20, c = "currentColor", sw = 1.5}) => {
   const p = {width:s,height:s,viewBox:"0 0 24 24",fill:"none",stroke:c,strokeWidth:sw,strokeLinecap:"round",strokeLinejoin:"round",style:{flexShrink:0}};
   switch(n){
+    case "barbell": return <svg {...p}><path d="M3 12h2M19 12h2M5 9v6M19 9v6M8 7v10M16 7v10M8 12h8"/></svg>;
     case "macros": return <svg {...p}><path d="M3 12h18M5 12a7 7 0 0 0 14 0M8 8V5M12 8V5M16 8V5"/></svg>;
     case "peps": return <svg {...p}><path d="M9 3h6M10 3v6.5L7 14a4 4 0 0 0 6.7 4M14 3v6.5l3 4.5M8 13h8"/></svg>;
     case "body": return <svg {...p}><circle cx="12" cy="5.5" r="2.3"/><path d="M12 8v4M8 12h8M9 12l-1 9M15 12l1 9M10 16h4"/></svg>;

@@ -23,6 +23,8 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,lates
     proteinPerKgLean: userConfig?.proteinPerKgLean ?? 4.4,
     fatPctKcal: userConfig?.fatPctKcal ?? 0.29,
     adaptiveTdee: userConfig?.adaptiveTdee !== false,
+    hardDayKcal: userConfig?.hardDayKcal ?? 150,
+    restDayKcal: userConfig?.restDayKcal ?? 100,
     targetCal: userConfig?.targets?.cal ?? defaultProfile?.targets?.cal ?? "",
     targetProtein: userConfig?.targets?.protein ?? defaultProfile?.targets?.protein ?? "",
     targetFat: userConfig?.targets?.fat ?? defaultProfile?.targets?.fat ?? "",
@@ -54,6 +56,8 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,lates
       proteinPerKgLean: +(d.proteinPerKgLean||4.4),
       fatPctKcal: +(d.fatPctKcal||0.29),
       adaptiveTdee: !!d.adaptiveTdee,
+      hardDayKcal: +(d.hardDayKcal||0),
+      restDayKcal: +(d.restDayKcal||0),
       targets: {
         cal: +(d.targetCal||defaultProfile?.targets?.cal||1600),
         protein: +(d.targetProtein||defaultProfile?.targets?.protein||120),
@@ -121,7 +125,7 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,lates
           </button>
 
           {d.autoTargets&&(()=>{
-            const em=energyFromConfig({...userConfig,activity:d.activity,deficitPct:+(d.deficitPct||15),proteinPerKgLean:+(d.proteinPerKgLean||4.4),fatPctKcal:+(d.fatPctKcal||0.29),height:+d.height,age:+d.age,gender:d.gender,weight:+d.weight},latestScan);
+            const em=energyFromConfig({...userConfig,activity:d.activity,deficitPct:+(d.deficitPct||15),proteinPerKgLean:+(d.proteinPerKgLean||4.4),fatPctKcal:+(d.fatPctKcal||0.29),hardDayKcal:+(d.hardDayKcal||0),restDayKcal:+(d.restDayKcal||0),height:+d.height,age:+d.age,gender:d.gender,weight:+d.weight},latestScan);
             return(<div style={{marginBottom:14}}>
               <label style={{fontSize:10,color:"var(--t-3)",fontWeight:600,letterSpacing:".06em",display:"block",marginBottom:6,textTransform:"uppercase"}}>Deficit · {d.deficitPct}%{+d.deficitPct>20&&<span style={{color:"var(--c-warn)"}}> · aggressive</span>}</label>
               <input type="range" min="0" max="30" step="1" value={d.deficitPct} onChange={e=>up("deficitPct",e.target.value)} style={{width:"100%",accentColor:+d.deficitPct>20?"var(--c-warn)":"var(--accent)"}}/>
@@ -132,6 +136,20 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,lates
               <label style={{fontSize:10,color:"var(--t-3)",fontWeight:600,letterSpacing:".06em",display:"block",margin:"12px 0 6px",textTransform:"uppercase"}}>Fat · {Math.round(+d.fatPctKcal*100)}% of calories{+d.fatPctKcal<0.2&&<span style={{color:"var(--c-warn)"}}> · low</span>}</label>
               <input type="range" min="0.15" max="0.40" step="0.01" value={d.fatPctKcal} onChange={e=>up("fatPctKcal",e.target.value)} style={{width:"100%",accentColor:+d.fatPctKcal<0.2?"var(--c-warn)":"var(--accent)"}}/>
               <p style={{fontSize:10.5,color:"var(--t-4)",margin:"4px 0 10px",lineHeight:1.45}}>Carbs take whatever is left — lower protein or fat here to raise carbs on training days.</p>
+
+              <label style={{fontSize:10,color:"var(--t-3)",fontWeight:600,letterSpacing:".06em",display:"block",margin:"12px 0 6px",textTransform:"uppercase"}}>Hard day · +{d.hardDayKcal} kcal (all carbs)</label>
+              <input type="range" min="0" max="400" step="25" value={d.hardDayKcal} onChange={e=>up("hardDayKcal",e.target.value)} style={{width:"100%",accentColor:"var(--c-success)"}}/>
+              <label style={{fontSize:10,color:"var(--t-3)",fontWeight:600,letterSpacing:".06em",display:"block",margin:"12px 0 6px",textTransform:"uppercase"}}>Rest day · −{d.restDayKcal} kcal (all carbs)</label>
+              <input type="range" min="0" max="300" step="25" value={d.restDayKcal} onChange={e=>up("restDayKcal",e.target.value)} style={{width:"100%",accentColor:"var(--c-carbs)"}}/>
+              {em?.byDayType&&<div style={{display:"flex",gap:6,margin:"6px 0 10px"}}>
+                {[["hard","Hard","var(--c-success)"],["normal","Normal","var(--accent)"],["rest","Rest","var(--c-carbs)"]].map(([k,l,c])=>(
+                  <div key={k} style={{flex:1,textAlign:"center",padding:"7px 4px",borderRadius:"var(--r-sm)",background:"var(--surface-2)"}}>
+                    <div style={{fontSize:8.5,color:c,letterSpacing:".08em",textTransform:"uppercase",fontWeight:700}}>{l}</div>
+                    <div className="serif tabular" style={{fontSize:14,color:"var(--t-1)"}}>{em.byDayType[k].cal}</div>
+                    <div className="mono" style={{fontSize:8.5,color:"var(--t-4)"}}>C{em.byDayType[k].carbs}</div>
+                  </div>))}
+              </div>}
+              <p style={{fontSize:10.5,color:"var(--t-4)",margin:"0 0 10px",lineHeight:1.45}}>Pick the day type on the Macros tab. Logging a workout sets it to Hard automatically. Rest days never go below BMR × 1.25.</p>
 
               <button onClick={()=>up("adaptiveTdee",!d.adaptiveTdee)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"11px 14px",borderRadius:"var(--r-sm)",border:`1px solid ${d.adaptiveTdee?"var(--accent-line)":"var(--line-soft)"}`,background:d.adaptiveTdee?"var(--accent-soft)":"transparent",cursor:"pointer",textAlign:"left",minHeight:46,marginBottom:10}}>
                 <div><div style={{fontSize:13,color:d.adaptiveTdee?"var(--t-1)":"var(--t-2)",fontWeight:600}}>Measure TDEE from my logs</div><div style={{fontSize:11,color:"var(--t-4)",marginTop:1}}>Replaces the activity multiplier with what your food log and fat-mass trend actually show. Needs ~3 scans and most days logged.</div></div>

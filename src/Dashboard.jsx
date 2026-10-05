@@ -3,6 +3,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import {
   enrich,
   energyFromConfig,
+  targetsForDay, DAY_TYPES, DAY_TYPE_META,
   ACTIVITY_MULT,
   lastMixFor,
   unitsForDose,
@@ -32,6 +33,7 @@ import {
 import {todayKey, localDateKey, addDays, buildProj, calcMonthly, compressImage} from "./helpers.js";
 import {computeInsights} from "./insights.js";
 import {Icon} from "./Icon.jsx";
+import {Workouts} from "./Workouts.jsx";
 import {FONT_URL, STYLE} from "./styles.js";
 
 /* ── Auto-status state machine (single source of truth) ──────────────────────
@@ -137,9 +139,13 @@ function DashboardInner(){
   const energy=useMemo(()=>data.length>0
     ?energyFromConfig(userConfig,data[data.length-1],macroHist35.length?{scans:data,macroDays:macroHist35}:null)
     :null,[userConfig,data,macroHist35]);
+  /* Day type for the macro date being viewed (hard / normal / rest). Lives on
+     the daily_macros row; a logged workout sets it to "hard" automatically.
+     TARGETS resolve off it — the whole hard/rest offset lands on carbs. */
+  const [dayType,setDayType]=useState("normal");
   const TARGETS=useMemo(()=>(userConfig?.autoTargets!==false&&energy)
-    ?{cal:energy.cal,protein:energy.protein,fat:energy.fat,carbs:energy.carbs}
-    :(userConfig?.targets||defaultProfile.targets),[userConfig,energy,defaultProfile]);
+    ?targetsForDay(energy,dayType)
+    :(userConfig?.targets||defaultProfile.targets),[userConfig,energy,defaultProfile,dayType]);
   const best=data.length>0?data.reduce((a,b)=>b.fatPct<a.fatPct?b:a):first;
   const goalPct=userConfig?.goalBf||30;
   const fatToLose=data.length>0?+(last.fatMass-(last.leanMass/(1-goalPct/100))*goalPct/100).toFixed(1):0;
@@ -279,7 +285,8 @@ function DashboardInner(){
     const row=await db.get("daily_macros",macroDate);
     /* whey_scoops is authoritative; fall back to the legacy boolean for rows
        written before the column existed. */
-    if(row){setMeals(row.meals||[]);setWheyScoops(row.whey_scoops!=null?row.whey_scoops:(row.whey===false?0:null));}
+    if(row){setMeals(row.meals||[]);setWheyScoops(row.whey_scoops!=null?row.whey_scoops:(row.whey===false?0:null));setDayType(row.day_type||"normal");}
+    else setDayType("normal");
     /* Load shared household favorites (own + partner's). Each item carries _owner. */
     const sharedFavs=await db.getSharedFavs();
     if(sharedFavs)setFavs(sharedFavs);
@@ -292,8 +299,11 @@ function DashboardInner(){
   const saveMacro=useCallback((m,scoops)=>{
     const s=Math.max(0,Math.round((+scoops||0)*2)/2); /* snap to nearest half */
     setMeals(m);setWheyScoops(s);
-    db.upsert("daily_macros",{date:macroDate,meals:m,whey_scoops:s,whey:s>0});
-  },[macroDate]);
+    db.upsert("daily_macros",{date:macroDate,meals:m,whey_scoops:s,whey:s>0,day_type:dayType});
+  },[macroDate,dayType]);
+  /* Change the day type alone — never resend meals from state (same stale-copy
+     hazard as the peptide fix). PATCH the one column; insert the row if absent. */
+  const saveDayType=useCallback(async(t)=>{setDayType(t);await db.setDayType(macroDate,t);},[macroDate,db]);
 
   /* Save favs: strip _owner, write ONLY the current user's items to config.
      The full combined list (with partner's) stays in local state for display. */
@@ -1196,7 +1206,7 @@ function DashboardInner(){
       {/* More menu sheet with outside-tap-to-close backdrop */}
       {showMore&&(<><div onClick={()=>setShowMore(false)} style={{position:"fixed",inset:0,zIndex:99,background:"transparent"}}/><div style={{position:"fixed",bottom:90,left:0,right:0,zIndex:100,padding:"0 16px",maxWidth:520,margin:"0 auto"}}>
         <div className="sheet" style={{background:"rgba(10,10,10,0.96)",backdropFilter:"blur(28px) saturate(180%)",borderRadius:"var(--r-md)",border:"1px solid var(--line)",padding:6,display:"flex",flexDirection:"column",gap:2,boxShadow:"var(--shadow-1)"}}>
-          {[["data","scale","Data"],["projection","target","Projection"],["monthly","calendar","Monthly"]].map(([id,ic,label])=>(
+          {[["workouts","barbell","Workouts"],["data","scale","Data"],["projection","target","Projection"],["monthly","calendar","Monthly"]].map(([id,ic,label])=>(
             <button key={id} onClick={()=>{setTab(id);setShowMore(false);}} className="touch" style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:"var(--r-sm)",border:"none",background:tab===id?"var(--accent-soft)":"transparent",cursor:"pointer",width:"100%",textAlign:"left",color:tab===id?"var(--accent)":"var(--t-2)"}}>
               <Icon n={ic} s={18}/>
               <span style={{fontSize:14,fontWeight:tab===id?600:500}}>{label}</span>
@@ -1775,6 +1785,15 @@ function DashboardInner(){
                 </div>
               </div>
               {!isToday&&<div style={{padding:"8px 14px",background:"color-mix(in oklch, var(--c-warn) 10%, transparent)",borderLeft:"3px solid var(--c-warn)",borderRadius:"var(--r-sm)",fontSize:11,color:"var(--t-2)",marginBottom:12,display:"flex",alignItems:"center",gap:8}}><Icon n="warn" s={13} c="var(--c-warn)"/> Editing <strong style={{margin:"0 3px"}}>{dayLabel}</strong></div>}
+              {/* Day-type picker — hard / normal / rest. Targets below re-resolve instantly. */}
+              {userConfig?.autoTargets!==false&&energy?.byDayType&&(
+                <div style={{display:"flex",gap:6,marginBottom:12}}>
+                  {DAY_TYPES.map(t=>{const on=dayType===t;const tg=energy.byDayType[t];const col=t==="hard"?"var(--c-success)":t==="rest"?"var(--c-carbs)":"var(--accent)";
+                    return(<button key={t} onClick={()=>saveDayType(t)} className="touch" style={{flex:1,padding:"8px 6px",borderRadius:"var(--r-sm)",border:`1px solid ${on?col:"var(--line-soft)"}`,background:on?`color-mix(in oklch, ${col} 14%, transparent)`:"var(--elev-1)",cursor:"pointer",textAlign:"center"}}>
+                      <div style={{fontSize:11.5,fontWeight:700,color:on?"var(--t-1)":"var(--t-3)"}}>{DAY_TYPE_META[t].label}</div>
+                      <div className="mono tabular" style={{fontSize:10,color:on?col:"var(--t-4)",marginTop:2}}>{tg.cal} · C{tg.carbs}</div>
+                    </button>);})}
+                </div>)}
             </>);
           })()}
           {/* ── Setup band — the day's frame, stated once ────────────────────────
@@ -3817,6 +3836,7 @@ function DashboardInner(){
       </>)}
 
       {/* ═══ DATA — subtabs: scans / measurements / photos ═══ */}
+      {tab==="workouts"&&(<div className="fade"><Workouts db={db} userConfig={userConfig} onToast={(m,t)=>showToast(m,t==="ok"?"ok":"error")}/></div>)}
       {tab==="data"&&(<>
         <div className="rise" style={{display:"flex",gap:6,marginTop:18,marginBottom:14,flexWrap:"wrap"}}>
           {[["scans","Scans"],["measurements","Measurements"],["photos","Photos"]].map(([k,l])=>(<TabBtn key={k} active={dataSub===k} onClick={()=>setDataSub(k)}>{l}</TabBtn>))}
@@ -3980,7 +4000,7 @@ function DashboardInner(){
       {/* ═══ BOTTOM NAV ═══ */}
       <nav className="bcq-nav">
         <div style={{display:"flex",justifyContent:"space-around",alignItems:"center",padding:"0 8px"}}>
-          {navItems.map(n=>{const active=n.id==="more"?["data","projection","monthly"].includes(tab):tab===n.id;return(
+          {navItems.map(n=>{const active=n.id==="more"?["workouts","data","projection","monthly"].includes(tab):tab===n.id;return(
             <button key={n.id} onClick={()=>{if(n.id==="more"){setShowMore(!showMore);}else{setTab(n.id);setShowMore(false);}}} className="touch" style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"8px 10px",background:"none",border:"none",cursor:"pointer",position:"relative",color:active?"var(--accent)":"var(--t-4)",transition:"color .2s var(--ease-out)"}}>
               <Icon n={n.icon} s={22} sw={active?1.8:1.5}/>
               <span style={{fontSize:10,fontWeight:active?600:500,letterSpacing:".02em"}}>{n.label}</span>

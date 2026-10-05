@@ -398,6 +398,7 @@ export const energyModel = ({
   leanMass = null, weight = null, height = null, age = null,
   gender = "female", activity = "light",
   deficitPct = 15, proteinPerKgLean = 4.4, fatPctKcal = 0.29,
+  hardDayKcal = 150, restDayKcal = 100,   /* periodisation offsets, all carbs */
   tdeeOverride = null,   /* from adaptiveTDEE — replaces bmr×mult when present */
   adaptive = null,       /* the full adaptiveTDEE result, passed through for display */
 } = {}) => {
@@ -420,6 +421,25 @@ export const energyModel = ({
   const fat = Math.round(cal * fatPctKcal / 9);
   const carbs = Math.max(0, Math.round((cal - protein*4 - fat*9) / 4));
 
+  /* ── Day-type periodisation ──────────────────────────────────────────────
+     One target every day is wrong for a lifter: it's the same number on a
+     PR lower-body day and a rest day. Hard days get +hardDayKcal, rest days
+     get −restDayKcal, and the ENTIRE offset lands on carbs — protein and fat
+     are held, because protein protects muscle and fat is the thing being cut.
+     Rest days are floored at BMR × 1.25 so periodisation can't push a day
+     into the under-recovery zone. The weekly average works out to roughly
+     the base target with a typical 2 hard / 3 normal / 2 rest split. */
+  const floor = Math.round(Math.round(bmr) * 1.25);
+  const dt = (delta) => {
+    const c = Math.max(floor, Math.round((cal + delta) / 10) * 10);
+    return {cal: c, protein, fat, carbs: Math.max(0, Math.round((c - protein*4 - fat*9) / 4))};
+  };
+  const byDayType = {
+    hard:   dt(+hardDayKcal),
+    normal: {cal, protein, fat, carbs},
+    rest:   dt(-restDayKcal),
+  };
+
   return {
     bmr: Math.round(bmr),
     bmrLabel: bmrKM ? "Katch-McArdle" : "Mifflin-St Jeor",
@@ -429,8 +449,19 @@ export const energyModel = ({
     deficit: tdee - cal,
     sustainable: deficitPct <= SUSTAINABLE_DEFICIT_PCT,
     cal, protein, fat, carbs,
+    byDayType, restFloor: floor,
   };
 };
+
+export const DAY_TYPES = ["hard", "normal", "rest"];
+export const DAY_TYPE_META = {
+  hard:   {label: "Hard",   short: "H", desc: "Heavy lift / PR day — more carbs"},
+  normal: {label: "Normal", short: "N", desc: "Regular training day"},
+  rest:   {label: "Rest",   short: "R", desc: "No session — fewer carbs"},
+};
+/* Resolve the targets for a given day type off an energy model. */
+export const targetsForDay = (em, dayType) =>
+  (em?.byDayType && em.byDayType[dayType]) || (em ? {cal: em.cal, protein: em.protein, fat: em.fat, carbs: em.carbs} : null);
 
 /* Build the energy model from a user config + the most recent scan.
    Pass `history` ({scans, macroDays, now}) to enable adaptive TDEE; without
@@ -444,6 +475,8 @@ export const energyFromConfig = (cfg, latestScan, history = null) => {
     deficitPct: cfg?.deficitPct ?? 15,
     proteinPerKgLean: cfg?.proteinPerKgLean ?? 4.4,
     fatPctKcal: cfg?.fatPctKcal ?? 0.29,
+    hardDayKcal: cfg?.hardDayKcal ?? 150,
+    restDayKcal: cfg?.restDayKcal ?? 100,
   };
   const formula = energyModel(inputs);
   if (!formula) return null;
@@ -508,3 +541,49 @@ export const expiryFrom = (reconDate, shelfDays) => {
   d.setDate(d.getDate() + shelfDays);
   return d.toISOString().slice(0, 10);
 };
+
+/* ── Workout log ──────────────────────────────────────────────────────────
+   exercises: [{name, sets:[{w, r}]}]  w = kg (0 for bodyweight), r = reps.
+   Volume = Σ w×r. Comparison is per exercise by name (case/space-insensitive),
+   against the previous session of the SAME split — a leg-curl PR means
+   nothing next to last week's bench. */
+export const normName = s => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+
+export const setVolume = s => (Number(s?.w) || 0) * (Number(s?.r) || 0);
+export const exerciseVolume = ex => (ex?.sets || []).reduce((a, s) => a + setVolume(s), 0);
+export const sessionVolume = exercises => (exercises || []).reduce((a, ex) => a + exerciseVolume(ex), 0);
+
+export const topSet = ex => (ex?.sets || []).reduce((best, s) =>
+  !best || (Number(s.w) || 0) > (Number(best.w) || 0) ||
+  ((Number(s.w) || 0) === (Number(best.w) || 0) && (Number(s.r) || 0) > (Number(best.r) || 0)) ? s : best, null);
+
+/* Per-exercise delta vs a previous session. verdict:
+     "new"  — not in previous session
+     "up"   — top-set weight up, OR same weight with more total reps
+     "down" — top-set weight down, OR same weight with fewer total reps
+     "same" — identical */
+export const compareSessions = (current, previous) => {
+  const prevBy = Object.fromEntries((previous?.exercises || []).map(e => [normName(e.name), e]));
+  return (current?.exercises || []).map(ex => {
+    const p = prevBy[normName(ex.name)];
+    if (!p) return {name: ex.name, verdict: "new", dW: null, dReps: null, dVol: null, prevTop: null};
+    const ct = topSet(ex), pt = topSet(p);
+    const cw = Number(ct?.w) || 0, pw = Number(pt?.w) || 0;
+    const creps = (ex.sets || []).reduce((a, s) => a + (Number(s.r) || 0), 0);
+    const preps = (p.sets || []).reduce((a, s) => a + (Number(s.r) || 0), 0);
+    const dW = +(cw - pw).toFixed(1), dReps = creps - preps, dVol = exerciseVolume(ex) - exerciseVolume(p);
+    const verdict = dW > 0 ? "up" : dW < 0 ? "down" : dReps > 0 ? "up" : dReps < 0 ? "down" : "same";
+    return {name: ex.name, verdict, dW, dReps, dVol, prevTop: pt};
+  });
+};
+
+/* Short label for the "vs last" column: "+2.5kg", "+3 reps", "−1 rep", "=", "new" */
+export const deltaLabel = c => {
+  if (!c) return "";
+  if (c.verdict === "new") return "new";
+  if (c.dW) return `${c.dW > 0 ? "+" : "−"}${Math.abs(c.dW)}kg`;
+  if (c.dReps) return `${c.dReps > 0 ? "+" : "−"}${Math.abs(c.dReps)} rep${Math.abs(c.dReps) === 1 ? "" : "s"}`;
+  return "=";
+};
+
+export const DEFAULT_SPLITS = ["Lower A", "Lower B", "Upper A", "Upper B", "Push", "Pull", "Full Body", "Cardio"];

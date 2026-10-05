@@ -295,10 +295,111 @@ export const ACTIVITY_MULT = {sedentary: 1.2, light: 1.375, moderate: 1.55, acti
    Was 25 — too permissive for a lifter trying to hold lean mass in a cut. */
 export const SUSTAINABLE_DEFICIT_PCT = 20;
 
+/* ── Adaptive TDEE ──────────────────────────────────────────────────────────
+   The formula above guesses expenditure from a population multiplier. This
+   MEASURES it: over a trailing window, what you logged eating minus the energy
+   equivalent of how your weight actually moved. It absorbs logging bias (if you
+   under-log 10%, the "TDEE" it finds is 10% low too — and so is the target it
+   produces, which is exactly right for how you log), real activity, and
+   metabolic adaptation, because it reads the outcome rather than the inputs.
+
+   The energy term uses FAT MASS slope when scans carry it, weight slope only as
+   a fallback. Scale-only apps have to use weight × 7,700, and it burns them:
+   a post-GLP-1 rehydration month reads as a 1.5 kg "gain" that was almost all
+   water and glycogen. Fat mass is what actually costs 7,700 kcal/kg; lean-mass
+   swings on BIA are mostly fluid and are deliberately excluded. (The small
+   energy cost of real muscle gain is ignored — ~30 kcal/day at most.)
+
+   Slopes are Theil-Sen (median of pairwise slopes), not least-squares: with
+   weekly scans a single depleted reading at the window edge swings an OLS fit
+   by hundreds of kcal. The median doesn't care.
+
+   Confidence rises with scan count and logging coverage; the result is a blend
+   of adaptive and formula weighted by that confidence, clamped so a bad
+   fortnight of logging can't produce a nonsense number. Needs ≥3 scans and
+   ≥50% of days logged in the window to start trusting itself at all. */
+export const KCAL_PER_KG = 7700;  /* energy density of adipose tissue — the standard figure */
+
+/* Median of pairwise slopes. points: [{x, y}], x in days. */
+export const theilSen = points => {
+  if (!points || points.length < 2) return null;
+  const slopes = [];
+  for (let i = 0; i < points.length; i++)
+    for (let j = i + 1; j < points.length; j++) {
+      const dx = points[j].x - points[i].x;
+      if (dx !== 0) slopes.push((points[j].y - points[i].y) / dx);
+    }
+  if (!slopes.length) return null;
+  slopes.sort((a, b) => a - b);
+  const m = slopes.length >> 1;
+  return slopes.length % 2 ? slopes[m] : (slopes[m - 1] + slopes[m]) / 2;
+};
+
+const dayIndex = (iso, origin) => Math.round((new Date(iso + "T12:00:00Z") - origin) / 86400000);
+
+export const adaptiveTDEE = ({
+  scans = [],            /* [{date, weight}] any order */
+  macroDays = [],        /* [{date, cal}] per-day totals INCLUDING whey */
+  formulaTdee = null,    /* Katch-McArdle × mult, for blend + clamp */
+  now = new Date(),
+  windowDays = 35,
+  kcalPerKg = KCAL_PER_KG,
+  minScans = 3,
+  minCoverage = 0.5,
+} = {}) => {
+  const base = {source: "formula", confidence: 0, tdee: formulaTdee, formula: formulaTdee,
+                adaptive: null, avgIntake: null, loggedDays: 0, windowDays, coverage: 0,
+                nScans: 0, slopeKgWk: null, slopeWtKgWk: null, slopeBasis: null,
+                clamped: false, reason: null};
+  if (!formulaTdee) return {...base, reason: "no formula TDEE"};
+
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
+  const start = new Date(end.getTime() - windowDays * 86400000);
+  const inWin = d => { const t = new Date(d + "T12:00:00Z"); return t >= start && t <= end; };
+
+  const inScans = scans.filter(s => s?.date && Number.isFinite(+s.weight) && inWin(s.date))
+                       .sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (inScans.length < minScans) return {...base, nScans: inScans.length, reason: `need ${minScans} scans in ${windowDays}d, have ${inScans.length}`};
+
+  const logged = macroDays.filter(m => m?.date && Number.isFinite(+m.cal) && +m.cal > 0 && inWin(m.date));
+  const loggedDays = logged.length;
+  const coverage = loggedDays / windowDays;
+  if (coverage < minCoverage) return {...base, nScans: inScans.length, loggedDays, coverage: +coverage.toFixed(2),
+                                      reason: `need ${Math.round(minCoverage*100)}% of days logged, have ${Math.round(coverage*100)}%`};
+
+  const wtPts  = inScans.map(s => ({x: dayIndex(s.date, start), y: +s.weight}));
+  const fatPts = inScans.filter(s => Number.isFinite(+s.fatMass))
+                        .map(s => ({x: dayIndex(s.date, start), y: +s.fatMass}));
+  const slopeWt  = theilSen(wtPts);                                       /* kg/day */
+  const useFat   = fatPts.length >= minScans;
+  const slope    = useFat ? theilSen(fatPts) : slopeWt;
+  const avgIntake = logged.reduce((s, m) => s + +m.cal, 0) / loggedDays;
+  const raw = avgIntake - slope * kcalPerKg;
+
+  const lo = formulaTdee * 0.70, hi = formulaTdee * 1.35;
+  const adaptive = Math.min(hi, Math.max(lo, raw));
+  const clamped = adaptive !== raw;
+
+  const n = useFat ? fatPts.length : wtPts.length;
+  const scanConf = Math.min(1, Math.max(0, (n - 2) / 4));                /* 3→.25 … 6+→1 */
+  const logConf  = Math.min(1, Math.max(0, (coverage - 0.5) / 0.4));     /* 50%→0 … 90%+→1 */
+  const confidence = +(scanConf * logConf).toFixed(2);
+
+  const tdee = Math.round(confidence * adaptive + (1 - confidence) * formulaTdee);
+  const source = confidence >= 0.85 ? "adaptive" : confidence <= 0.15 ? "formula" : "blended";
+
+  return {source, confidence, tdee, formula: formulaTdee, adaptive: Math.round(adaptive),
+          avgIntake: Math.round(avgIntake), loggedDays, windowDays, coverage: +coverage.toFixed(2),
+          nScans: n, slopeKgWk: +(slope * 7).toFixed(2), slopeWtKgWk: +(slopeWt * 7).toFixed(2),
+          slopeBasis: useFat ? "fat mass" : "weight", clamped, reason: null};
+};
+
 export const energyModel = ({
   leanMass = null, weight = null, height = null, age = null,
   gender = "female", activity = "light",
   deficitPct = 15, proteinPerKgLean = 4.4, fatPctKcal = 0.29,
+  tdeeOverride = null,   /* from adaptiveTDEE — replaces bmr×mult when present */
+  adaptive = null,       /* the full adaptiveTDEE result, passed through for display */
 } = {}) => {
   const mult = ACTIVITY_MULT[activity] || 1.375;
   const bmrKM = leanMass ? 370 + 21.6 * leanMass : null;
@@ -309,7 +410,8 @@ export const energyModel = ({
   const bmr = bmrKM || bmrMSJ;
   if (!bmr) return null;
 
-  const tdee = Math.round(bmr * mult);
+  const formulaTdee = Math.round(bmr * mult);
+  const tdee = Number.isFinite(tdeeOverride) && tdeeOverride > 0 ? Math.round(tdeeOverride) : formulaTdee;
   const cal = Math.round(tdee * (1 - deficitPct/100) / 10) * 10;
   /* Protein scales off LEAN mass, not bodyweight — in a cut, bodyweight falls
      and a bodyweight-derived target would cut protein exactly when it matters most. */
@@ -321,23 +423,40 @@ export const energyModel = ({
   return {
     bmr: Math.round(bmr),
     bmrLabel: bmrKM ? "Katch-McArdle" : "Mifflin-St Jeor",
-    mult, tdee, deficitPct,
+    mult, tdee, formulaTdee, deficitPct,
+    tdeeSource: adaptive?.source || "formula",
+    adaptive,
     deficit: tdee - cal,
     sustainable: deficitPct <= SUSTAINABLE_DEFICIT_PCT,
     cal, protein, fat, carbs,
   };
 };
 
-/* Build the energy model from a user config + the most recent scan. */
-export const energyFromConfig = (cfg, latestScan) => energyModel({
-  leanMass: latestScan?.leanMass ?? null,
-  weight: latestScan?.weight ?? cfg?.weight ?? null,
-  height: cfg?.height, age: cfg?.age, gender: cfg?.gender,
-  activity: cfg?.activity,
-  deficitPct: cfg?.deficitPct ?? 15,
-  proteinPerKgLean: cfg?.proteinPerKgLean ?? 4.4,
-  fatPctKcal: cfg?.fatPctKcal ?? 0.29,
-});
+/* Build the energy model from a user config + the most recent scan.
+   Pass `history` ({scans, macroDays, now}) to enable adaptive TDEE; without
+   it — or with cfg.adaptiveTdee === false — the formula is used unchanged. */
+export const energyFromConfig = (cfg, latestScan, history = null) => {
+  const inputs = {
+    leanMass: latestScan?.leanMass ?? null,
+    weight: latestScan?.weight ?? cfg?.weight ?? null,
+    height: cfg?.height, age: cfg?.age, gender: cfg?.gender,
+    activity: cfg?.activity,
+    deficitPct: cfg?.deficitPct ?? 15,
+    proteinPerKgLean: cfg?.proteinPerKgLean ?? 4.4,
+    fatPctKcal: cfg?.fatPctKcal ?? 0.29,
+  };
+  const formula = energyModel(inputs);
+  if (!formula) return null;
+  if (!history || cfg?.adaptiveTdee === false) return formula;
+
+  const ad = adaptiveTDEE({
+    scans: history.scans || [], macroDays: history.macroDays || [],
+    formulaTdee: formula.formulaTdee, now: history.now || new Date(),
+    windowDays: cfg?.adaptiveWindowDays ?? 35,
+    kcalPerKg: cfg?.kcalPerKg ?? KCAL_PER_KG,
+  });
+  return energyModel({...inputs, tdeeOverride: ad.tdee, adaptive: ad});
+};
 
 /* ── Reconstitution recall ────────────────────────────────────────────────
    "How did I mix this last time, and how long does it keep?"

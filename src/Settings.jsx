@@ -20,6 +20,9 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,lates
     goalBf: userConfig?.goalBf || 30,
     autoTargets: userConfig?.autoTargets !== false,
     deficitPct: userConfig?.deficitPct ?? 15,
+    proteinPerKgLean: userConfig?.proteinPerKgLean ?? 4.4,
+    fatPctKcal: userConfig?.fatPctKcal ?? 0.29,
+    adaptiveTdee: userConfig?.adaptiveTdee !== false,
     targetCal: userConfig?.targets?.cal ?? defaultProfile?.targets?.cal ?? "",
     targetProtein: userConfig?.targets?.protein ?? defaultProfile?.targets?.protein ?? "",
     targetFat: userConfig?.targets?.fat ?? defaultProfile?.targets?.fat ?? "",
@@ -35,7 +38,10 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,lates
   const isEnabled = (id) => !!stackById[id]?.enabled;
   const save = async () => {
     setSaving(true);
+    /* Spread the existing config FIRST so keys this form doesn't own
+       (lastSeenVersion, future flags) survive a save instead of being wiped. */
     const payload = {
+      ...(userConfig||{}),
       name: d.name||defaultProfile?.name||"",
       age: +(d.age||0),
       gender: d.gender,
@@ -45,6 +51,9 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,lates
       goalBf: +(d.goalBf||30),
       autoTargets: !!d.autoTargets,
       deficitPct: +(d.deficitPct||15),
+      proteinPerKgLean: +(d.proteinPerKgLean||4.4),
+      fatPctKcal: +(d.fatPctKcal||0.29),
+      adaptiveTdee: !!d.adaptiveTdee,
       targets: {
         cal: +(d.targetCal||defaultProfile?.targets?.cal||1600),
         protein: +(d.targetProtein||defaultProfile?.targets?.protein||120),
@@ -112,10 +121,22 @@ export function Settings({db,userId,userConfig,defaultProfile,peptideStack,lates
           </button>
 
           {d.autoTargets&&(()=>{
-            const em=energyFromConfig({...userConfig,activity:d.activity,deficitPct:+(d.deficitPct||15),height:+d.height,age:+d.age,gender:d.gender,weight:+d.weight},latestScan);
+            const em=energyFromConfig({...userConfig,activity:d.activity,deficitPct:+(d.deficitPct||15),proteinPerKgLean:+(d.proteinPerKgLean||4.4),fatPctKcal:+(d.fatPctKcal||0.29),height:+d.height,age:+d.age,gender:d.gender,weight:+d.weight},latestScan);
             return(<div style={{marginBottom:14}}>
               <label style={{fontSize:10,color:"var(--t-3)",fontWeight:600,letterSpacing:".06em",display:"block",marginBottom:6,textTransform:"uppercase"}}>Deficit · {d.deficitPct}%{+d.deficitPct>20&&<span style={{color:"var(--c-warn)"}}> · aggressive</span>}</label>
               <input type="range" min="0" max="30" step="1" value={d.deficitPct} onChange={e=>up("deficitPct",e.target.value)} style={{width:"100%",accentColor:+d.deficitPct>20?"var(--c-warn)":"var(--accent)"}}/>
+
+              <label style={{fontSize:10,color:"var(--t-3)",fontWeight:600,letterSpacing:".06em",display:"block",margin:"12px 0 6px",textTransform:"uppercase"}}>Protein · {(+d.proteinPerKgLean).toFixed(1)} g/kg lean{+d.proteinPerKgLean>3.1&&<span style={{color:"var(--t-4)"}}> · above the 2.3–3.1 evidence range</span>}</label>
+              <input type="range" min="2.0" max="4.5" step="0.1" value={d.proteinPerKgLean} onChange={e=>up("proteinPerKgLean",e.target.value)} style={{width:"100%",accentColor:"var(--accent)"}}/>
+
+              <label style={{fontSize:10,color:"var(--t-3)",fontWeight:600,letterSpacing:".06em",display:"block",margin:"12px 0 6px",textTransform:"uppercase"}}>Fat · {Math.round(+d.fatPctKcal*100)}% of calories{+d.fatPctKcal<0.2&&<span style={{color:"var(--c-warn)"}}> · low</span>}</label>
+              <input type="range" min="0.15" max="0.40" step="0.01" value={d.fatPctKcal} onChange={e=>up("fatPctKcal",e.target.value)} style={{width:"100%",accentColor:+d.fatPctKcal<0.2?"var(--c-warn)":"var(--accent)"}}/>
+              <p style={{fontSize:10.5,color:"var(--t-4)",margin:"4px 0 10px",lineHeight:1.45}}>Carbs take whatever is left — lower protein or fat here to raise carbs on training days.</p>
+
+              <button onClick={()=>up("adaptiveTdee",!d.adaptiveTdee)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"11px 14px",borderRadius:"var(--r-sm)",border:`1px solid ${d.adaptiveTdee?"var(--accent-line)":"var(--line-soft)"}`,background:d.adaptiveTdee?"var(--accent-soft)":"transparent",cursor:"pointer",textAlign:"left",minHeight:46,marginBottom:10}}>
+                <div><div style={{fontSize:13,color:d.adaptiveTdee?"var(--t-1)":"var(--t-2)",fontWeight:600}}>Measure TDEE from my logs</div><div style={{fontSize:11,color:"var(--t-4)",marginTop:1}}>Replaces the activity multiplier with what your food log and fat-mass trend actually show. Needs ~3 scans and most days logged.</div></div>
+                {d.adaptiveTdee&&<Icon n="check" s={16} c="var(--accent)" sw={2}/>}
+              </button>
               {em&&<div style={{display:"flex",justifyContent:"space-between",marginTop:8,padding:"10px 12px",borderRadius:"var(--r-sm)",background:"var(--surface-2)"}}>
                 {[["TDEE",em.tdee],["kcal",em.cal],["P",em.protein],["F",em.fat],["C",em.carbs]].map(([l,v])=>(
                   <div key={l} style={{textAlign:"center",flex:1}}>

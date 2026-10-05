@@ -127,8 +127,16 @@ function DashboardInner(){
   const last=data.length>0?data[data.length-1]:first;
   /* Targets derive from the latest InBody scan via the shared energy model, so a
      new scan updates tomorrow's targets automatically. userConfig.autoTargets===false
-     falls back to the manually stored numbers. */
-  const energy=useMemo(()=>data.length>0?energyFromConfig(userConfig,data[data.length-1]):null,[userConfig,data]);
+     falls back to the manually stored numbers.
+
+     With a trailing window of logged days (macroHist35, loaded below) the model
+     switches from formula TDEE to ADAPTIVE — measured from what was eaten vs. how
+     fat mass actually moved. It silently falls back to the formula until there
+     are ≥3 scans and ≥50% of days logged in the window. */
+  const [macroHist35,setMacroHist35]=useState([]);
+  const energy=useMemo(()=>data.length>0
+    ?energyFromConfig(userConfig,data[data.length-1],macroHist35.length?{scans:data,macroDays:macroHist35}:null)
+    :null,[userConfig,data,macroHist35]);
   const TARGETS=useMemo(()=>(userConfig?.autoTargets!==false&&energy)
     ?{cal:energy.cal,protein:energy.protein,fat:energy.fat,carbs:energy.carbs}
     :(userConfig?.targets||defaultProfile.targets),[userConfig,energy,defaultProfile]);
@@ -246,6 +254,20 @@ function DashboardInner(){
     if(!(s>0))return null;
     return{protein:+(wheyCfg.perScoop*s).toFixed(1),fat:+(s*0.5).toFixed(1),carbs:+(s*2).toFixed(1),scoops:s};
   },[wheyCfg]);
+
+  /* Adaptive-TDEE feed: 35 days of per-day totals (incl. that day's whey), loaded
+     once on mount and refreshed after any macro save so today's log counts. */
+  useEffect(()=>{(async()=>{
+    const rows=await db.list("daily_macros",35);
+    if(!Array.isArray(rows))return;
+    setMacroHist35(rows.map(md=>{
+      let t={protein:0,fat:0,carbs:0};
+      (md.meals||[]).forEach(m=>{t.protein+=m.protein||0;t.fat+=m.fat||0;t.carbs+=m.carbs||0;});
+      const w=wheyForRow(md);
+      if(w){t.protein+=w.protein;t.fat+=w.fat;t.carbs+=w.carbs;}
+      return{date:md.date,cal:calcCal(t.protein,t.fat,t.carbs)};
+    }));
+  })();},[db,wheyForRow,meals,wheyScoops]);
 
   /* P18: macroDate lets the user back-edit a past day's macros. Defaults to today.
      Changing this re-runs the load effect below and reroutes saves to that date. */
@@ -1773,13 +1795,18 @@ function DashboardInner(){
               const bmr=em?.bmr||0,bmrLabel=em?.bmrLabel||"—",tdee=em?.tdee||0;
               const deficit=tdee-TARGETS.cal;
               const defPct=tdee?Math.round(deficit/tdee*100):0;
+              const ad=em?.adaptive;
+              const src=em?.tdeeSource||"formula";
+              const srcCol=src==="adaptive"?"var(--c-success)":src==="blended"?"var(--c-warn)":"var(--t-4)";
+              const srcLabel=src==="adaptive"?"MEASURED":src==="blended"?"BLENDED":"FORMULA";
               return(<>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                {[["BMR",Math.round(bmr),"var(--c-carbs)"],["TDEE",tdee,"var(--c-weight)"],["Target",TARGETS.cal,"var(--t-1)"],[deficit>0?"Planned def.":"Planned surp.",deficit>0?`−${deficit}`:`+${Math.abs(deficit)}`,deficit>0?"var(--c-success)":"var(--c-danger)",defPct]].map(([l,v,c,p],i)=>(
+                {[["BMR",Math.round(bmr),"var(--c-carbs)"],["TDEE",tdee,"var(--c-weight)",null,srcLabel,srcCol],["Target",TARGETS.cal,"var(--t-1)"],[deficit>0?"Planned def.":"Planned surp.",deficit>0?`−${deficit}`:`+${Math.abs(deficit)}`,deficit>0?"var(--c-success)":"var(--c-danger)",defPct]].map(([l,v,c,p,tag,tagCol],i)=>(
                   <div key={i} style={{textAlign:"center",flex:1}}>
                     <div style={{fontSize:9,color:"var(--t-4)",letterSpacing:".10em",textTransform:"uppercase",fontWeight:600,marginBottom:2}}>{l}</div>
                     <div className="serif tabular" style={{fontSize:18,color:c,lineHeight:1.1}}>{v}</div>
                     {p&&<div className="mono" style={{fontSize:8.5,color:"var(--t-5)",marginLeft:3}}>{p}%</div>}
+                    {tag&&<div className="mono" style={{fontSize:7.5,color:tagCol,letterSpacing:".08em",marginTop:2,fontWeight:700}}>{tag}</div>}
                   </div>
                 ))}
               </div>
@@ -1787,6 +1814,15 @@ function DashboardInner(){
                 {latestScan?`${bmrLabel} · ${w}kg from ${latestScan.label} scan${lm?` · ${lm}kg lean`:""}`:`${bmrLabel} · ${w}kg from settings`}
                 {scanStale&&` · ⚠ scan is ${scanAge}d old`}
               </div>
+              {ad&&(ad.source!=="formula"
+                ?<div className="mono" style={{fontSize:8.5,color:"var(--t-4)",marginTop:4,textAlign:"center",letterSpacing:".02em",lineHeight:1.5}}>
+                    TDEE measured from {ad.loggedDays}/{ad.windowDays} days logged · {ad.nScans} scans · avg {ad.avgIntake} eaten · {ad.slopeBasis} {ad.slopeKgWk>0?"+":""}{ad.slopeKgWk} kg/wk
+                    {ad.source==="blended"&&` · ${Math.round(ad.confidence*100)}% confidence, blended with formula (${ad.formula})`}
+                    {ad.clamped&&" · ⚠ clamped — check logging"}
+                  </div>
+                :<div className="mono" style={{fontSize:8.5,color:"var(--t-5)",marginTop:4,textAlign:"center",letterSpacing:".02em"}}>
+                    Formula TDEE · adaptive needs {ad.reason}
+                  </div>)}
               </>);
             })()}
           </div>)}

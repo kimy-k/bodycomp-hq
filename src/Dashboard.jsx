@@ -1835,7 +1835,7 @@ function DashboardInner(){
               </div>
               {ad&&(ad.source!=="formula"
                 ?<div className="mono" style={{fontSize:8.5,color:"var(--t-4)",marginTop:4,textAlign:"center",letterSpacing:".02em",lineHeight:1.5}}>
-                    TDEE measured from {ad.loggedDays}/{ad.windowDays} days logged · {ad.nScans} scans · avg {ad.avgIntake} eaten · {ad.slopeBasis} {ad.slopeKgWk>0?"+":""}{ad.slopeKgWk} kg/wk
+                    TDEE measured from {ad.loggedDays}/{ad.windowDays} days logged{ad.skippedDays>0?` (${ad.skippedDays} incomplete skipped)`:""} · {ad.nScans} scans · avg {ad.avgIntake} eaten · {ad.slopeBasis} {ad.slopeKgWk>0?"+":""}{ad.slopeKgWk} kg/wk · through yesterday
                     {ad.source==="blended"&&` · ${Math.round(ad.confidence*100)}% confidence, blended with formula (${ad.formula})`}
                     {ad.clamped&&" · ⚠ clamped — check logging"}
                   </div>

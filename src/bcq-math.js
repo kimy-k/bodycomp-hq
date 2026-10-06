@@ -346,22 +346,33 @@ export const adaptiveTDEE = ({
   kcalPerKg = KCAL_PER_KG,
   minScans = 3,
   minCoverage = 0.5,
+  minDayFrac = 0.4,      /* a logged day under this × formula TDEE is treated as incomplete */
 } = {}) => {
   const base = {source: "formula", confidence: 0, tdee: formulaTdee, formula: formulaTdee,
-                adaptive: null, avgIntake: null, loggedDays: 0, windowDays, coverage: 0,
+                adaptive: null, avgIntake: null, loggedDays: 0, skippedDays: 0, windowDays, coverage: 0,
                 nScans: 0, slopeKgWk: null, slopeWtKgWk: null, slopeBasis: null,
                 clamped: false, reason: null};
   if (!formulaTdee) return {...base, reason: "no formula TDEE"};
 
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
-  const start = new Date(end.getTime() - windowDays * 86400000);
+  /* Window ends YESTERDAY. Today is still being logged — counting a half-day
+     at 9am drags the average down every morning and lets the target drift
+     through the day as meals go in. */
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
+  const end = new Date(today.getTime() - 86400000);
+  const start = new Date(end.getTime() - (windowDays - 1) * 86400000);
   const inWin = d => { const t = new Date(d + "T12:00:00Z"); return t >= start && t <= end; };
 
   const inScans = scans.filter(s => s?.date && Number.isFinite(+s.weight) && inWin(s.date))
                        .sort((a, b) => (a.date < b.date ? -1 : 1));
   if (inScans.length < minScans) return {...base, nScans: inScans.length, reason: `need ${minScans} scans in ${windowDays}d, have ${inScans.length}`};
 
-  const logged = macroDays.filter(m => m?.date && Number.isFinite(+m.cal) && +m.cal > 0 && inWin(m.date));
+  /* A day with only a whey scoop logged (100 kcal) is not a 100-calorie day;
+     it's an abandoned log. Below minDayFrac × formula it's treated as unlogged
+     rather than allowed to tank the average. */
+  const minDay = formulaTdee * minDayFrac;
+  const inWinDays = macroDays.filter(m => m?.date && Number.isFinite(+m.cal) && +m.cal > 0 && inWin(m.date));
+  const logged = inWinDays.filter(m => +m.cal >= minDay);
+  const skippedDays = inWinDays.length - logged.length;
   const loggedDays = logged.length;
   const coverage = loggedDays / windowDays;
   if (coverage < minCoverage) return {...base, nScans: inScans.length, loggedDays, coverage: +coverage.toFixed(2),
@@ -389,7 +400,7 @@ export const adaptiveTDEE = ({
   const source = confidence >= 0.85 ? "adaptive" : confidence <= 0.15 ? "formula" : "blended";
 
   return {source, confidence, tdee, formula: formulaTdee, adaptive: Math.round(adaptive),
-          avgIntake: Math.round(avgIntake), loggedDays, windowDays, coverage: +coverage.toFixed(2),
+          avgIntake: Math.round(avgIntake), loggedDays, skippedDays, windowDays, coverage: +coverage.toFixed(2),
           nScans: n, slopeKgWk: +(slope * 7).toFixed(2), slopeWtKgWk: +(slopeWt * 7).toFixed(2),
           slopeBasis: useFat ? "fat mass" : "weight", clamped, reason: null};
 };

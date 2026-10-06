@@ -676,8 +676,8 @@ describe("adaptiveTDEE", () => {
   });
 
   it("measures maintenance when weight is flat", () => {
-    const scans = [0, 7, 14, 21, 28, 34].map(n => ({date: d(n), weight: 52.5}));
-    const macroDays = Array.from({length: 33}, (_, n) => ({date: d(n), cal: 1650}));
+    const scans = [1, 7, 14, 21, 28, 34].map(n => ({date: d(n), weight: 52.5}));
+    const macroDays = Array.from({length: 34}, (_, n) => ({date: d(n + 1), cal: 1650}));
     const r = adaptiveTDEE({scans, macroDays, formulaTdee: 1740, now: T0});
     expect(r.source).toBe("adaptive");
     expect(r.confidence).toBeGreaterThanOrEqual(0.85);
@@ -687,8 +687,8 @@ describe("adaptiveTDEE", () => {
 
   it("raises TDEE when weight falls on a given intake", () => {
     /* losing 0.25 kg/wk on 1600 logged → burning ~1600 + 275 */
-    const scans = [0, 7, 14, 21, 28, 34].map(n => ({date: d(n), weight: 52 + n * (0.25 / 7)}));
-    const macroDays = Array.from({length: 33}, (_, n) => ({date: d(n), cal: 1600}));
+    const scans = [1, 7, 14, 21, 28, 34].map(n => ({date: d(n), weight: 52 + n * (0.25 / 7)}));
+    const macroDays = Array.from({length: 34}, (_, n) => ({date: d(n + 1), cal: 1600}));
     const r = adaptiveTDEE({scans, macroDays, formulaTdee: 1740, now: T0});
     expect(r.adaptive).toBeGreaterThan(1850);
     expect(r.adaptive).toBeLessThan(1900);
@@ -696,18 +696,38 @@ describe("adaptiveTDEE", () => {
   });
 
   it("blends toward formula at partial confidence", () => {
-    const scans = [0, 7, 14].map(n => ({date: d(n), weight: 52.5}));   /* 3 scans → scanConf .25 */
-    const macroDays = Array.from({length: 33}, (_, n) => ({date: d(n), cal: 1500}));
+    const scans = [1, 7, 14].map(n => ({date: d(n), weight: 52.5}));   /* 3 scans → scanConf .25 */
+    const macroDays = Array.from({length: 34}, (_, n) => ({date: d(n + 1), cal: 1500}));
     const r = adaptiveTDEE({scans, macroDays, formulaTdee: 1740, now: T0});
     expect(r.source).toBe("blended");
     expect(r.tdee).toBeGreaterThan(1500);
     expect(r.tdee).toBeLessThan(1740);
   });
 
+  it("excludes today — a half-logged morning must not move the number", () => {
+    const scans = [1, 8, 15, 22, 29, 34].map(n => ({date: d(n), weight: 52.5}));
+    const full = Array.from({length: 34}, (_, i) => ({date: d(i + 1), cal: 1650}));
+    const a = adaptiveTDEE({scans, macroDays: full, formulaTdee: 1740, now: T0});
+    const b = adaptiveTDEE({scans, macroDays: [...full, {date: d(0), cal: 400}], formulaTdee: 1740, now: T0});
+    expect(b.tdee).toBe(a.tdee);
+    expect(b.loggedDays).toBe(a.loggedDays);
+  });
+
+  it("treats a near-empty day as unlogged, not as a 100-kcal day", () => {
+    const scans = [1, 8, 15, 22, 29, 34].map(n => ({date: d(n), weight: 52.5}));
+    const full = Array.from({length: 34}, (_, i) => ({date: d(i + 1), cal: 1650}));
+    const withStub = full.map(m => m.date === d(10) ? {...m, cal: 100} : m);   /* one whey-only day */
+    const a = adaptiveTDEE({scans, macroDays: full, formulaTdee: 1740, now: T0});
+    const b = adaptiveTDEE({scans, macroDays: withStub, formulaTdee: 1740, now: T0});
+    expect(b.skippedDays).toBe(1);
+    expect(b.loggedDays).toBe(a.loggedDays - 1);
+    expect(b.avgIntake).toBe(1650);          /* stub excluded from the mean */
+  });
+
   it("clamps an implausible result", () => {
     /* gaining 2kg/wk on 1500 logged would imply TDEE ≈ −700 */
-    const scans = [0, 7, 14, 21, 28, 34].map(n => ({date: d(n), weight: 60 - n * (2 / 7)}));
-    const macroDays = Array.from({length: 33}, (_, n) => ({date: d(n), cal: 1500}));
+    const scans = [1, 7, 14, 21, 28, 34].map(n => ({date: d(n), weight: 60 - n * (2 / 7)}));
+    const macroDays = Array.from({length: 34}, (_, n) => ({date: d(n + 1), cal: 1500}));
     const r = adaptiveTDEE({scans, macroDays, formulaTdee: 1740, now: T0});
     expect(r.clamped).toBe(true);
     expect(r.adaptive).toBe(Math.round(1740 * 0.7));
